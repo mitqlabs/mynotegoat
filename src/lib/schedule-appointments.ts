@@ -90,14 +90,13 @@ export function shouldWarnStatusChange(
  * Shows a confirm dialog if the status transition is risky.
  * Returns true if the change should proceed.
  */
-export function confirmStatusChangeIfNeeded(
+export async function confirmStatusChangeIfNeeded(
   current: AppointmentStatus,
   next: AppointmentStatus,
-): boolean {
+): Promise<boolean> {
   if (!shouldWarnStatusChange(current, next)) return true;
-  return window.confirm(
-    `This appointment is currently "${formatAppointmentStatusLabel(current)}". Are you sure you want to change it to "${formatAppointmentStatusLabel(next)}"?`,
-  );
+  const { appConfirm } = await import("@/components/app-dialog");
+  return appConfirm(`This appointment is currently "${formatAppointmentStatusLabel(current)}". Are you sure you want to change it to "${formatAppointmentStatusLabel(next)}"?`);
 }
 
 export const appointmentTypeOptions = [
@@ -450,7 +449,7 @@ export function createAppointmentId() {
 export function getStatusBadgeClass(status: AppointmentStatus) {
   switch (status) {
     case "Check In":
-      return "bg-[rgba(13,121,191,0.14)] text-[#0d79bf]";
+      return "bg-[color-mix(in_srgb,var(--brand-primary)_14%,transparent)] text-[var(--brand-ink)]";
     case "Check Out":
       return "bg-[rgba(31,157,96,0.14)] text-[#1f9d60]";
     case "Canceled":

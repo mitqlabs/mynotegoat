@@ -1,11 +1,12 @@
 /**
  * G.O.A.T. as a front-desk assistant (rules only, pure, mock-testable):
- *  - dailyBrief: one warm sentence on open ("Morning! You've got 3 visits today…")
+ *  - dailyBrief: one warm sentence on open ("Good Morning. You've got 3 visits today…")
  *  - nudges: a few things worth a look, from real data (dismissible in the UI)
  *  - normalizeCasual: typos / texting shorthand → words the other parsers know
  *  - splitSteps: "book John Wed 2pm and remind me to call his lawyer" → two steps
  */
 import type { BriefData } from "@/lib/goat-briefs";
+import { goatGreeting } from "@/lib/goat-greeting";
 
 export interface AssistantPatient {
   id: string;
@@ -23,7 +24,7 @@ const isActive = (s: string) => ACTIVE.test((s ?? "").trim());
 const live = (status: string) => !/cancel|no show|reschedul/i.test(status);
 
 export function hello(hour: number): string {
-  return hour < 12 ? "Morning!" : hour < 17 ? "Hi there!" : "Evening!";
+  return goatGreeting(hour);
 }
 
 /** The first given name from "Last, First" or "First Last". */
@@ -34,7 +35,7 @@ export function firstName(full: string): string {
 
 /**
  * One short, human brief. Office money/case numbers only for admins.
- * "Morning! You've got 3 visits today (1 new patient), 2 to-dos overdue, and 4 cases waiting on checks."
+ * "Good Morning. You've got 3 visits today (1 new patient), 2 to-dos overdue, and 4 cases waiting on checks."
  */
 export function dailyBrief(data: BriefData, hour: number, isAdmin: boolean): string {
   const todays = data.appointments.filter((a) => a.date === data.today && live(a.status));
@@ -48,7 +49,7 @@ export function dailyBrief(data: BriefData, hour: number, isAdmin: boolean): str
   if (dueToday) parts.push(`${plural(dueToday, "to-do")} due today`);
   if (checks) parts.push(`${plural(checks, "case")} waiting on checks`);
   const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}` : parts[0];
-  return `${hello(hour)} You've got ${list}.`;
+  return `${hello(hour)}. You've got ${list}.`;
 }
 
 export interface Nudge {

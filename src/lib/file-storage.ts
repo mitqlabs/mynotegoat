@@ -2,10 +2,10 @@
 
 import { getSupabaseBrowserClient, getSessionUser } from "@/lib/supabase-browser";
 import { forgetGoatText, goatSidecarPath, readUploadedFile } from "@/lib/goat-files";
-import { patientIdForFolder, withCaseNumberPrefix } from "@/lib/file-naming";
+import { patientIdForFolder, splitCaseNumberPrefix, withCaseNumberPrefix } from "@/lib/file-naming";
 import { loadFileManagerState } from "@/lib/file-manager";
 import { getPatientById } from "@/lib/mock-data";
-import { buildCaseNumber } from "@/lib/follow-up-queue";
+import { caseNumberOf } from "@/lib/follow-up-queue";
 
 /** "<CASE#> <Last>, <First> <name>" for a file going into a patient's folder (or its subfolders). */
 export function caseNamedUpload(folderId: string, name: string): string {
@@ -13,9 +13,21 @@ export function caseNamedUpload(folderId: string, name: string): string {
     const pid = patientIdForFolder(loadFileManagerState().folders, folderId);
     const patient = pid ? getPatientById(pid) : null;
     if (!patient) return name;
-    return withCaseNumberPrefix(name, buildCaseNumber(patient.dateOfLoss, patient.fullName), patient.fullName);
+    return withCaseNumberPrefix(name, caseNumberOf(patient), patient.fullName);
   } catch {
     return name;
+  }
+}
+
+/** The locked "<CASE#> <Last>, <First>" part of a patient file's name, if it has one. */
+export function caseNamePrefixFor(folderId: string, name: string): { prefix: string; label: string } | null {
+  try {
+    const pid = patientIdForFolder(loadFileManagerState().folders, folderId);
+    const patient = pid ? getPatientById(pid) : null;
+    if (!patient) return null;
+    return splitCaseNumberPrefix(name, caseNumberOf(patient), patient.fullName);
+  } catch {
+    return null;
   }
 }
 

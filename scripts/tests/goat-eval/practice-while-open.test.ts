@@ -98,7 +98,7 @@ check("collin eliliot note", () => {
 check("strip all name tokens", () => assert.equal(stripNameTokens("collin eliliot i spoke to atty", "Collin Elliott"), "i spoke to atty"));
 check("no time, date only", () => assert.ok(!/AM|PM/.test(formatNote("called", mike, at))));
 check("appended on a new line", () => assert.equal(appendNote("10/01/26 - Old -Dr. Mike\n", "10/14/26 - New -Dr. Mike"), "10/01/26 - Old -Dr. Mike\n10/14/26 - New -Dr. Mike"));
-check("written to Case Notes store", () => assert.match(readFileSync("src/components/global-goat.tsx", "utf8"), /setCaseNote\(d\.patientId, appendNote\(existing, line\)\)/));
+check("written to the quick Notes entries store", () => assert.match(readFileSync("src/components/global-goat.tsx", "utf8"), /entryFromGoatNote\(\{ patientId: d\.patientId/));
 check("many is not Mary", () => assert.notEqual(goatTurn("how many cases do we have", emptyDialog(), { ...ctx, openPatientId: null }).reply.kind, "fileQuestion"));
 
 const phr = SUBMITTED.length + OTHER_OFFICE.length;

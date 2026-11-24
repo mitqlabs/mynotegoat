@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { resolveAuthAccessState } from "@/lib/auth-access";
+import { isDemoPrincipal } from "@/lib/demo-office";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 export default function AdminLayout({
@@ -24,6 +25,11 @@ export default function AdminLayout({
 
       if (access.state !== "access-granted" || !access.isAdmin) {
         router.replace("/auth/login");
+        return;
+      }
+      const session = (await getSupabaseBrowserClient()?.auth.getSession())?.data?.session;
+      if (isDemoPrincipal(session?.user)) {
+        router.replace("/");
         return;
       }
 
@@ -77,7 +83,7 @@ export default function AdminLayout({
                 type="button"
                 onClick={handleSignOut}
                 disabled={signingOut}
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-2 text-sm font-semibold transition hover:bg-[var(--bg-soft)] disabled:opacity-50"
+                className="btn btn-secondary disabled:opacity-50"
               >
                 {signingOut ? "Signing out..." : "Sign Out"}
               </button>

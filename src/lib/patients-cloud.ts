@@ -23,7 +23,7 @@
 
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
-import { reportCloudWriteError } from "@/lib/storage-sync-interceptor";
+import { reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "@/lib/storage-sync-interceptor";
 import {
   resolveValidatedWorkspaceId as resolveValidatedWorkspaceIdShared,
   withLockStealRetry,
@@ -35,6 +35,8 @@ import type {
   PatientRecord,
 } from "@/lib/mock-data";
 import { normalizeMaritalStatus } from "@/lib/marital-status";
+import { normalizeCompliance } from "@/lib/compliance";
+import { frozenPersonColumns } from "@/lib/patient-folder-guard";
 
 interface PatientRow {
   id: string;
@@ -60,21 +62,26 @@ interface PatientRow {
   is_cash_patient: boolean | null;
   location_id: string | null;
   text_reminders_off?: boolean | null;
+  compliance?: string | null;
+  on_patient_list?: boolean | null;
   created_at?: string;
   updated_at?: string;
 }
 
-function patientToRow(patient: PatientRecord, workspaceId: string): PatientRow {
+export function patientToRow(patient: PatientRecord, workspaceId: string): PatientRow {
+  // With the folder switch on, person columns stay as they were on the case
+  // row. The folder record holds any edit. With the switch off, frozen is null.
+  const frozen = frozenPersonColumns(patient.id);
   return {
     id: patient.id,
     workspace_id: workspaceId,
-    full_name: patient.fullName ?? "",
-    dob: patient.dob ?? "",
-    sex: patient.sex ?? null,
-    marital_status: patient.maritalStatus ?? null,
-    phone: patient.phone ?? "",
-    email: patient.email ?? null,
-    address: patient.address ?? null,
+    full_name: frozen ? frozen.fullName : (patient.fullName ?? ""),
+    dob: frozen ? frozen.dob : (patient.dob ?? ""),
+    sex: frozen ? frozen.sex : (patient.sex ?? null),
+    marital_status: frozen ? frozen.maritalStatus : (patient.maritalStatus ?? null),
+    phone: frozen ? frozen.phone : (patient.phone ?? ""),
+    email: frozen ? frozen.email : (patient.email ?? null),
+    address: frozen ? frozen.address : (patient.address ?? null),
     attorney: patient.attorney ?? "",
     case_status: patient.caseStatus ?? "Active",
     date_of_loss: patient.dateOfLoss ?? "",
@@ -85,14 +92,18 @@ function patientToRow(patient: PatientRecord, workspaceId: string): PatientRow {
     xray_referrals: (patient.xrayReferrals as unknown[] | undefined) ?? null,
     mri_referrals: (patient.mriReferrals as unknown[] | undefined) ?? null,
     specialist_referrals: (patient.specialistReferrals as unknown[] | undefined) ?? null,
-    alerts: patient.alerts ?? null,
+    alerts: frozen ? frozen.alerts : (patient.alerts ?? null),
     is_cash_patient: patient.isCashPatient ?? false,
     location_id: patient.locationId ?? null,
     text_reminders_off: patient.textRemindersOff === true,
+    // Only sent once a patient has (or had) a Compliance value, so every
+    // other patient save is identical to before and never touches the column.
+    ...(patient.compliance !== undefined ? { compliance: patient.compliance === "" ? null : patient.compliance } : {}),
+    ...(patient.onPatientList === true ? { on_patient_list: true } : {}),
   };
 }
 
-function rowToPatient(row: PatientRow): PatientRecord {
+export function rowToPatient(row: PatientRow): PatientRecord {
   return {
     id: row.id,
     fullName: row.full_name ?? "",
@@ -118,6 +129,8 @@ function rowToPatient(row: PatientRow): PatientRecord {
     isCashPatient: row.is_cash_patient ?? false,
     locationId: row.location_id ?? undefined,
     textRemindersOff: row.text_reminders_off === true ? true : undefined,
+    compliance: normalizeCompliance(row.compliance),
+    onPatientList: row.on_patient_list === true ? true : undefined,
   };
 }
 
@@ -192,6 +205,7 @@ export async function fetchAllPatientsFromTable(): Promise<PatientRecord[] | nul
  * silent RLS-rejected encounter writes. Don't repeat that here.
  */
 export async function upsertPatientToTable(patient: PatientRecord): Promise<void> {
+  reportCloudWriteStart("patients upsert");
   try {
     await withLockStealRetry(async () => {
       const workspaceId = await resolveValidatedWorkspaceId(`upsert(${patient.id})`);
@@ -209,6 +223,7 @@ export async function upsertPatientToTable(patient: PatientRecord): Promise<void
         );
       }
     });
+    reportCloudWriteSuccess("patients upsert");
   } catch (err) {
     const wrapped =
       err instanceof Error
@@ -255,6 +270,7 @@ export async function bulkUpsertPatientsToTable(patientsList: PatientRecord[]): 
 }
 
 export async function deletePatientFromTable(patientId: string): Promise<void> {
+  reportCloudWriteStart("patients delete");
   try {
     await withLockStealRetry(async () => {
       const workspaceId = await resolveValidatedWorkspaceId(`delete(${patientId})`);
@@ -273,6 +289,7 @@ export async function deletePatientFromTable(patientId: string): Promise<void> {
         );
       }
     });
+    reportCloudWriteSuccess("patients delete");
   } catch (err) {
     const wrapped =
       err instanceof Error

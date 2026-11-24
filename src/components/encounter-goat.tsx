@@ -7,7 +7,7 @@ import { goatContextFromRecords, goatPeople } from "@/lib/goat-context";
 import { useGoatTerms } from "@/hooks/use-goat-terms";
 import { useGoatFiles } from "@/hooks/use-goat-files";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
-import { useCaseNotes } from "@/hooks/use-case-notes";
+import { useCaseNotesText } from "@/hooks/use-case-note-entries";
 import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
@@ -46,7 +46,7 @@ export function EncounterGoat({
   /** Schedule-wide Discharge visits (lib/discharge-date) for the Discharge box date. */
   dischargeIndex?: DischargeIndex;
 }) {
-  const { notes } = useCaseNotes(patient.id, patient.matrix?.notes ?? "");
+  const notes = useCaseNotesText(patient.id, patient.matrix?.notes ?? "");
   const { entries: diagnoses } = usePatientDiagnoses(patient.id);
   const { macroLibrary } = useMacroTemplates();
   const { sectionHidden, canView } = useWorkspaceAccess();
@@ -60,7 +60,7 @@ export function EncounterGoat({
 
   const context = useMemo(() => {
     const chargesTotal = encounters.reduce(
-      (sum, e) => sum + e.charges.reduce((s, c) => s + c.unitPrice * c.units, 0),
+      (sum, e) => sum + (e.charges ?? []).reduce((s, c) => s + (Number(c.unitPrice) || 0) * (Number(c.units) || 0), 0),
       0,
     );
     // Same rule as the patient page: encounter charges when there are any,

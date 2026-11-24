@@ -10,6 +10,7 @@ import { documentFontOptions, renderDocumentTemplate } from "@/lib/document-temp
 import { appointmentTypeToTokenPrefix } from "@/lib/report-generator";
 import { narrativeReportAutoFields } from "@/lib/report-templates";
 import { loadAppointmentTypes } from "@/lib/schedule-appointment-types";
+import { appConfirm } from "@/components/app-dialog";
 
 function insertionTokenForField(fieldToken: string) {
   return `{{${fieldToken}}}`;
@@ -31,7 +32,7 @@ const autoFieldCategories: FieldCategory[] = [
   },
   {
     label: "Case Info",
-    tokens: ["DATE_OF_INJURY", "INITIAL_EXAM", "CASE_NUMBER", "CASE_STATUS", "LIEN_STATUS", "PRIOR_CARE", "PATIENT_NOTES"],
+    tokens: ["DATE_OF_INJURY", "ADDITIONAL_DATES_OF_INJURY", "ALL_DATES_OF_INJURY", "INITIAL_EXAM", "CASE_NUMBER", "CASE_STATUS", "LIEN_STATUS", "PRIOR_CARE", "PATIENT_NOTES"],
   },
   {
     label: "Findings",
@@ -112,6 +113,8 @@ const examplePreviewContext: Record<string, string> = {
   HE_SHE: "She",
   HIS_HER: "Her",
   DATE_OF_INJURY: "01/12/2026",
+  ADDITIONAL_DATES_OF_INJURY: "02/03/26",
+  ALL_DATES_OF_INJURY: "01/12/26, 02/03/26",
   INITIAL_EXAM: "01/19/2026",
   CASE_NUMBER: "2026-PI-0042",
   ATTORNEY_NAME: "James Mitchell, Esq.",
@@ -167,7 +170,7 @@ const examplePreviewContext: Record<string, string> = {
   MRI_COMPLETED_DATE: "02/12/2026",
   MRI_REVIEWED_DATE: "02/17/2026",
   IMAGING_SUMMARY: "X-Ray:\n1. X-Ray | Completed: 01/19/2026 | Center: Valley Imaging | Regions: Cervical, Thoracic\n\nMRI/CT:\n1. MRI | Completed: 02/12/2026 | Center: Advanced MRI Center | Regions: Cervical",
-  SPECIALIST_SUMMARY: "1. Dr. Robert Chen, Orthopedic | Sent: 02/20/2026 | Completed: 03/05/2026\n   Recommendations: Continue conservative care, consider epidural if symptoms persist.\n2. Dr. Sarah Kim, Neurologist | Sent: 03/01/2026 | Completed: 03/15/2026\n   Recommendations: EMG/NCV recommended for upper extremity radiculopathy evaluation.",
+  SPECIALIST_SUMMARY: "1. Dr. Robert Chen, Orthopedic\n   Recommendations:\n   Cervical\n   Right C5-C6 epidural injection.\n   Alternatives\n   Alternative to Injection Therapy: Continue conservative care.\n2. Dr. Sarah Kim, Neurologist\n   Recommendations:\n   EMG/NCV for upper extremity radiculopathy evaluation.",
   SPECIALIST_NAME: "Dr. Robert Chen, Orthopedic and Dr. Sarah Kim, Neurologist",
   SPECIALIST_1_NAME: "Dr. Robert Chen, Orthopedic",
   SPECIALIST_1_SENT: "02/20/2026",
@@ -421,8 +424,8 @@ export function ReportTemplateSettingsPanel() {
       <style>{`@keyframes fadeInOut { 0% { opacity: 0; transform: translateX(-50%) translateY(-8px); } 15% { opacity: 1; transform: translateX(-50%) translateY(0); } 80% { opacity: 1; } 100% { opacity: 0; } }`}</style>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
-          className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
-          onClick={() => { if (window.confirm("Are you sure you want to reset to defaults? This will overwrite your current settings.")) resetToDefaults(); }}
+          className="btn btn-secondary"
+          onClick={async () => { if ((await appConfirm("Are you sure you want to reset to defaults? This will overwrite your current settings."))) resetToDefaults(); }}
           type="button"
         >
           Reset Report Template Defaults
@@ -449,7 +452,7 @@ export function ReportTemplateSettingsPanel() {
               />
             </label>
             <button
-              className="mt-2 w-full rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+              className="btn btn-primary mt-2 w-full"
               onClick={handleAddTemplate}
               type="button"
             >
@@ -462,7 +465,7 @@ export function ReportTemplateSettingsPanel() {
               <button
                 className={`w-full rounded-xl border px-3 py-2 text-left ${
                   template.id === selectedTemplate.id
-                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)]"
+                    ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)]"
                     : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
                 }`}
                 key={template.id}
@@ -485,10 +488,10 @@ export function ReportTemplateSettingsPanel() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-xl font-semibold">Edit Narrative Template</h4>
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+              className="btn btn-secondary"
               disabled={reportTemplates.templates.length <= 1}
-              onClick={() => {
-                if (!window.confirm(`Delete template "${selectedTemplate.name}"? This cannot be undone.`)) return;
+              onClick={async () => {
+                if (!(await appConfirm(`Delete template "${selectedTemplate.name}"? This cannot be undone.`))) return;
                 removeTemplate(selectedTemplate.id);
                 if (selectedTemplateId === selectedTemplate.id) {
                   const fallback = reportTemplates.templates.find((entry) => entry.id !== selectedTemplate.id);
@@ -571,7 +574,7 @@ export function ReportTemplateSettingsPanel() {
 
             {showLivePreview && (
               <div className="mt-3 space-y-3">
-                <div className="flex items-center gap-2 rounded-lg bg-[rgba(13,121,191,0.08)] px-3 py-2 text-xs text-[var(--brand-primary)]">
+                <div className="flex items-center gap-2 rounded-lg bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] px-3 py-2 text-xs text-[var(--brand-primary)]">
                   <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z" />
                   </svg>
@@ -605,7 +608,7 @@ export function ReportTemplateSettingsPanel() {
                     <div className="flex flex-wrap gap-1.5 border-t border-[var(--line-soft)] px-3 py-2">
                       {usedFieldTokens.map((token) => (
                         <span
-                          className="rounded-full border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
+                          className="rounded-full border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
                           key={token}
                         >
                           {token}
@@ -705,8 +708,8 @@ export function ReportTemplateSettingsPanel() {
                             <button
                               className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
                                 used
-                                  ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
-                                  : "border-[var(--line-soft)] bg-white hover:border-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.04)]"
+                                  ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] text-[var(--brand-primary)]"
+                                  : "border-[var(--line-soft)] bg-white hover:border-[var(--brand-primary)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_4%,transparent)]"
                               }`}
                               key={token}
                               onClick={() =>
@@ -738,8 +741,8 @@ export function ReportTemplateSettingsPanel() {
                             <button
                               className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
                                 used
-                                  ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
-                                  : "border-[var(--line-soft)] bg-white hover:border-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.04)]"
+                                  ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] text-[var(--brand-primary)]"
+                                  : "border-[var(--line-soft)] bg-white hover:border-[var(--brand-primary)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_4%,transparent)]"
                               }`}
                               key={prompt.id}
                               onClick={() =>
@@ -819,7 +822,7 @@ export function ReportTemplateSettingsPanel() {
               </div>
 
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white"
+                className="btn btn-primary"
                 onClick={() => {
                   const prefix = appointmentTypeToTokenPrefix(encounterPickerType);
                   if (!prefix) return;
@@ -863,7 +866,7 @@ export function ReportTemplateSettingsPanel() {
                   <div className="flex flex-wrap gap-1.5">
                     {usedEncTokens.map((token) => (
                       <span
-                        className="rounded-full border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)]"
+                        className="rounded-full border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)]"
                         key={token}
                       >
                         {token}
@@ -924,7 +927,7 @@ export function ReportTemplateSettingsPanel() {
                     value={promptNewChoiceDraft}
                   />
                   <button
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-2 text-xs font-semibold"
+                    className="btn btn-secondary"
                     onClick={() => {
                       const v = promptNewChoiceDraft.trim();
                       if (v) {
@@ -947,7 +950,7 @@ export function ReportTemplateSettingsPanel() {
                 Required
               </label>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-3 py-2 font-semibold text-white"
+                className="btn btn-primary"
                 onClick={handleAddPrompt}
                 type="button"
               >
@@ -980,7 +983,7 @@ export function ReportTemplateSettingsPanel() {
                       Required
                     </label>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() =>
                                 conditionalWrapMode
                                   ? wrapSelectionConditional(prompt.token)
@@ -991,8 +994,8 @@ export function ReportTemplateSettingsPanel() {
                       Insert Token
                     </button>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 font-semibold"
-                      onClick={() => { if (window.confirm(`Remove prompt "${prompt.label}"?`)) removePrompt(selectedTemplate.id, prompt.id); }}
+                      className="btn btn-secondary btn-sm"
+                      onClick={async () => { if ((await appConfirm(`Remove prompt "${prompt.label}"?`))) removePrompt(selectedTemplate.id, prompt.id); }}
                       type="button"
                     >
                       Remove
@@ -1047,7 +1050,7 @@ export function ReportTemplateSettingsPanel() {
                       value={promptChoiceDrafts[getPromptDraftKey(selectedTemplate.id, prompt.id)] ?? ""}
                     />
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => {
                         const key = getPromptDraftKey(selectedTemplate.id, prompt.id);
                         const v = (promptChoiceDrafts[key] ?? "").trim();

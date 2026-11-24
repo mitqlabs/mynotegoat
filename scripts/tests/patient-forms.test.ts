@@ -29,7 +29,6 @@ import {
 } from "../../src/lib/patient-forms";
 import { unionMerge } from "../../src/lib/kv-merge";
 import { hashFormToken, isTokenShape, memoryRateOk, newFormToken } from "../../src/lib/patient-forms-server";
-import { morningRundown } from "../../src/lib/goat-briefs";
 import { applySql, dryRunSql, FORM_ID, OWNER_QUESTIONNAIRE } from "../seed/patient-forms-seed.mjs";
 
 let passed = 0;
@@ -318,14 +317,6 @@ test("rate limiter + status words", () => {
   assert.ok(!looksLikeDecompressionCase(["PI Office Visit", "Consider decompression"]));
 });
 
-test("Morning Rundown lists received questionnaires", () => {
-  const a = morningRundown({ today: "2026-10-19", patients: [], appointments: [], tasks: [], locations: [], questionnaires: [{ patientId: "p1", patientName: "Jane Example", formName: "New Patient Questionnaire" }] });
-  assert.match(a.textAfter ?? "", /1 questionnaire received: Jane Example/);
-  assert.ok(a.links?.some((l) => l.href === "/patients/p1"));
-  const none = morningRundown({ today: "2026-10-19", patients: [], appointments: [], tasks: [], locations: [] });
-  assert.doesNotMatch(none.textAfter ?? "", /questionnaire/);
-});
-
 test("wiring: cloud-backed + merge-safe, token-scoped writes, insert reuses the macro path", () => {
   assert.match(readFileSync("src/lib/cloud-key-registry.ts", "utf8"), /"casemate\.patient-forms\.v1": "workspace"/);
   assert.match(readFileSync("src/lib/cloud-state.ts", "utf8"), /UNION_MERGE_KEYS[\s\S]*"casemate\.patient-forms\.v1"/);
@@ -340,7 +331,7 @@ test("wiring: cloud-backed + merge-safe, token-scoped writes, insert reuses the 
   assert.match(fn, /renderMacroTemplateWithPromptSpans\(macro\.body/);
   assert.match(fn, /appendSoapSection\(selectedEncounter\.id, "objective"/);
   assert.match(fn, /addMacroRun\(/);
-  assert.match(fn, /window\.confirm\(/);
+  assert.match(fn, /(appConfirm|window\.confirm)\(/);
   assert.doesNotMatch(fn, /setSoapSection\(/, "never replaces Objective");
   assert.match(fn, /customAnswersHtml\(snapshot, answers\)/);
   const sql = readFileSync("supabase/patient_form_requests.sql", "utf8");

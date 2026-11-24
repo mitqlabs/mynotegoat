@@ -17,6 +17,7 @@ import {
   type DecompressionProgression,
   isDecompressionSinglePickLabel,
 } from "@/lib/treatment-plans";
+import { appConfirm } from "@/components/app-dialog";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -303,7 +304,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => setExpandedPlanId(isExpanded ? null : plan.id)}
                       type="button"
                     >
@@ -311,8 +312,8 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                     </button>
                     <button
                       className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700"
-                      onClick={() => {
-                        if (window.confirm("Delete this treatment plan?")) removePlan(patientId, plan.id);
+                      onClick={async () => {
+                        if ((await appConfirm("Delete this treatment plan?"))) removePlan(patientId, plan.id);
                       }}
                       type="button"
                     >
@@ -385,7 +386,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         {openDays.length > 1 && (
                         <select
                           className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-xs font-semibold text-[var(--text-muted)]"
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const day = Number(e.target.value);
                             e.target.value = "";
                             if (!Number.isInteger(day)) return;
@@ -393,7 +394,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                             const prompt = targetHasRegions
                               ? `${WEEKDAYS[day]} already has treatments. Overwrite them with ${WEEKDAYS[activeDay]}'s?`
                               : `Copy ${WEEKDAYS[activeDay]}'s setup to ${WEEKDAYS[day]}?`;
-                            if (!window.confirm(prompt)) return;
+                            if (!(await appConfirm(prompt))) return;
                             copyDayRegions(patientId, plan.id, activeDay, day);
                             setActiveDay(day);
                           }}
@@ -419,11 +420,9 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         )}
                         <button
                           className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700"
-                          onClick={() => {
+                          onClick={async () => {
                             if (
-                              window.confirm(
-                                `Clear all ${WEEKDAYS[activeDay]} treatments from this plan?`,
-                              )
+                              (await appConfirm(`Clear all ${WEEKDAYS[activeDay]} treatments from this plan?`))
                             ) {
                               setDay([]);
                             }
@@ -586,7 +585,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                               const chip = (on: boolean) =>
                                 `rounded-full border px-2 py-0.5 text-xs ${
                                   on
-                                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.16)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
+                                    ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_16%,transparent)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
                                     : "border-[var(--line-soft)] bg-white font-semibold text-[var(--text-main)]"
                                 }`;
                               if (!usingSides) {
@@ -667,7 +666,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                             key={opt}
                                             className={`rounded-full border px-2 py-0.5 text-xs ${
                                               on
-                                                ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.16)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
+                                                ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_16%,transparent)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
                                                 : "border-[var(--line-soft)] bg-white font-semibold text-[var(--text-main)]"
                                             }`}
                                             onClick={() =>
@@ -710,7 +709,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                                     <button
                                       className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors ${
                                         usingSides
-                                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
+                                          ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)] text-[var(--brand-primary)]"
                                           : "border-[var(--line-soft)] bg-white text-[var(--text-muted)] hover:border-[var(--brand-primary)] hover:text-[var(--brand-primary)]"
                                       }`}
                                       onClick={() => {
@@ -801,7 +800,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                         const chip = (on: boolean) =>
                           `rounded-full border px-2 py-0.5 text-xs ${
                             on
-                              ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.16)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
+                              ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_16%,transparent)] font-semibold text-[var(--brand-primary)] shadow-[inset_0_0_0_1px_var(--brand-primary)]"
                               : "border-[var(--line-soft)] bg-white font-semibold text-[var(--text-main)]"
                           }`;
                         const decompOpen = expandedDecompIds.has(plan.id);
@@ -1036,7 +1035,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
               </div>
               <div className="mt-3 flex items-center gap-2">
                 <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
+                  className="btn btn-primary disabled:opacity-40"
                   disabled={!startDraft.trim() || !endDraft.trim()}
                   onClick={handleAdd}
                   type="button"
@@ -1044,7 +1043,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
                   Create Plan
                 </button>
                 <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold"
+                  className="btn btn-secondary"
                   onClick={() => setShowAdd(false)}
                   type="button"
                 >
@@ -1054,7 +1053,7 @@ export function TreatmentPlanSection({ patientId, appointments, encounters }: Pr
             </div>
           ) : (
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97]"
+              className="btn btn-primary"
               onClick={openAddForm}
               type="button"
             >

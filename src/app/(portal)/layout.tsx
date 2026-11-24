@@ -1,14 +1,19 @@
 "use client";
 
+import { SaveBadge } from "@/components/save-badge";
+import { flushSaveQueue } from "@/lib/save-queue";
 import { confirmNotesInCloud, subscribeUnsyncedNotes } from "@/lib/encounter-notes";
-import { hydrateBigCache, installBigCacheShim } from "@/lib/big-cache";
+import { clearBigCache, hydrateBigCache, installBigCacheShim } from "@/lib/big-cache";
 import { cleanupPlusModeOnce } from "@/lib/goat-plus-cleanup";
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { SkeletonCaseFile, SkeletonNote, SkeletonRows, SkeletonSchedule } from "@/components/ui/skeleton";
 import dynamic from "next/dynamic";
 import { AppShell } from "@/components/app-shell";
+import { GoatCheckIn } from "@/components/goat-check-in";
 import {
   buildWorkspaceIdForUser,
+  clearLocalWorkspaceData,
   CloudBootstrapError,
   ensureWorkspaceForUser,
   prepareCloudStateBeforeMount,
@@ -20,13 +25,20 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { resolveAuthAccessState } from "@/lib/auth-access";
 import type { PlanTier } from "@/lib/plan-access";
 import { PlanTierProvider } from "@/lib/plan-context";
+import { accessHintDiffers, clearAccessHint, readAccessHint, writeAccessHint } from "@/lib/access-hint";
 import {
+  primeMembershipCache,
   resolveWorkspaceMembership,
   type WorkspaceMembership,
 } from "@/lib/workspace-membership";
 import { WorkspaceAccessProvider } from "@/lib/workspace-access-context";
+import { PatientsLaunchRedirect } from "@/components/patients-launch-redirect";
 import { RouteAccessGuard } from "@/components/route-access-guard";
 import { safeNextPath } from "@/lib/goat-app";
+import { DEMO_GENERATION_KEY, isDemoPrincipal, rememberDemoPrincipal, setDemoFoldersActive } from "@/lib/demo-office";
+import { adoptDemoGeneration, installDemoOutboundGuard } from "@/lib/demo-client";
+import { DemoToast } from "@/components/demo-office-chrome";
+import { claimFreshLaunch, isExactPatientsListEntry } from "@/lib/sidebar-launch";
 
 // Lazy-load with ssr:false so the module-level audio listeners in
 // global-timer-alerts.tsx never execute during SSR.  The component is
@@ -73,6 +85,7 @@ export default function PortalLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const pathname = usePathname() ?? "";
   const router = useRouter();
   // Pull the router through a ref so the bootstrap effect can have
   // `[]` deps. Next.js's router object is already stable across
@@ -104,78 +117,138 @@ export default function PortalLayout({
   const [leakAlarm, setLeakAlarm] = useState<
     { target: string; type: string; count: number } | null
   >(null);
-  // When syncStatus flips to "synced" we flash a green "Cloud Saved!" pill for
-  // a few seconds so the user has positive confirmation that their work made
-  // it to the cloud. The flash is driven by a setTimeout started inside the
-  // sync-status callback (not an effect), because each successful sync should
-  // re-arm the 2.5s window rather than let it expire mid-flash.
-  const [showSavedFlash, setShowSavedFlash] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [bootstrapErrorDetail, setBootstrapErrorDetail] = useState<string | null>(null);
+  const [bootProgressText, setBootProgressText] = useState<string | null>(null);
   // Set when someone chooses "Open Anyway". Staff were clicking through it
   // and carrying on for hours without telling anyone, so it stays on screen
   // for the life of the tab — it can't be dismissed.
   const [offlineMode, setOfflineMode] = useState(false);
   const [membership, setMembership] = useState<WorkspaceMembership | null>(null);
   const [syncBlocked, setSyncBlocked] = useState<{ localSize: number; remoteSize: number } | null>(null);
+  // A new tab that opened exactly on Patient List stays on the check-in
+  // screen until prefs say whether that is really the first sidebar page.
+  const [holdPatientsLaunch, setHoldPatientsLaunch] = useState(false);
+  const releasePatientsLaunch = useCallback(() => setHoldPatientsLaunch(false), []);
 
   useEffect(() => {
     let active = true;
+    let unsubscribeSync: (() => void) | null = null;
 
     async function bootstrap() {
-      // Speed: look up team membership at the same time as the access check
-      // instead of after it. Its result is only USED once access is granted,
-      // so nothing protected is shown any earlier.
+      // Speed: the session is read locally (no network). With it we start the
+      // access check AND the team-membership lookup at the same time. If this
+      // browser has a fresh access hint for the same user we open on that
+      // straight away and finish both checks in the background — any
+      // definitive difference (signed out, suspended, plan or team change)
+      // clears the hint and reloads/redirects. Cloud data is still pulled
+      // before mount below; the hint only skips the two round trips.
+      const bootT0 = performance.now();
       const supabaseForSession = getSupabaseBrowserClient();
-      const membershipEarly: Promise<WorkspaceMembership | null> = supabaseForSession
-        ? supabaseForSession.auth
+      const sessionUser = supabaseForSession
+        ? await supabaseForSession.auth
             .getSession()
-            .then(({ data }) => (data.session?.user?.id ? resolveWorkspaceMembership(data.session.user.id) : null))
+            .then(({ data }) => data.session?.user ?? null)
             .catch(() => null)
+        : null;
+      const sessionUserId = sessionUser?.id ?? null;
+      rememberDemoPrincipal(sessionUser);
+      setDemoFoldersActive(isDemoPrincipal(sessionUser));
+      if (!active) return;
+      const accessFresh = resolveAuthAccessState();
+      const membershipFresh: Promise<WorkspaceMembership | null> = sessionUserId
+        ? resolveWorkspaceMembership(sessionUserId).catch(() => null)
         : Promise.resolve(null);
-      const access = await resolveAuthAccessState();
+      const hint = sessionUserId ? readAccessHint(sessionUserId) : null;
+
+      let access: Awaited<ReturnType<typeof resolveAuthAccessState>>;
+      let resolvedMembership: WorkspaceMembership;
+      if (hint) {
+        access = hint.access;
+        resolvedMembership = hint.membership;
+        primeMembershipCache(hint.membership);
+        void Promise.all([accessFresh, membershipFresh]).then(([fresh, freshMembership]) => {
+          if (!active) return;
+          // Network trouble ("error") proves nothing — keep going on the hint.
+          if (fresh.state === "error" || fresh.state === "supabase-missing" || !freshMembership) {
+            primeMembershipCache(hint.membership);
+            return;
+          }
+          if (!accessHintDiffers(hint, fresh, freshMembership)) {
+            writeAccessHint(hint.userId, fresh, freshMembership);
+            return;
+          }
+          clearAccessHint();
+          if (fresh.state === "access-granted" && !fresh.isAdmin) {
+            // Plan or team changed: reboot once on the fresh answer.
+            try {
+              pauseSync();
+            } catch {
+              // ignore
+            }
+            window.location.reload();
+            return;
+          }
+          try {
+            pauseSync();
+          } catch {
+            // ignore
+          }
+          const target =
+            fresh.state === "signed-out"
+              ? "/auth/login"
+              : fresh.state === "email-unverified"
+                ? "/auth/login?verify=1"
+                : fresh.state === "pending-approval"
+                  ? "/auth/pending"
+                  : fresh.isAdmin && !isDemoPrincipal(sessionUser)
+                    ? "/admin"
+                    : "/auth/login";
+          window.location.replace(target);
+        });
+      } else {
+        access = await accessFresh;
+        if (!active) return;
+        // HOTFIX: without a hint we MUST run the full access gate and a real
+        // team lookup. The previous stub (ownerId "") sent team members into
+        // their own empty workspace and skipped the signed-out/admin checks.
+        if (access.state === "signed-out") {
+          const next = safeNextPath(`${window.location.pathname}${window.location.search}`);
+          routerRef.current.replace(next ? `/auth/login?next=${encodeURIComponent(next)}` : "/auth/login");
+          return;
+        }
+        if (access.state === "email-unverified") {
+          routerRef.current.replace("/auth/login?verify=1");
+          return;
+        }
+        if (access.state === "pending-approval") {
+          routerRef.current.replace("/auth/pending");
+          return;
+        }
+        if (access.state !== "access-granted" || !access.userId) {
+          routerRef.current.replace("/auth/login");
+          return;
+        }
+        if (access.isAdmin && !isDemoPrincipal(sessionUser)) {
+          routerRef.current.replace("/admin");
+          return;
+        }
+        const early = await membershipFresh;
+        const fresh = early && early.userId === access.userId ? early : await resolveWorkspaceMembership(access.userId);
+        if (!active) return;
+        if (!fresh || fresh.userId !== access.userId || !fresh.ownerId) {
+          setBootstrapError("Couldn't confirm which office you belong to. Check your connection and tap Retry.");
+          return;
+        }
+        resolvedMembership = fresh;
+        writeAccessHint(access.userId, access, fresh);
+      }
       if (!active) {
         return;
       }
-
-      if (access.state === "signed-out") {
-        // From the G.O.A.T. home-screen app: come back to it after login (iOS standalone keeps its own session).
-        const next = safeNextPath(`${window.location.pathname}${window.location.search}`);
-        routerRef.current.replace(next ? `/auth/login?next=${encodeURIComponent(next)}` : "/auth/login");
-        return;
-      }
-
-      if (access.state === "email-unverified") {
-        routerRef.current.replace("/auth/login?verify=1");
-        return;
-      }
-
-      if (access.state === "pending-approval") {
-        routerRef.current.replace("/auth/pending");
-        return;
-      }
-
-      if (access.state !== "access-granted" || !access.userId) {
-        routerRef.current.replace("/auth/login");
-        return;
-      }
-
-      if (access.isAdmin) {
-        routerRef.current.replace("/admin");
-        return;
-      }
-
       if (access.planTier) {
         setPlanTier(access.planTier);
       }
-
-      // Team members work INSIDE their owner's workspace, not their own. Resolve
-      // membership first so we point localStorage + cloud at the owner's data.
-      const early = await membershipEarly;
-      const resolvedMembership =
-        early && early.userId === access.userId ? early : await resolveWorkspaceMembership(access.userId);
-      if (!active) return;
-
       // A member the owner has deactivated may no longer use the app. Sign
       // them out and bounce to a notice — never mount their owner's data.
       if (resolvedMembership.isMember && resolvedMembership.disabled) {
@@ -185,9 +258,25 @@ export default function PortalLayout({
         return;
       }
 
+      if (isDemoPrincipal(sessionUser) && sessionUser) {
+        resolvedMembership = {
+          userId: sessionUser.id,
+          isMember: false,
+          ownerId: sessionUser.id,
+          permissions: {},
+          label: "",
+          officeAdmin: false,
+          disabled: false,
+        };
+        installDemoOutboundGuard();
+      }
+
       setMembership(resolvedMembership);
 
-      const workspaceId = buildWorkspaceIdForUser(resolvedMembership.ownerId);
+      const workspaceId = buildWorkspaceIdForUser(
+        isDemoPrincipal(sessionUser) && sessionUser ? sessionUser.id : resolvedMembership.ownerId,
+        sessionUser,
+      );
 
       // CRITICAL: Before doing ANYTHING else, make sure localStorage belongs
       // to THIS user. If the previous workspace pointer doesn't match (or is
@@ -195,6 +284,7 @@ export default function PortalLayout({
       // every casemate.* key. This prevents one account's data from being
       // shown to — or, worse, synced up to the cloud under — another account.
       ensureWorkspaceForUser(workspaceId);
+      if (isDemoPrincipal(sessionUser)) await adoptDemoGeneration(workspaceId);
 
       // Notes and appointments are cached in IndexedDB (localStorage is too small
       // for big offices). Load them, migrating the old localStorage copy once,
@@ -213,8 +303,7 @@ export default function PortalLayout({
       // Install interceptor paused so bootstrap writes don't trigger syncs
       pauseSync();
       installStorageSyncInterceptor();
-      let savedFlashTimer: ReturnType<typeof setTimeout> | null = null;
-      onSyncStatusChange((status, detail) => {
+      unsubscribeSync = onSyncStatusChange((status, detail) => {
         if (!active) return;
         setSyncStatus(status);
         if (status === "error") {
@@ -227,26 +316,10 @@ export default function PortalLayout({
           // Reset the dismiss flag on EVERY new error so a fresh failure
           // re-shows the pill even if the user dismissed the previous one.
           setErrorPillDismissed(false);
-          setShowSavedFlash(false);
-          if (savedFlashTimer) {
-            clearTimeout(savedFlashTimer);
-            savedFlashTimer = null;
-          }
         } else if (status === "synced") {
-          // Clear any stale error message once we get a clean push through,
-          // and flash the green confirmation for 2.5s. A rapid burst of
-          // successful syncs re-arms the timer so the flash stays on screen
-          // until the burst quiets down — this avoids a flickery toast when
-          // several saves fire in quick succession (common during SOAP edits).
+          // A clean push clears a sticky failure. Saving and Saved themselves
+          // show on the circular G.O.A.T. button, not on a second pill.
           setSyncErrorMessage(null);
-          setShowSavedFlash(true);
-          if (savedFlashTimer) {
-            clearTimeout(savedFlashTimer);
-          }
-          savedFlashTimer = setTimeout(() => {
-            if (active) setShowSavedFlash(false);
-            savedFlashTimer = null;
-          }, 2500);
         }
       });
 
@@ -256,26 +329,68 @@ export default function PortalLayout({
       // hard error screen instead. Mounting on stale/empty localStorage is
       // exactly how the 2026-04-08 data loss happened.
       try {
-        // Hard deadline: never sit on "Checking account access…" forever.
-        // Past 45s show the locked error screen with Retry instead.
-        let deadline: ReturnType<typeof setTimeout> | null = null;
+        // No-progress watchdog: keep waiting while data keeps arriving.
+        // The line under the goat stays the same quiet sentence — no note
+        // counts — and the locked error screen with Retry appears only
+        // after 45s with NO progress at all.
+        const bp = await import("@/lib/boot-progress");
+        const offProgress = bp.onBootProgress((p) => {
+          if (!active) return;
+          setBootProgressText(
+            p.phase === "waiting-other-tab"
+              ? "Another tab is opening this office…"
+              : "Opening your office…",
+          );
+        });
         try {
-          await Promise.race([
+          await bp.withStallWatchdog(
             prepareCloudStateBeforeMount(),
-            new Promise<never>((_, reject) => {
-              deadline = setTimeout(
-                () => reject(new CloudBootstrapError("Loading your data from the cloud took too long. Check your connection and tap Retry.")),
-                45_000,
-              );
+            45_000,
+            () => new CloudBootstrapError("Loading your data from the cloud stopped making progress. Check your connection and tap Retry."),
+          );
+        } finally {
+          offProgress();
+        }
+        // Bring back this user's prefs (sorts, columns, the sidebar order…)
+        // from the cloud. A prefs failure must not lock the office the way a
+        // failed record pull does. The URL this tab actually opened on is
+        // window.location — usePathname() can be empty on the prerendered
+        // root, and that used to skip this wait and open Patient List.
+        // Opening at "/" waits for the order so the check-in screen stays
+        // up until we know which page is first. A fresh tab that opened
+        // exactly on /patients does the same (bookmark, Dock, restored
+        // tab). Every other route keeps going. The home page and the
+        // patients launch redirector both join this same sync, so a 10s
+        // timeout cannot decide from an empty snapshot while the first
+        // read is still writing the sidebar order.
+        const entryPath = window.location.pathname || pathname;
+        const entrySearch = window.location.search || "";
+        const freshLaunch = claimFreshLaunch(window.sessionStorage);
+        const patientsLaunch = freshLaunch && isExactPatientsListEntry(entryPath, entrySearch);
+        const prefs = import("@/lib/user-prefs-cloud")
+          .then((m) => m.syncUserPrefs())
+          .catch((err: unknown) => console.warn("[user-prefs] restore failed:", err));
+        // Role permissions are not in the main cloud pull. On the home
+        // route, read them before choosing a page so a hidden section is
+        // not opened and then bounced.
+        const roles =
+          entryPath === "/"
+            ? import("@/lib/role-settings-store")
+                .then((m) => m.fetchAccessFromCloud())
+                .catch((err: unknown) => console.warn("[roles] restore failed:", err))
+            : Promise.resolve(null);
+        if (entryPath === "/" || patientsLaunch) {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([
+            Promise.all([prefs, roles]).finally(() => {
+              if (timer) clearTimeout(timer);
+            }),
+            new Promise((resolve) => {
+              timer = setTimeout(resolve, 10_000);
             }),
           ]);
-        } finally {
-          if (deadline) clearTimeout(deadline);
         }
-        // Bring back this user's prefs (sorts, columns, chat…) from the cloud.
-        void import("@/lib/user-prefs-cloud").then((m) =>
-          m.syncUserPrefs().catch((err: unknown) => console.warn("[user-prefs] restore failed:", err)),
-        );
+        if (patientsLaunch && active) setHoldPatientsLaunch(true);
       } catch (error) {
         if (!active) return;
         const message =
@@ -311,6 +426,7 @@ export default function PortalLayout({
       }
 
       resumeSync();
+      console.info(`[boot] ready in ${Math.round(performance.now() - bootT0)}ms`);
 
       if (active) {
         setMounted(true);
@@ -411,6 +527,7 @@ export default function PortalLayout({
 
     return () => {
       active = false;
+      unsubscribeSync?.();
       window.removeEventListener("casemate:cloud-sync-blocked", onBlocked);
       window.removeEventListener("casemate:listener-leak-detected", onLeak);
       window.removeEventListener("error", onWindowError);
@@ -421,7 +538,16 @@ export default function PortalLayout({
     // Deps are intentionally `[]` — router is accessed through
     // routerRef.current so re-runs on router-object identity changes
     // (which shouldn't happen in Next.js anyway) don't stack listeners.
+    // The bootstrap reads window.location (not this render's pathname) to
+    // decide whether to wait for the sidebar order before leaving check-in.
   }, []);
+
+  // The launch hold is only for the page this tab opened on. Once we leave
+  // /patients (or the redirector decides Patient List is correct), a later
+  // click on Patient List in this tab stays there.
+  useEffect(() => {
+    if (holdPatientsLaunch && pathname && pathname !== "/patients") setHoldPatientsLaunch(false);
+  }, [holdPatientsLaunch, pathname]);
 
   // (Auto-retry-on-focus was removed. The feature caused an event-listener
   //  leak — every syncStatus change re-ran the effect and stacked more
@@ -470,7 +596,7 @@ export default function PortalLayout({
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="rounded-lg bg-red-500 px-4 py-2 font-semibold text-white hover:bg-red-400"
+              className="btn btn-danger"
             >
               Retry
             </button>
@@ -507,102 +633,57 @@ export default function PortalLayout({
   }
 
   if (!mounted) {
+    return <PortalBootScreen pathname={pathname} bootProgressText={bootProgressText} />;
+  }
+
+  // Fresh tab opened on Patient List. Stay on the check-in screen until the
+  // saved order says to leave. The patient list itself is not mounted, so it
+  // never flashes, and a later in-tab visit does not take this branch.
+  if (holdPatientsLaunch && pathname === "/patients") {
     return (
-      <div className="min-h-screen px-4 py-6 text-sm text-[var(--text-muted)] lg:px-8">
-        Checking account access...
-      </div>
+      <PlanTierProvider planTier={planTier}>
+        <WorkspaceAccessProvider membership={membership}>
+          <PortalBootScreen pathname={pathname} bootProgressText={bootProgressText} />
+          <PatientsLaunchRedirect onStay={releasePatientsLaunch} />
+        </WorkspaceAccessProvider>
+      </PlanTierProvider>
     );
   }
 
   return (
     <PlanTierProvider planTier={planTier}>
       <WorkspaceAccessProvider membership={membership}>
+      {pathname === "/" ? (
+        <>
+          {/* Stay on the check-in screen until the home page replaces "/"
+              with the first sidebar page. The shell never paints the wrong one. */}
+          <PortalBootScreen pathname={pathname} bootProgressText={bootProgressText} />
+          {children}
+        </>
+      ) : (
+      <>
       <RouteAccessGuard />
       <AppShell planTier={planTier}>
-        {/* Sync status indicator.
-            Priority: error > syncing > saved-flash. An "error" state is
-            sticky until a subsequent successful sync clears it — the
-            interceptor flips us back to "synced" on the next successful
-            push, which both drops the red pill and triggers the green
-            flash so the user has unambiguous confirmation. */}
-        <div className="pointer-events-none fixed bottom-3 right-3 z-50 flex flex-col items-end gap-2">
-          {unsyncedNotes > 0 && (
-            <div
-              className="pointer-events-auto max-w-sm rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-white shadow-lg"
-              data-testid="unsynced-notes"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span>
-                  {unsyncedNotes === 1 ? "1 note isn't" : `${unsyncedNotes} notes aren't`} synced to the cloud yet — retrying
-                </span>
-                <button
-                  className="rounded bg-white/20 px-2 py-0.5 text-[10px] font-semibold hover:bg-white/30"
-                  onClick={() => void confirmNotesInCloud()}
-                  type="button"
-                >
-                  Check now
-                </button>
-              </div>
-              <div className="mt-1 text-[10px] font-normal text-amber-50">
-                Saved on this computer. Keep this tab open until this goes away.
-              </div>
-            </div>
-          )}
-          {syncStatus === "error" && !errorPillDismissed && (
-            <div className="pointer-events-auto max-w-sm rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white shadow-lg">
-              <div className="flex items-center justify-between gap-2">
-                <span>
-                  Cloud sync failed
-                  {retryingSync ? " — trying again…" : ""}
-                </span>
-                <button
-                  className="ml-2 rounded text-white/70 hover:text-white"
-                  onClick={() => setErrorPillDismissed(true)}
-                  title="Dismiss (your changes are still saved locally and will sync next time you edit)"
-                  type="button"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="mt-1 text-[10px] font-normal text-red-100">
-                Your work is safe in this browser — it just hasn&apos;t made it to
-                the cloud yet. Click Retry to try again.
-              </div>
-              {syncErrorMessage && (
-                <div className="mt-1 max-h-24 overflow-hidden break-all font-mono text-[10px] font-normal text-red-100/90">
-                  {syncErrorMessage}
-                </div>
-              )}
-              <div className="mt-2 flex justify-end gap-1.5">
-                <button
-                  className="rounded bg-white/15 px-2 py-1 text-[10px] font-semibold hover:bg-white/25 disabled:opacity-50"
-                  disabled={retryingSync}
-                  onClick={async () => {
-                    setRetryingSync(true);
-                    try {
-                      await forceSyncNow();
-                    } finally {
-                      setRetryingSync(false);
-                    }
-                  }}
-                  type="button"
-                >
-                  {retryingSync ? "Retrying…" : "Retry now"}
-                </button>
-              </div>
-            </div>
-          )}
-          {syncStatus === "syncing" && (
-            <div className="pointer-events-auto rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">
-              Saving to cloud...
-            </div>
-          )}
-          {syncStatus === "synced" && showSavedFlash && (
-            <div className="pointer-events-auto rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">
-              Cloud Saved ✓
-            </div>
-          )}
-        </div>
+        {/* Problem-only save badge. Saving and Saved already show on the
+            circular G.O.A.T. button. This stays up for a queued or offline
+            sync, and for a real failure (error text + Retry) until a later
+            successful sync clears it. */}
+        <SaveBadge
+          errorDismissed={errorPillDismissed}
+          errorMessage={syncErrorMessage}
+          onDismissError={() => setErrorPillDismissed(true)}
+          onRetry={async () => {
+            setRetryingSync(true);
+            try {
+              await Promise.allSettled([forceSyncNow(), flushSaveQueue(), confirmNotesInCloud()]);
+            } finally {
+              setRetryingSync(false);
+            }
+          }}
+          retrying={retryingSync}
+          status={syncStatus}
+          unsyncedNotes={unsyncedNotes}
+        />
         {syncBlocked && (
           <div className="fixed inset-x-0 top-0 z-[60] bg-red-600 px-4 py-3 text-center text-sm font-semibold text-white shadow-lg">
             ⚠ Cloud sync blocked — this browser has less data than the cloud (
@@ -646,6 +727,7 @@ export default function PortalLayout({
             </button>
           </div>
         )}
+        <DemoToast />
         <GlobalTimerAlerts />
         <DraftRecoveryBanner />
         {/* Onboarding is the OWNER's one-time office setup. A team member
@@ -661,7 +743,49 @@ export default function PortalLayout({
         <GlobalRecordRealtime />
         {children}
       </AppShell>
+      </>
+      )}
       </WorkspaceAccessProvider>
     </PlanTierProvider>
   );
+}
+
+/** Same check-in screen the portal already shows while cloud data loads. */
+function PortalBootScreen({
+  pathname,
+  bootProgressText,
+}: {
+  pathname: string;
+  bootProgressText: string | null;
+}) {
+  return (
+    <div className="relative min-h-screen px-4 py-6 lg:px-8">
+      <div className="pointer-events-none opacity-40" aria-hidden="true">
+        <PortalLoadingSkeleton pathname={pathname} />
+      </div>
+      <div className="absolute inset-x-0 top-[18vh] flex justify-center">
+        <div className="rounded-3xl border border-[var(--line-soft,#e2e8f0)] bg-[var(--bg-panel,#fff)] px-10 shadow-xl backdrop-blur-sm">
+          <GoatCheckIn />
+          {bootProgressText ? (
+            <p className="pb-4 text-center text-sm text-[var(--text-muted,#64748b)]" aria-live="polite">
+              {bootProgressText}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Outline of the page that's about to appear while cloud data loads. */
+function PortalLoadingSkeleton({ pathname }: { pathname: string }) {
+  if (pathname.startsWith("/appointments") || pathname.startsWith("/schedule")) {
+    return <SkeletonSchedule />;
+  }
+  if (/^\/patients\/[^/]+/.test(pathname)) return <SkeletonCaseFile />;
+  if (pathname.startsWith("/patients")) return <SkeletonRows label="Loading patients…" rows={8} />;
+  if (pathname.startsWith("/encounters") || pathname.startsWith("/notes")) {
+    return <SkeletonNote label="Opening your office…" />;
+  }
+  return <SkeletonRows label="Loading your office…" rows={5} />;
 }

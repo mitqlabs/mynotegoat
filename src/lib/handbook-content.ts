@@ -70,6 +70,15 @@ export const handbookChapters: HandbookChapter[] = [
         why: "The app refuses to open when it can't confirm it has the current records, so an out-of-date copy on your screen can never overwrite good data in the cloud.",
       },
       {
+        heading: "While the app is opening",
+        steps: [
+          "The screen says \"Opening your office…\" and stays quiet. A big office can take a while the first time; after that, only what changed is downloaded. Let it finish.",
+          "If another NoteGoat tab is already opening, this tab says \"Another tab is opening this office…\" and waits. Only one tab downloads at a time, and the others reuse what it downloaded.",
+          "If nothing arrives for 45 seconds, the app locks with Retry. Retry picks up where it left off instead of starting over.",
+        ],
+        why: "Anything picked up from an earlier try is used only if the cloud still has that exact version, so the cloud is always the source of truth.",
+      },
+      {
         heading: "If something you typed seems to have vanished",
         steps: [
           "Reload the page once before anything else — most often the work is saved and the screen is stale.",
@@ -109,9 +118,12 @@ export const handbookChapters: HandbookChapter[] = [
       {
         heading: "Take in a new patient",
         steps: [
-          "Got a text with just a name and number? Patient List → New Patient. Only Last Name, First Name and Phone are required; DOB, Sex, Marital Status and the address are optional.",
-          "Know the case details already? Tap + Case in the same popup: Attorney, Attorney Phone, Date of Injury (the Case # builds itself from it). Otherwise skip it.",
-          "Already set their first visit? Fill Appt Date and Time in + Case. Saving books a New Patient visit on the Schedule (office hours and open times are checked first, and you'll see a message if the time doesn't work). Leave Appt Date blank and nothing is booked. While the patient's Initial Exam box is blank, it shows that visit's date everywhere (patient page, notes, reports, heads-ups, G.O.A.T.) and follows the visit if it's moved or canceled, so you don't type it twice. A date you type in the box always wins. On the patient's page, + Case has no Appt boxes; book later visits from the Schedule.",
+          "Got a text with just a name and number? Patient List → New Patient. Only Last Name, First Name and Phone are required; DOB, Sex, Marital Status and the address are optional. If that name is already in the office, a line under the name offers Fill in. It copies phone, DOB, sex, marital status, address, email, and the Non-PI tick into empty boxes only. It leaves attorney, date of injury, and notes alone, and it still creates a new record. Dismiss hides it. The red duplicate warning is separate: that one appears only when the name and the date of loss both match.",
+          "Know the case details already? Tap + Case. A popup opens: pick an Attorney (their phone fills in), enter the Date of Injury (the Case # fills in), and, if you want, an Initial Exam date and time. Every field can be left blank. Save keeps it with the new patient. Create Patient then books the visit. They stay in New Patient Intake until an attorney is set (Self counts) and an Initial Exam date is saved or a New Patient visit is booked. Attorney alone keeps them there. The exam date is saved as the Initial Exam.",
+          "If that exam time is taken or outside office hours, the popup says so and shows the open times nearby as buttons. Click one, then Save. Or tick \u201cBook anyway\u201d when Settings → Schedule allows overrides (it books exactly like the Schedule's override). Leave the exam date blank and nothing is booked. While the Initial Exam box is blank, it shows the first New Patient visit's date and follows that visit if it moves or is canceled. A date saved from + Case stays put. A chart already in New Patient Intake has its own + Case: Save writes the case info and books the visit. They move onto the Patient List only once an attorney is set (Self counts) and the exam is booked or an Initial Exam date is saved. On the patient's page, + Case still opens the case fields on the page.",
+          "MRI, X-ray and Specialist cards show the center or doctor's email in small text under the name (from Contacts, starred email first). Click the envelope to email or the copy icon to copy. No email in Contacts = no line.",
+          "Next to Patient Phone are two small icons: the chat bubble opens Text (pick a message to send), and the person-plus adds the patient to your Mac's Contacts (downloads a card with name, phone, birthday and address). Hover an icon to see what it does.",
+          "Need the attorney's email? On the patient's page, the Attorney Email box (next to Attorney Phone) shows the attorney's email from Contacts, starred (★) email first. If the attorney has more than one, pick another from the box. Click the envelope to open a new message to that address in your mail app (Outlook), or the copy icon (it turns into a check) and paste it anywhere. No email in Contacts shows “No email”; add one on the Contacts page. Picking a different email here only changes what you copy; it doesn't change the contact.",
           "Create Patient. Their page shows a gentle \"Case info missing\" note with a + Case button until there's an attorney or Date of Injury. It never blocks anything.",
           "Book the first visit from the Schedule: New Appointment → Existing (pick them) or New patient (Last, First and Phone required, DOB optional). With one provider and one location, those are filled in for you. While their Initial Exam box is blank it shows the first New Patient visit's date (in blue) and follows that visit if it's moved or canceled. Type a date in the box (e.g. 06/26/2026) and yours sticks: moving, rescheduling or canceling visits never changes it, and changing the box never moves or deletes a visit.",
           "Non-PI (cash) patients: tick Non-PI in the popup. They have no case info and never appear in Case Flow.",
@@ -119,6 +131,40 @@ export const handbookChapters: HandbookChapter[] = [
         why: "A new case always starts the same way, so the app sets it for you: Case Status Active, Lien/LOP Pending, and a \"Schedule Initial Visit\" item on their Case Flow. You change those on the patient's page as things move.",
         watchOut:
           "Tick Non-PI Patient only for cash/self-pay patients. It removes the attorney, injury date and case-number workflow, and those patients never appear in Case Flow.",
+      },
+      {
+        heading: "Compliance column — turn it on and use it",
+        steps: [
+          "Settings → Office tab → Case Status Categories → tick Compliance column. It is off by default.",
+          "Patient List now has a Compliance column right after Status, and a Compliance filter next to the Case Status filter.",
+          "Click a patient's Compliance pill to pick a value from the menu — it works like the Case Status pill and saves right away. The choices start as New Patient, Yes, No, DNS ATM and Non-Compliant.",
+          "Inside a patient's page, Compliance is a field next to Case Status, and shows as a Compliance pill in the top card once it is set.",
+          "A patient with nothing chosen shows a grey Not set pill, never a blank cell. To list those patients, pick Not set in the Compliance filter.",
+        ],
+        why: "Compliance tracks how well a patient is following the care plan, separate from Case Status. Turning the column off only hides it — nothing already entered is lost. Who can change a value follows the same rule as editing patients.",
+        watchOut:
+          "No Compliance column? It has not been switched on yet. An admin turns it on in Settings → Office → Case Status Categories. To rename the choices, change their colors or add your own, see Compliance Categories in Where things live in Settings.",
+      },
+      {
+        heading: "The office pill (offices with more than one location)",
+        steps: [
+          "Only offices with more than one location show it: a small grey pill beside the patient's name in Patient List.",
+          "Click the pill, pick the office — or No office set to clear it. It saves right away and shows Saving…, then Saved (or Failed if it did not go through).",
+          "The name area and the pill have fixed widths, so the pills line up in a column. A long name is cut off with … — hover it, or open the patient, to see the whole name.",
+        ],
+        why: "The pill is the patient's office. The office list at the top of Patient List filters by it, and a team member's Main location (Settings → Office → Team Members) decides which office they land on at sign-in.",
+        watchOut: "Someone with view-only access to Patient List sees the pill but cannot click it to change it.",
+      },
+      {
+        heading: "Case numbers and their format",
+        steps: [
+          "A new patient's Case # builds itself. By default it is the injury date + the first 2 letters of the last name + the first 2 of the first name — John Smith, injured 07/18/2026 → 071826SMJO.",
+          "An admin can change the pattern: Settings → Office tab → Office Settings → Office Information → Case number format. Type a pattern or tap tokens such as {MMDDYY}, {LAST2}, {FIRST2}, {YYYY} or the counter {N3}.",
+          "The line under the box shows an example (John Smith, injury 07/18/2026) as you type. Reset to default puts the original pattern back.",
+        ],
+        why: "The pattern in force is stamped on each patient when they are created, so changing the format only affects NEW patients. An existing case number, its files and its folder never change.",
+        watchOut:
+          "Only letters, numbers and - _ . # are allowed between tokens, because case numbers become file and folder names. While the pattern is invalid the box shows what is wrong and the last good pattern stays in use.",
       },
       {
         heading: "Attorney's phone fills itself",
@@ -151,6 +197,7 @@ export const handbookChapters: HandbookChapter[] = [
         steps: [
           "Schedule Initial Visit — checked off once Patient Info has an Initial Exam date: the date typed in the box, or else the earliest New Patient appointment in any status (booked, checked in or out), or a New Patient note. A canceled or no-showed one doesn't count.",
           "Lien / LOP — clears when the lien status moves on from the one the office marks as outstanding.",
+          "Lien / LOP Follow Up reads \u201cNot sent yet\u201d while the lien is Pending, Not Set, Not Sent or blank; \u201cRequested, waiting for received\u201d once it says Requested; \u201cSent, waiting for received\u201d for any other sent status. Received clears it.",
           "X-Ray — Needs Referral clears when a referral is added; the follow-up clears when the report is received.",
           "MRI / CT and Specialist — Needs Referral → Appt Not Scheduled → Report Not Received, each clearing when that date is filled in.",
         ],
@@ -161,7 +208,7 @@ export const handbookChapters: HandbookChapter[] = [
         heading: "Clear task (ignore) — not the same as Done",
         steps: [
           "A row that will never clear on its own (e.g. a Lien task that stays \"needed\"): click Clear task on the row, then OK.",
-          "It stops showing in Case Flow, the Case Flow counts, To-Do, Morning Rundown and /view todo, and it is not created again for that case.",
+          "It stops showing in Case Flow, the Case Flow counts, To-Do and /view todo, and it is not created again for that case.",
           "Nothing is deleted. Show cleared (N) lists every cleared item with who cleared it and when — Restore puts it back.",
           "To-Do has the same Clear task button for open to-dos.",
         ],
@@ -205,7 +252,18 @@ export const handbookChaptersOffice: HandbookChapter[] = [
           "Delete asks to confirm, and may ask for the delete password.",
         ],
         watchOut:
-          "Everyone can add a contact. Edit only shows for managers and admins, and Delete only if your role allows it — missing buttons are your role, not a fault.",
+          "Who can add, edit and delete contacts is set per role in Settings → Office tab → Roles & Permissions. By default everyone can add, Managers and Admins can also edit, and Delete follows the Deleting rules. Add Contact, Consolidate Attorneys, and opening a card by its name only show when your role allows them — missing buttons are your role, not a fault.",
+      },
+      {
+        heading: "Read the contact cards (the compact layout)",
+        steps: [
+          "Contacts shows one small card per contact, several across the page (more on a wide screen, one on a phone).",
+          "Top of each card: the avatar with initials, the name, a coloured Category pill, and the Sub-Category underneath.",
+          "Below that, only the lines the contact actually has: phone, fax, address, then each email. Empty lines and blank emails are skipped, so cards stay short.",
+          "The first email carries a Main tag when there are several (that one is used on referral requests); extra emails show their name and label.",
+          "Sort (Name or Category) and the Search box are above the cards, with a count such as \u201c24 contacts\u201d. Sorted by Category, the cards sit under a heading for each category with its count.",
+        ],
+        why: "The older table with Name / Category / Phone / Email columns was replaced by cards so more contacts fit on screen. Everything is still there — nothing was removed from a contact. Click the name to open and edit (when your role allows).",
       },
       {
         heading: "Consolidate Attorneys (tidy duplicate firm names)",
@@ -219,6 +277,53 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         ],
         watchOut:
           "This rewrites the attorney name on patient records. It does not merge or delete contact cards — delete leftover duplicate cards yourself.",
+      },
+    ],
+  },
+  {
+    id: "message-patients",
+    title: "Message patients (one text to many patients)",
+    summary: "Text a group of patients at once, such as \"we're closed Thursday\". Choose who gets it under Send to.",
+    audience: "admin",
+    tasks: [
+      {
+        heading: "Text many patients at once",
+        steps: [
+          "Settings → Text Reminders → Broadcast → Message patients.",
+          "Type the message (up to 640 characters).",
+          "Pick Send to: All active patients (the default) or Booked on a day. For Booked on a day, also pick Today, Tomorrow or a date.",
+          "Check the count under the message. Tap it to see exactly who will get the text.",
+          "Tap Send message, then confirm \"Text N patient(s)?\". Nothing goes out yet. A line under the button tells you to run Send Reminders Now on the office iPhone.",
+          "Your office iPhone sends it: tap Send now from this device (or run Send Reminders Now on the iPhone). If an iMac is set up, it also sends it by itself within about 10 minutes. The line under the button only mentions the iMac when one is set up.",
+        ],
+        why: "Everything is saved in your workspace, so every computer and team member sees the same list and Recent messages.",
+        watchOut: "Confirm shows the number of patients. If it's higher than you expected, open the list before you tap Send message.",
+      },
+      {
+        heading: "Who gets it: the Send to choices",
+        steps: [
+          "All active patients: every patient whose case status on the Patients list is Active. Discharged, Ready to Submit, Submitted, Dropped, Paid and any other status are NOT included.",
+          "Booked on a day: only patients with a visit on that day. You can limit it to a time window, and Skip canceled visits is on by default. Use this for \"we're closing early today\".",
+          "Coming later: All patients, and Patients seen in a time period.",
+        ],
+        why: "Closed Thursday with nobody booked? Use All active patients. Booked on a day would text no one, because nobody is on Thursday's schedule.",
+        watchOut: "A patient with no case status counts as Active, the same as a brand-new case.",
+      },
+      {
+        heading: "Who is always left out",
+        steps: [
+          "Patients with no valid phone number.",
+          "Patients marked \"no text reminders\", or who replied STOP. A reply of START turns it back on.",
+          "Repeat phone numbers: if two patients share one phone (a parent and child), that phone gets one text.",
+          "Quiet hours still apply. If you send it at night, it goes out after quiet hours end (8:00 AM by default).",
+        ],
+        why: "One text per patient and per phone, and never to anyone who asked to stop.",
+      },
+      {
+        heading: "Ask G.O.A.T.",
+        steps: [
+          "Ask \"who does a text to everyone go to\" or \"how do I text all active patients\". G.O.A.T. answers from this chapter and links here. It never sends a text itself.",
+        ],
       },
     ],
   },
@@ -269,6 +374,107 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "If a message posts to the wrong place",
         why: "Typing a patient's name in the case box without picking from the list posts to the General feed. A reply always lands in the thread it answers, whatever the case box says.",
+      },
+    ],
+  },
+  {
+    id: "text-reminders",
+    title: "Text reminders (8 AM automation)",
+    summary: "Set up automatic appointment texts from the office iPhone, and what to do when they didn't send.",
+    audience: "admin",
+    tasks: [
+      {
+        heading: "How the Text Reminders page is laid out",
+        steps: [
+          "Settings → Text Reminders has three sections: Set up, Auto Texts and Broadcast. Tap a heading to open or close it. NoteGoat remembers what you opened or closed for the whole office, on every computer.",
+          "Set up is made of cards. Each card has a title, a tag (Done, To do or Optional) and one line that says where things stand. Tap a card to open it: Automatic reminders (3 steps), Sending devices, How it works, Opt-out (reply STOP), iPhone setup, iMac setup. The whole Set up section starts closed once the 8 AM automation box is ticked and a device has run, and open until then.",
+          "Sending devices: one row per phone or computer. Each row says Main sender or Backup sender, shows iPhone or iMac, \u201cLast checked 10/28/26 10:41 AM\u201d and its last run. + Add iPhone and + Add Mac are at the top of the card. Make main sender, Get new setup code and Remove are on the right of each row. Remove asks first.",
+          "A new setup code shows once, right after you add a sender or click Get new setup code. Click Copy setup code, paste it where the setup asks, then click Hide setup code. Do not share it: anyone who has it can send texts as your office.",
+          "Auto Texts (open by default): one row for Reminders and one for Birthday. Each row has an On/Off switch and a menu to pick the message it sends. Under the rows: Test mode, Send time and Run days.",
+          "Broadcast (open by default): send one text to many patients (Message patients), plus Recent sends. Your saved text messages live in Settings → Templates → SMS / Text Templates.",
+          "Texts (open by default): Message patients (a one-off text) and Recent sends.",
+          "Recent messages (under Message patients) and Recent sends can each be closed on their own.",
+          "The red warning \u201cYour 8 AM automation may not be set up\u201d always stays at the top, even when Set up is closed.",
+          "Every date on the page is mm/dd/yy, for example 10/29/26.",
+        ],
+        why: "A device's last run shows the day's running total, for example \u201c10/29/26: 14 sent\u201d. It counts everything logged for that day, so it matches Recent sends. A later check with nothing left to send doesn't erase it.",
+      },
+      {
+        heading: "Write your text messages and attach them to Auto Texts",
+        steps: [
+          "Go to Settings → Templates → SMS / Text Templates. This is your library of saved text messages, and the only place to add, edit or delete them. In Auto Texts, the “Edit messages in SMS / Text Templates” link takes you there.",
+          "Click + New message. Give it a name, then type the message. To put in a patient's name or the visit date, tap a word button (First name, Last name, Full name, Appointment date, Appointment time, Today's date, Office name, Doctor name, Office phone). It is typed in as {first name}, {appt date} and so on, and swapped for the real one when the text goes out. The Example line shows what a patient will get.",
+          "Click a message to open it and change it. Click Delete message to remove it (it asks first). You can't delete a message while an Auto Text uses it. Pick a different message in Auto Texts first.",
+          "Then go to Auto Texts. Reminders and Birthday each have an On/Off switch and a menu. Pick the message each one sends, and turn it on. The Example line under the menu shows exactly what goes out.",
+          "Reminders sends the message you pick to patients with a visit coming up. Birthday sends the message you pick on the patient's birthday. Birthday has no visit, so don't pick a message that uses the appointment date or time (NoteGoat warns you in red).",
+          "Your old texts were kept. The reminder wording you already used is saved as a message and attached to Reminders. If you had a Happy Birthday message it is attached to Birthday. Birthday stays Off until you turn it on.",
+          "Messages and what is attached are saved to your office's cloud, so every computer shows the same thing. Pressing Delete on one computer removes it on all of them.",
+        ],
+        why: "Writing a message once and attaching it means the text patients get is exactly what you see in the Example line.",
+      },
+      {
+        heading: "Text patients happy birthday (Birthday texts)",
+        steps: [
+          "Go to Settings → Text Reminders → Auto Texts → Birthday.",
+          "Turn the switch On. It starts off.",
+          "In the menu pick the message it sends (for example Happy Birthday). To write a new one, use Edit messages in SMS / Text Templates. Type {first name} where the patient's first name goes. The Example line shows exactly what a patient will get.",
+          "That's all. The birthday texts go out with the daily reminders (the same 8 AM run, the same iPhone shortcut or iMac). There is nothing to change on the iPhone.",
+          "Who gets one: every patient with a phone number, whatever their case status, whose birthday is today (their date of birth in the Demographics, in the office time zone). A Feb 29 birthday is texted on Feb 28 in years with no Feb 29.",
+          "Who never gets one: patients marked \u201cno text reminders\u201d, patients who replied STOP, patients who are not Active, and patients with no phone number or no first name. The opt-out line (Reply STOP\u2026) is added the same way as on reminders when it is on.",
+          "Each patient gets at most one birthday text a year. NoteGoat writes that down in the cloud, so it holds even if you use two phones or tap Send Reminders Now more than once.",
+          "If the phone fetches the text and does not send it, the same day is tried again the next time Send Reminders runs. A birthday from an earlier day is not texted late. It shows as \u201cNot sent (too late)\u201d. Nothing goes out during quiet hours.",
+          "Recent birthday texts (a fold under Auto Texts) shows the date, the last 4 digits of the phone and the result. Test mode applies: nothing is texted and it shows \u201cTest mode (not texted)\u201d.",
+        ],
+        why: "Birthday texts are a separate switch from the appointment reminders, so you can use one without the other. The message and the on/off switch are saved to your office's cloud settings, so every computer shows the same thing.",
+        watchOut: "A \u201cHanded to the phone, no answer yet\u201d result means the phone has the text right now. If it never answers, the same day is tried again. After that day it is \u201cNot sent (too late)\u201d and is not sent.",
+      },
+      {
+        heading: "Set up the iMac to send reminders (optional)",
+        steps: [
+          "The iPhone can send everything alone. The iMac is only a backup that sends within about 10 minutes. Skip this if you don't want it.",
+          "On the iMac, open Messages and sign in to the office Apple ID.",
+          "In NoteGoat: Settings → Text Reminders → Set up → Sending devices → + Add Mac. Click Copy setup code.",
+          "Open the iMac setup card. Click Download iMac setup. In Downloads, right-click NoteGoat-Reminders-Setup.command, choose Open, then click Open.",
+          "If macOS says \u201cNot Opened\u201d (newer macOS, such as Sequoia): click Done. Do NOT click Move to Trash. Open System Settings → Privacy & Security, scroll down to the message about NoteGoat-Reminders-Setup.command, and click Open Anyway. Type your Mac password if asked, then click Open Anyway again.",
+          "Terminal opens. Paste the setup code, then type your Mac password (nothing shows as you type; that is normal). When it says All set, press Return.",
+          "The first time it sends, macOS asks to let it control Messages. Click OK. The Sending devices card then shows the iMac with a Last checked time.",
+        ],
+        why: "The setup file isn't from the App Store, so newer macOS blocks it the first time. Open Anyway tells your Mac you trust it. You only do this once. The card's Advanced section has the same setup typed by hand in Terminal.",
+      },
+      {
+        heading: "Set up automatic reminders on the iPhone (3 steps)",
+        steps: [
+          "Step 1 (one time): On the office device, open Settings → Text Reminders and use Add to this Device, then Add Shortcut. On a Mac, Shortcuts opens the same way, and you can download NoteGoat.shortcut if it does not. The code is already filled in. One shortcut, named NoteGoat, sends 5 texts at a time and also catches STOP.",
+          "Step 2 (REQUIRED): set NoteGoat to run by itself. The shortcut does NOT run by itself until you do the steps below.",
+          "Step 3: check Send reminders automatically in Text Reminders. Test mode starts checked, so nothing is texted yet. Once Recent sends looks right, uncheck Test mode. Tomorrow morning check Recent sends to see it ran.",
+          "On the Text Reminders page, check \u201cI made the 8:00 AM, 8:30 AM and 9:00 AM automations\u201d when Step 2 is done. The card turns green.",
+        ],
+        why: "Installing the shortcut only gives the phone something to run. Nothing tells it when. The automation is the alarm clock, and only you can create it on the phone.",
+      },
+      {
+        heading: "Step 2: set the iPhone to run at 8:00, 8:30 and 9:00",
+        steps: [
+          "Open the Shortcuts app. Tap Automation. Tap +. Tap Time of Day.",
+          "Set 8:00 AM. Tap Every Day. Tap Run Immediately. Turn Notify When Run off. Tap Next. Tap NoteGoat. Tap Done.",
+          "Do that again for 8:30 AM, then again for 9:00 AM. Those later runs send anything 8:00 missed, and do nothing if everything already went out.",
+          "Tap +. Tap Message. Tap Message Contains. Type STOP. Tap Done. Tap Run Immediately. Turn Notify When Run off. Tap Next. Tap NoteGoat. If you see Shortcut Input, tap it. Tap Done.",
+          "Come back to Text Reminders and tap Test. It says STOP catcher working when the phone has reported in. That test does not change a patient.",
+          "Leave the iPhone on, charged, and unlocked. If it was locked at 8:00, the 8:30 and 9:00 runs send what is still waiting.",
+        ],
+        why: "Running every day is fine. NoteGoat only sends when reminders are due and never texts anyone twice.",
+        watchOut: "Keep these three. Delete any other Time of Day automation that runs Send Reminders. If your office changed the send hour in Text Reminders, make the three times match that hour, 30 minutes later, and 60 minutes later.",
+      },
+      {
+        heading: "Reminders didn't send",
+        steps: [
+          "Open the iPhone's Shortcuts → Automation tab. You should see three: 8:00 AM, 8:30 AM and 9:00 AM, each running Send Reminders. If the list is empty, Step 2 was never done. Do it now.",
+          "If an automation is there, tap it and check it's Every Day, Run Immediately is on (not Ask Before Running), Notify When Run is off, and it runs Send Reminders.",
+          "In NoteGoat, open Text Reminders and read Recent sends. Reminders are skipped for patients who opted out, have no phone number, or aren't on a Scheduled visit.",
+          "Check that Send reminders automatically is checked, Test mode is unchecked (while it is checked, nothing is texted), and today is one of the Run days.",
+          "A red line at the top of NoteGoat means this morning's texts were fetched but not sent, or the 8:00 run never happened. On the office iPhone, tap Send Reminders Now.",
+          "Need them out right now? Use Send Reminders Now, or run the Send Reminders shortcut by hand.",
+        ],
+        why: "If the phone hasn't sent by itself for two expected days, Text Reminders shows a red warning: \u201cYour 8 AM automation may not be set up — see Step 2\u201d. The same morning, a red line at the top says to tap Send Reminders Now.",
       },
     ],
   },
@@ -330,9 +536,12 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         steps: [
           "Marketing → pick Everyone, Attorneys or Insurance agents at the top.",
           "Find the firm or agent.",
-          "Pick the date and the type — Visit, Lunch Drop-off, Call, Email, Gift, Meeting, Event, Other.",
-          "Add notes and save.",
+          "Press Log Activity. The row has three boxes: Date, Our Rep and Type of Contact.",
+          "Our Rep is already set to Dr. Mike — open the box to pick someone else (or None).",
+          "Type of Contact starts empty. Open the box and pick one — Visit, Lunch Drop-off, Call, Email, Gift, Meeting, Event, Other. You can't save until you pick one.",
+          "Add notes (the wide box underneath) and save.",
         ],
+        why: "Our Rep and Type of Contact are lists you manage in Settings → Marketing, so everyone spells names the same way.",
         watchOut:
           "Only Attorney and Insurance Agent contacts appear here. Case counts match on the attorney name written on each patient, so insurance agents show none — that's expected, not a gap. A firm spelled two ways shows split numbers; that's what Consolidate Attorneys fixes.",
       },
@@ -340,7 +549,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
   },
   {
     id: "dashboard",
-    title: "Dashboard",
+    title: "Statistics",
     summary: "The weekly picture, review follow-up, and who did what.",
     audience: "manager",
     feature: "statistics",
@@ -348,7 +557,7 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "Weekly Summary",
         steps: [
-          "Dashboard → Weekly Summary.",
+          "Statistics → Weekly Summary.",
           "‹ and › step through weeks; Back to this week resets.",
           "Visits: checked out, checked in (note still open), canceled, no show, still scheduled.",
         ],
@@ -358,9 +567,10 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "Activity Log — who did what",
         steps: [
-          "Dashboard → Activity Log.",
+          "Statistics → Activity Log.",
           "Category pills narrow it (Billing only, Notes only…). Period defaults to the last 7 days.",
           "Person and the search box narrow it further; the search matches a patient name or the action text.",
+          "Person lists your whole team — including someone with no activity yet — plus anyone who appears in the log. Pick one to see what they did AND what was done to them (for example \u201cchanged main location\u201d on their own login).",
         ],
         why: "Only milestones are recorded — created, closed, reopened, deleted — never keystrokes. Deletions carry a copy of what was removed, which is often the fastest way to put something back.",
         watchOut:
@@ -369,13 +579,25 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "See which patients went to a referral place",
         steps: [
-          "Dashboard → Statistics → Referral Totals.",
+          "Statistics → Statistics → Referral Totals.",
           "Click the facility or specialist name — the row looks like plain text, but it opens.",
           "You get every patient sent there: name (click to open them), date sent, XR and MR counts, case status.",
           "Tick a patient off as you work the list — the row turns green.",
         ],
         watchOut:
           "Those ticks live in your browser only. Nobody else sees them, and clearing browser data loses them. The list follows the filters at the top of Statistics.",
+      },
+      {
+        heading: "Patients by Location — where your patients live",
+        steps: [
+          "Statistics → Patients by Location.",
+          "City lists every city (grouped by city and state, spelling and capitals cleaned up); ZIP lists every ZIP code as \u201cZIP · City\u201d. Most patients first, with a bar, the count and the percent.",
+          "The status menu narrows it to Active, Discharged or any other case status. The Total line shows how many patients are counted.",
+          "Click any row to list those patients; click a name to open them.",
+          "\u201cNo address\u201d (always last) is everyone missing a city or ZIP. Click it to get the list and open each patient to fill in their address.",
+        ],
+        why: "Your City / ZIP choice is saved to your account, so it follows you to any computer you sign in on.",
+        watchOut: "It reads the patient's home address. A street with no city (\u201c123 Main St\u201d) counts as No address.",
       },
     ],
   },
@@ -390,14 +612,14 @@ export const handbookChaptersOffice: HandbookChapter[] = [
         steps: [
           "Owner — the account the office was created under. Same as Admin, plus the only one who can make or unmake Admins.",
           "Admin — everything: every page, Settings, Team, all deletes.",
-          "Manager — runs the office. Pages and deletes come from Settings → Admin Access.",
+          "Manager — runs the office. Pages, actions and deletes come from Settings → Roles & Permissions.",
           "Staff — the day-to-day pages; no deletes by default.",
         ],
       },
       {
         heading: "Add a team member",
         steps: [
-          "Settings → Team Members → + Team Member.",
+          "Settings → Office tab → Team Members → + Team Member.",
           "Email, a temporary password (6+ characters), first and last name, their job title.",
           "Access role: Admin, Manager or Staff.",
           "Create Member.",
@@ -406,28 +628,54 @@ export const handbookChaptersOffice: HandbookChapter[] = [
           "Turning someone's Active toggle off blocks their login and shows \u201cOFF · no login\u201d — use that when someone leaves, rather than deleting them, so the Activity Log still makes sense.",
       },
       {
-        heading: "Change what Managers and Staff can reach",
+        heading: "Set a team member's main location",
         steps: [
-          "Settings → Admin Access.",
-          "Pages: per role, No access / View only / Full.",
-          "Who can delete what: per role and per kind — Not allowed / With password / Allowed.",
-          "What Managers can see: which Dashboard sections.",
+          "Settings → Office tab → Team Members.",
+          "Find the person's card. In Main location, pick the office they should open on at sign-in — or All locations.",
+          "It saves as soon as you pick it. Owners and Admins can set it for any member, including other Admins.",
         ],
-        why: "Statistics is admin-only and can't be switched on for a manager — that's the business end of the office. Settings is admins only, always.",
+        why: "Main location is only their starting view; they can still switch offices from Patient List. The setting only appears for offices with more than one location. The change is recorded in the Activity Log (\u201cchanged main location\u201d).",
       },
       {
-        heading: "The delete password",
+        heading: "Change what Managers and Staff can reach",
         steps: [
-          "Settings → Admin Access → Delete password → type it twice → Save password.",
-          "Anything set to \u201cWith password\u201d now asks for it before deleting.",
-          "\u201cAsk Admins for it too\u201d makes admins type it as well.",
+          "Settings → Office tab → Roles & Permissions (or search \u201croles\u201d or \u201cpermissions\u201d).",
+          "One grid: rows are things people do, columns are Staff, Manager and Admin.",
+          "Pages: per role, No access / View only / Full.",
+          "Actions inside a page: for example Contacts → add contacts, edit contacts (Managers can edit contacts by default; Staff can add but not edit).",
+          "Deleting: per role and per kind — Not allowed / With password / Allowed.",
+          "Statistics sections a Manager sees.",
+          "Each person follows their role. If someone has been given something different on their own card in Team Members, they show a \u201cCustom access\u201d tag and a Reset to role defaults button.",
         ],
+        why: "Only the owner can change the grid, unless the owner switches on \u201cLet Admins change roles\u201d. Statistics is admin-only and can't be switched on for a manager — that's the business end of the office. Settings is admins only, always.",
+      },
+      {
+        heading: "Who can change Roles & Permissions, and what \u201cNot saved\u201d means",
+        steps: [
+          "The office owner can always change the grid.",
+          "Admins can change it only if the owner has switched on \u201cLet Admins change roles\u201d (off by default). Only the owner can flip that switch.",
+          "Managers and Staff see the grid read-only, and Admins do too while the switch is off — the page says \u201cView only\u201d.",
+          "Reset to defaults puts every role back to the standard grid; it leaves the delete password and the Admins switch alone.",
+        ],
+        why: "The grid is saved in the cloud and read back. If the database refuses a save (someone who isn't allowed tried), the page says \u201cNot saved\u201d instead of looking saved. Other people's open sessions pick up a change when they reload.",
         watchOut:
-          "If something is set to \u201cWith password\u201d and no password exists, that delete is blocked outright. Set the password first. (The older Office delete password still works as an answer to the same prompt.)",
+          "Defaults: Staff can add contacts but not edit them; Managers can add and edit contacts. The grid controls what the app shows and allows; it is not a database lock on patient data, so it stops mistakes rather than a determined technical user.",
+      },
+      {
+        heading: "Set or change the delete password (one password, two places to set it)",
+        steps: [
+          "Settings → Office tab → Roles & Permissions → Delete password. Or Settings → Office tab → Office Settings → Patient-Delete Password. Both show the same single password.",
+          "First time: type it in Choose password and Repeat it, then Save password. To change it, also type the Current delete password.",
+          "Anything set to \u201cWith password\u201d now asks for it before deleting — including the Delete window on a patient's page.",
+          "\u201cAsk Admins for it too\u201d (Roles & Permissions) makes admins type it as well.",
+        ],
+        why: "The password is stored in the cloud (as a salted hash, never the plain text), so it is the same on every computer and for every team member. \u201cSaved\u201d only appears after the cloud copy has been read back and matches.",
+        watchOut:
+          "If something is set to \u201cWith password\u201d and no password exists, that delete is blocked outright — and the patient Delete window tells you to set one under Settings → Office. Only Owners and Admins see the password box.",
       },
       {
         heading: "What these checks are and aren't",
-        why: "Role checks run in the browser. They stop mistakes and casual snooping — not someone technical who really wants in. The one rule enforced in the database is that managers can't read admin activity in the log. If you need true separation, say so and it can be pushed down to the database.",
+        why: "Role checks run in the browser. They stop mistakes and casual snooping — not someone technical who really wants in. Two rules are enforced in the database: managers can't read admin activity in the log, and only the owner (or Admins, if the owner allowed it) can change the role grid itself. If you need true separation, say so and it can be pushed down to the database.",
       },
     ],
   },
@@ -449,25 +697,48 @@ export const handbookChaptersOffice: HandbookChapter[] = [
       {
         heading: "The map",
         steps: [
-          "Office Settings — office details and logo, office hours, rooms, appointment statuses, case statuses and Lien/LOP wording, Case Flow rules, which patient-page sections start open.",
+          "Office Settings (Office tab) — office details and logo, the Case number format, the Patient-Delete Password, office hours, rooms, appointment statuses, case statuses and Lien/LOP wording, the Compliance column and Compliance Categories, Case Flow rules, which patient-page sections start open.",
           "Macros — SOAP macros, billing macros (treatments, diagnosis codes, bundles), package builder.",
           "Templates — Contact Categories, document/letter templates, report templates, SMS and email wording, and Forms (patient questionnaires).",
           "Features — switch off anything the office doesn't use; it disappears from the menu everywhere.",
-          "Team Members — logins, roles, doctor flag, per-person patient-page sections.",
-          "Admin Access — roles, what managers see, who can delete what, the delete password.",
-          "Marketing — the visit types and which case statuses count as active.",
+          "Team Members (Office tab) — logins, roles, doctor flag, Main location, per-person patient-page sections.",
+          "Roles & Permissions (Office tab, right after Team Members) — what Staff, Managers and Admins can open, add, edit and delete, which Statistics sections Managers see, the delete password.",
+          "Marketing — the Our Reps list (who does marketing visits), the visit types, and which case statuses count as active.",
           "Admin — Diagnostics, Backup & Restore, Data Recovery, Security Baseline, Subscription.",
         ],
         watchOut:
-          "Two that catch everyone: Contact Categories is under Templates (not Contacts), and the section for switching features off is called Features on screen. \u201cAdmin Access\u201d and the \u201cAdmin\u201d group are different things.",
+          "Two that catch everyone: Contact Categories is under Templates (not Contacts), and the section for switching features off is called Features on screen. \u201cRoles & Permissions\u201d and the \u201cAdmin\u201d group are different things.",
+      },
+      {
+        heading: "Marketing: Our Reps list — add, rename, remove",
+        steps: [
+          "Settings → Office tab → Marketing (click to open). Our Reps is at the top.",
+          "Add: type the name (for example Dr. Rivera) and press Add Rep.",
+          "Rename: click the name, type, press Enter. Order: use the up and down arrows. Remove: press Delete and confirm.",
+        ],
+        why: "This list is the choices in the Our Rep box when you log marketing activity. It starts with Dr. Mike, who is picked for you on every new entry. It is saved in the cloud, so every computer shows the same list.",
+        watchOut: "Renaming or deleting a rep never changes entries you already logged — they keep the name they were saved with, and still show it when you edit them.",
+      },
+      {
+        heading: "Compliance Categories — rename, recolor, add",
+        steps: [
+          "Settings → Office tab → Case Status Categories → Compliance Categories (below the Case Status list). The Compliance column switch is just above, in the same section.",
+          "Add: type the name in New Compliance Option, pick a Color, press Add Option.",
+          "Rename: click the name, type, press Enter (Esc backs out). Color: use the color box on its row.",
+          "Show: untick it to stop offering that option in the pill menu and the filter. Remove: asks first, and says how many patients have it.",
+          "Reset Compliance Defaults puts back New Patient, Yes, No, DNS ATM and Non-Compliant and removes the ones you added.",
+        ],
+        why: "Each option keeps a hidden id, so renaming never orphans what is already saved on patients. A hidden option still displays on patients that already have it. Removing an option makes those patients show Not set — which is why it asks first.",
+        watchOut: "These are the choices on the Compliance pill. They have nothing to do with Case Status Categories above them, which are a separate list.",
       },
       {
         heading: "Save to Cloud",
         steps: [
           "Most settings save as you change them.",
-          "Save to Cloud at the top confirms it: Saving… → Saved to Cloud!",
+          "Save to Cloud at the top sends any change that hasn't reached the cloud yet. The button shows Saving… and then a green Saved ✓.",
+          "If another computer changed the same setting more recently, the newer one is kept and the button tells you so. It never overwrites newer cloud data.",
         ],
-        watchOut: "If it says Save Failed - Try Again, your change is only on that computer. Press it again before walking away.",
+        watchOut: "If the button turns red and says Retry, your change is only on that computer. Press it again before walking away.",
       },
     ],
   },
@@ -493,6 +764,19 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         why: "Which panels start open, and which are hidden from a given person, is set by an admin in Settings — so two people can see the same patient differently.",
       },
       {
+        heading: "Add a second date of injury (same case)",
+        steps: [
+          "Open the patient's page. In the top card, next to Date Of Injury, tap + Add date of injury.",
+          "Type the date (MM/DD/YY) and tap Add. It saves by itself and appears under the main date as \"Also injured 11/02/26\".",
+          "To take one off, tap the × on it.",
+          "The extra dates also show in Quick Glance under DOI, on the Encounters side-rail, and in G.O.A.T. (\"dates\", timeline).",
+          "In Reports and Letters, use the tokens {{ADDITIONAL_DATES_OF_INJURY}} (only the extra dates) or {{ALL_DATES_OF_INJURY}} (the main date plus the extras, e.g. \"01/12/26, 02/03/26\").",
+          "MRI requests, X-ray requests, specialist referrals and letters that already print \"Date of Injury: …\" automatically print \"Dates of Injury: 01/12/26, 02/03/26\" once a patient has more than one. With only one date nothing changes.",
+        ],
+        why: "Use this when a patient is hurt again while you are still treating the same case. It stays ONE patient and ONE case: the main Date Of Injury, the Case #, files and billing do not change, and it is shared with everyone in the office.",
+        watchOut: "The main Date Of Injury is still the one that builds the Case #. Merging two patient records keeps every date of injury from both.",
+      },
+      {
         heading: "Book an appointment for this patient",
         steps: [
           "Open Appointments / Encounters.",
@@ -511,6 +795,44 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         ],
         watchOut:
           "+ Encounter only appears once the patient is Checked In. Other statuses show a dash — that is the single most common 'the button is missing' call.",
+      },
+      {
+        heading: "Add a note to a patient (the Notes panel)",
+        steps: [
+          "Open the patient's page → Notes.",
+          "Type the note and press Enter (Shift+Enter starts a new line), or press Add note.",
+          "Each note is saved as its own line, stamped with today's date and your name. Newest first.",
+          "Notes added through G.O.A.T. (/note or \u201cadd a note for…\u201d) land in this same list.",
+        ],
+        why: "Notes are saved to the cloud, so every computer sees the same list, and two people adding notes at the same time never overwrite each other. If the connection is down you will see \u201cSaved on this device\u201d and it syncs as soon as it is back.",
+        watchOut: "This panel is the patient's running Notes. SOAP notes for a visit are written in Encounters, not here.",
+      },
+      {
+        heading: "Edit a note, change its date, and Earlier notes",
+        steps: [
+          "Patient's page → Notes → Edit on that note's line (Delete asks Delete note? first). The person who wrote it, the Owner and Admins can edit or delete it.",
+          "To change a note's date: Edit → Date, then Save. Only the Owner and Admins see the Date box.",
+          "Notes typed before this change appear below the list as Earlier notes — one text box, still editable and never deleted.",
+        ],
+        why: "The date on a note is the day it was written unless an Owner or Admin changes it, so staff can't back-date their own entries. An edited note shows \u201cedited by\u201d with the person's name.",
+      },
+      {
+        heading: "% Paid, % Disc. and the Ask calculator",
+        steps: [
+          "Open the patient's page → Additional Details. The summary shows % Paid (paid ÷ billed) and, beside it, % Disc. (how much of the bill was reduced).",
+          "Both fill in once there is a billed amount and a $ Paid Amount.",
+          "Next to them is the Ask calculator, for working out what to ask a firm for. Choose % or $, then type a number. In % mode it shows the dollar amount to Ask for; in $ mode it shows what % of billed that is. Discount shows the matching % and dollars off.",
+        ],
+        why: "The Ask calculator is a scratch pad — nothing you type in it is saved or changes the bill. % Disc. is read from what was actually paid.",
+        watchOut: "With no billed amount, the calculator shows a dash. Enter the billed amount first.",
+      },
+      {
+        heading: "Set a patient's Compliance",
+        steps: [
+          "Open the patient's page. In the top card, next to Case Status, pick a value in Compliance.",
+          "Once a value is set it also shows as a Compliance pill in the header.",
+        ],
+        why: "Only there while the office has switched on the Compliance column (Settings → Office → Case Status Categories). It is the same value as the pill in Patient List.",
       },
       {
         heading: "Add an imaging or specialist referral",
@@ -595,7 +917,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "The warnings when you save",
         steps: [
           "Time slot full — that slot is at capacity.",
-          "Closed key date — offers to skip those dates and book the rest. OK skips, Cancel abandons everything.",
+          "Closed key date — the visit is still saved and marked Canceled, and a popup names the closed day so you notice. It is never dropped quietly.",
           "Already has an appointment that day — same offer.",
           "Outside office hours — the time is outside the day's hours.",
         ],
@@ -606,9 +928,16 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         heading: "Days the office is closed",
         steps: [
           "Key Dates → fill the date, pick Closed, Covered, or Open (a day the office works even though it would normally be off, e.g. a holiday), give a reason, Add Key Date.",
-          "The list underneath shows appointments already booked on those days.",
-          "Use Cancel Appointment there, or Clear to dismiss a row you have dealt with.",
+          "Closed = the office is shut: a visit you put on that day is still saved and marked Canceled, and a popup tells you. NO text reminders go out for that day (one date or a range). Covered = someone covers, visits stay bookable and reminders STILL go out. Open = a normal working day. The Reason is only a label (\"Texas\", \"Vacation\"), it never changes what the status does.",
+          "A Closed day stops APPOINTMENT reminders only. Message patients texts (for example \"we are closed Thursday\") are never blocked by a Key Date, so you can still tell patients you are closed.",
+          "Add Open from / until times for a partial day: visits outside those hours are flagged and get no reminders.",
+          "In Configured Key Dates, EVERY row (past or future; Open, Closed or Covered) shows a grey count of its appointments, such as \u201c28 appointments\u201d or \u201c18 appointments \u00b7 10 canceled\u201d. A plain \u2014 means there are truly none. Click the count and every appointment on that date, canceled ones included (tagged Canceled), appears at the bottom, with a bar that says \u201cShowing 10/29/26 only \u00b7 Show all\u201d. Open, Cancel and Clear work there as usual.",
+          "A red \u201c8 still booked\u201d is added only on a Closed day that has not passed and still has patients Scheduled or set to Reschedule. Canceled, No Show and already-seen visits are not counted in it.",
+          "Click the red count to show just that date in the Warning List. A blue bar says \u201cShowing 10/29/26 only\u201d; click Show all to see every upcoming Closed day again. Old dates have no count to click.",
+          "The Warning List underneath shows only patients still booked on upcoming Closed days. Click Show past & cleared at the bottom to see old visits, Covered-day visits and cleared warnings.",
+          "Use Cancel Appointment there, or Clear to hide a row you have dealt with. Clear only hides the row; the visit stays booked and still counts in the red number.",
         ],
+        why: "Reminders go out the day before, so set the day to Closed before then. A text that has already been sent can't be recalled; changing the day afterwards only stops texts not yet sent. If you meant to tell patients you are closed, use Settings → Text Reminders → Broadcast → Message patients → All active patients.",
         watchOut:
           "Delete and Cancel need two clicks — the button turns into Confirm Delete / Confirm Cancel. Nothing happens on the first click; that is deliberate, because some browsers swallow pop-up confirmations.",
       },
@@ -631,18 +960,45 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         watchOut: "Check the patient in first. A note started on a visit that is still Scheduled cannot check anyone out later.",
       },
       {
+        heading: "Resize the previous-note boxes",
+        steps: [
+          "When a previous note shows under the one you are typing, there is ONE blue grip bar between them. Drag it up and all four previous-note boxes (Subjective, Objective, Assessment, Plan) get taller together; drag it down and your note gets taller instead. Double-click the bar to put both heights back to normal.",
+          "Drag the thin bar between the Subjective, Objective, Assessment and Plan boxes to make one wider. Double-click a bar to put the widths back to equal.",
+          "Your sizes are remembered for your login on every computer. Phones and narrow windows keep the simple stacked layout.",
+        ],
+      },
+      {
+        heading: "An older visit is missing from the Encounters list",
+        steps: [
+          "Pick the patient in Encounters. NoteGoat now looks up that patient's notes straight from the cloud, so older visits appear in the table (Open / View instead of + Enc.), in the encounter list, and in the View prior dropdown.",
+          "If a visit still shows + Enc., wait a second or two for the patient's notes to load before clicking it.",
+          "Do not start a second note for it. The note is not lost: older notes are simply not kept on this computer, and they load when you pick the patient.",
+        ],
+        why: "Nothing is deleted when a visit looks missing. Notes are only removed when someone deletes them on purpose.",
+      },
+      {
+        heading: "Change a visit's type and keep the note in step",
+        steps: [
+          "Change the type on the appointment (Edit Appointment, the Appointments page, or the type menu in the Encounters table).",
+          "The note for that visit follows automatically, so a New Patient visit no longer carries an Office Visit note.",
+          "View prior shows each visit with its appointment's type.",
+        ],
+        watchOut: "If two notes exist for the same day, NoteGoat leaves them alone rather than guess which one to rename.",
+      },
+      {
         heading: "Write the note",
         steps: [
           "The Subjective / Objective / Assessment / Plan tabs sit BELOW the macro buttons, above the note box.",
           "Type straight into the box, use macros, or mix both.",
+          "A macro that asks questions opens a popup titled with just the macro's name (for example Medical & Family HX). Fill in the answers and save.",
           "In Plan, one-paragraph macros run together: tap Begin Decompression, then a second-region macro, and the second text follows on the same paragraph after one space.",
-          "Copy From pulls a previous visit's section across when today is much the same.",
+          "To reuse a previous visit, pick it under View prior (that only shows it underneath), then click Copy and the section name, or Copy SOAP. NoteGoat asks before it replaces text already on the note.",
         ],
       },
       {
         heading: "Read the last visit while you write",
         steps: [
-          "Pick a previous visit in Copy From.",
+          "Pick a previous visit under View prior. That only changes the note shown underneath. It does not change the note you are writing.",
           "The whole of that note appears underneath in four columns — Subjective, Objective, Assessment, Plan — with the one you're typing outlined.",
           "Drag the grey divider between the two to give whichever half you need the room.",
         ],
@@ -827,7 +1183,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
         steps: [
           "Patient page → Diagnosis Codes.",
           "+ Dx Code for one, Add Diagnosis Macro to search the library, or Add Diagnosis Bundle for a preset group.",
-          "G.O.A.T. suggests codes from the MRI and, in a second box, from the X-ray (the Imaging panel X-ray text and uploaded X-ray reports). Each shows the X-ray line it came from and a Why? link. Click Add to add one; it then drops off the list.",
+          "G.O.A.T. suggests codes from the MRI and, in a second box, from the X-ray (the Imaging panel X-ray text and uploaded X-ray reports). Each shows the X-ray line it came from and a Why? link. Click Add to add one; it then drops off the list. Click Ignore to hide a suggestion for this patient (saved to the cloud, so it stays hidden on every computer); Show ignored brings it back.",
           "X-ray suggestions cover loss of lordosis, disc degeneration / disc-space narrowing, spondylosis, scoliosis, spondylolisthesis, and shoulder/knee arthritis or effusion. Shoulder and knee codes need the side in the report. A fracture is never coded for you; it's listed under Not suggested so you can code it by hand.",
         ],
         why: "The bar is red and says None added until a patient has codes, because claims and narrative reports both fall apart without them. Codes are per patient, not per visit.",
@@ -851,6 +1207,16 @@ export const handbookChaptersClinical: HandbookChapter[] = [
           "Print / Save PDF, then choose Save as PDF in the browser dialog.",
         ],
         why: "Most of the report fills itself from the chart — demographics, visits, diagnoses, imaging, specialists, charges. Narrative Inputs only ask for what the chart cannot know, like a prognosis.",
+      },
+      {
+        heading: "How the Specialists section reads",
+        steps: [
+          "Each specialist shows as \u201c1. Dr. Name\u201d, then \u201cRecommendations:\u201d.",
+          "Under it, every region (Cervical, Lumbar, Alternatives\u2026) is a bold heading with its recommendation on the line below, and each alternative is on its own line.",
+          "It reads the Specialist box's recommendations exactly as G.O.A.T. lays them out, so paste G.O.A.T.'s text there and the report matches the G.O.A.T. card.",
+        ],
+        why: "No 1a / 1b lettering and no \u201cCervical:\u201d run into the sentence \u2014 long lines wrap under their own indent, so it stays easy to read.",
+        watchOut: "Recommendations typed as one plain paragraph print as plain lines under \u201cRecommendations:\u201d \u2014 headings only appear when the text has a short heading line (like Cervical) above its recommendation.",
       },
       {
         heading: "The decompression paragraph",
@@ -889,7 +1255,7 @@ export const handbookChaptersClinical: HandbookChapter[] = [
       {
         heading: "When it comes back",
         steps: [
-          "The patient file shows a green \"Questionnaire received\" card with every answer; G.O.A.T.'s Morning Rundown lists it too.",
+          "The patient file shows a green \"Questionnaire received\" card with every answer.",
           "Pick the visit and click Insert into Objective — or open the patient's note: the same card waits above the SOAP macros.",
           "Each macro section fills its own Objective macro through the same path as clicking it, so the wording, the clickable answers and any linked charges are identical. Your own questions go in underneath as plain \"Question: answer\" lines.",
           "Dismiss if you don't want it in a note. The answers stay saved; Show past questionnaires → Review again brings it back.",

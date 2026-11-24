@@ -10,6 +10,7 @@
  * login signs automatically; otherwise the note card shows "Signed as".
  * The list is kept in this browser only (nothing new goes to the cloud).
  */
+import { isEverydayWord } from "@/lib/goat-name-guard";
 import { editDistance } from "@/lib/goat-ai/global-chat";
 
 export interface NoteSigner {
@@ -91,7 +92,7 @@ export function stripNameTokens(text: string, fullName: string): string {
   let i = 0;
   while (i < ws.length) {
     const w = ws[i].toLowerCase().replace(/[^a-z']/g, "").replace(/'s$/, "");
-    const hit = w && parts.some((p) => p === w || (w.length >= 4 && p.length >= 4 && w[0] === p[0] && editDistance(w, p) <= (p.length >= 5 ? 2 : 1)));
+    const hit = w && parts.some((p) => p === w || !isEverydayWord(w) && (w.length >= 4 && p.length >= 4 && w[0] === p[0] && editDistance(w, p) <= (p.length >= 5 ? 2 : 1)));
     if (!hit) break;
     i++;
   }
@@ -133,7 +134,7 @@ export function matchPatientsByName<T extends { id: string; fullName: string }>(
   if (ws.length > 1 && exactAll.length) return exactAll;
   const exact = patients.filter((p) => ws.some((w) => parts(p).includes(w)));
   if (exact.length) return exact;
-  return patients.filter((p) => ws.some((w) => w.length >= 4 && parts(p).some((x) => x.length >= 4 && editDistance(w, x) <= 1)));
+  return patients.filter((p) => ws.some((w) => w.length >= 4 && !isEverydayWord(w) && parts(p).some((x) => x.length >= 4 && editDistance(w, x) <= 1)));
 }
 
 export function loadSigners(): NoteSigner[] {

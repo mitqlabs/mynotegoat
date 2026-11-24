@@ -22,6 +22,9 @@ SLEEP_MIN="${NG_SLEEP_MIN:-20}"       # seconds between texts
 SLEEP_MAX="${NG_SLEEP_MAX:-40}"
 OSASCRIPT="${NG_OSASCRIPT:-/usr/bin/osascript}"
 SECURITY="${NG_SECURITY:-/usr/bin/security}"
+SQLITE="${NG_SQLITE:-sqlite3}"
+CHAT_DB="${NG_CHAT_DB:-$HOME/Library/Messages/chat.db}"
+INBOUND_STATE="$LOG_DIR/.inbound-rowid"
 CURL="${NG_CURL:-curl}"
 
 DRY_RUN=0
@@ -42,11 +45,6 @@ done
 mkdir -p "$LOG_DIR"
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE"; }
 
-# Scheduled checks only during office hours (manual flags always run).
-HOUR_NOW=$((10#${NG_HOUR_NOW:-$(date +%H)}))
-if [ "$PREVIEW" = 0 ] && [ "$FORCE" = 0 ] && { [ "$HOUR_NOW" -lt "$START_HOUR" ] || [ "$HOUR_NOW" -ge "$END_HOUR" ]; }; then
-  exit 0
-fi
 
 # --- JSON helpers: plutil on macOS, python3 fallback (tests / Linux) ---
 json_get() { # file keypath  (e.g. items.0.text) -> raw value, empty if missing
@@ -104,6 +102,62 @@ fi
 if [ -z "$TOKEN" ]; then
   log "ERROR: no device token in Keychain. Run install.sh again."
   exit 1
+fi
+
+# --- opt-out replies (STOP / START), every check, any hour ---
+# Reads only messages newer than the last one seen (ROWID in $INBOUND_STATE).
+# The first run just records the newest ROWID: old history is never sent.
+# Only whole-message keywords leave this Mac; nothing is ever replied.
+is_keyword() { # text -> 0 if STOP/START-type keyword
+  local t
+  t=$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]' | sed -e 's/^[[:space:]"]*//' -e 's/[[:space:].!"]*$//')
+  case "$t" in STOP|STOPALL|UNSUBSCRIBE|END|QUIT|START|UNSTOP) return 0 ;; esac
+  return 1
+}
+check_inbound() {
+  [ -r "$CHAT_DB" ] || { [ -e "$CHAT_DB" ] && log "Opt-out check skipped: can't read Messages (give bash Full Disk Access)."; return 0; }
+  local last max rows body n=0 rowid from text sep=$'\x1f'
+  if [ ! -s "$INBOUND_STATE" ]; then
+    max=$("$SQLITE" -readonly "$CHAT_DB" "SELECT IFNULL(MAX(ROWID),0) FROM message;" 2>>"$LOG_FILE") || return 0
+    printf '%s' "${max:-0}" > "$INBOUND_STATE"
+    log "Opt-out check: starting after message $max."
+    return 0
+  fi
+  last=$(tr -cd '0-9' < "$INBOUND_STATE"); last=${last:-0}
+  rows=$("$SQLITE" -readonly -separator "$sep" "$CHAT_DB" \
+    "SELECT m.ROWID, IFNULL(h.id,''), REPLACE(REPLACE(IFNULL(m.text,''), char(10), ' '), char(13), ' ') FROM message m LEFT JOIN handle h ON h.ROWID = m.handle_id WHERE m.ROWID > $last AND m.is_from_me = 0 ORDER BY m.ROWID LIMIT 500;" 2>>"$LOG_FILE") || { log "Opt-out check: could not read Messages."; return 0; }
+  max=$last; body=""
+  while IFS="$sep" read -r rowid from text; do
+    [ -n "$rowid" ] || continue
+    max=$rowid
+    if [ -n "$from" ] && is_keyword "$text"; then
+      [ -n "$body" ] && body="$body,"
+      body="$body{\"from\":$(json_escape "$from"),\"text\":$(json_escape "$text")}"
+      n=$((n + 1))
+    fi
+  done <<< "$rows"
+  if [ "$n" -gt 0 ]; then
+    if [ "$DRY_RUN" = 1 ]; then
+      log "Opt-out check (dry-run): $n keyword repl(ies) not sent."; return 0
+    fi
+    local code
+    code=$("$CURL" -sS --max-time 30 -o "$WORK/inbound.json" -w '%{http_code}' -X POST \
+      -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+      --data-binary "{\"messages\":[$body]}" "$BASE_URL/api/reminders/inbound" 2>>"$LOG_FILE")
+    if [ "$code" != "200" ]; then
+      log "Opt-out check: upload failed (HTTP $code); will retry next check."; return 0
+    fi
+    log "Opt-out check: $n keyword repl(ies) sent; changed $(json_get "$WORK/inbound.json" changed)."
+  fi
+  [ "$max" != "$last" ] && printf '%s' "$max" > "$INBOUND_STATE"
+  return 0
+}
+[ -n "${NG_SKIP_INBOUND:-}" ] || check_inbound
+
+# Scheduled checks only during office hours (manual flags always run).
+HOUR_NOW=$((10#${NG_HOUR_NOW:-$(date +%H)}))
+if [ "$PREVIEW" = 0 ] && [ "$FORCE" = 0 ] && { [ "$HOUR_NOW" -lt "$START_HOUR" ] || [ "$HOUR_NOW" -ge "$END_HOUR" ]; }; then
+  exit 0
 fi
 
 # --- fetch queue ---

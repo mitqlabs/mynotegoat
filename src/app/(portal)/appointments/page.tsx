@@ -6,7 +6,7 @@ import { TimeInput12h } from "@/components/time-input-12h";
 import { SmsRemindersPanel } from "@/components/sms-reminders-panel";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollLock } from "@/components/scroll-lock";
 import { RescheduleAppointmentModal } from "@/components/reschedule-appointment-modal";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
@@ -30,8 +30,11 @@ import { locationLabel } from "@/lib/office-settings";
 import {
   findClosedKeyDateForDate,
   findKeyDatesForDate,
+  formatKeyDateHours,
   formatKeyDateRange,
   formatUsDateFromIso,
+  isTimeWithinHours,
+  keyDateHoursForDate,
 } from "@/lib/key-dates";
 import {
   appointmentStatusOptions,
@@ -420,7 +423,7 @@ function getDatesForDraft(draft: NewAppointmentDraft) {
 function getCardBackground(status: AppointmentStatus) {
   switch (status) {
     case "Check In":
-      return "border-l-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)]";
+      return "border-l-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)]";
     case "Check Out":
       return "border-l-[#2e9b5d] bg-[rgba(46,155,93,0.11)]";
     case "Canceled":
@@ -435,6 +438,10 @@ function getCardBackground(status: AppointmentStatus) {
 }
 
 import { hasNoOffice, matchesOfficeFilter, NO_OFFICE_FILTER, NO_OFFICE_LABEL } from "@/lib/location-filter";
+import { appAlert, appConfirm } from "@/components/app-dialog";
+import { closedDateHit, closedDateNote, closedDateNotice } from "@/lib/closed-date-booking";
+import { findDuplicateCases } from "@/lib/patient-duplicate";
+import { DuplicateCaseWarning } from "@/components/duplicate-case-warning";
 
 export default function AppointmentsPage() {
   const router = useRouter();
@@ -445,7 +452,7 @@ export default function AppointmentsPage() {
     selectedLocationId,
     setLocation,
   } = useLocationView();
-  const { encountersByNewest, createEncounter, deleteEncounter, setSignedAndConfirm } = useEncounterNotes();
+  const { encountersByNewest, createEncounter, deleteEncounter, setSignedAndConfirm, syncEncounterTypeForAppointment } = useEncounterNotes();
   const { guardCheckout, checkoutNoteDialog } = useCheckoutNoteGuard();
   const { officeSettings } = useOfficeSettings();
   const { appointmentTypes } = useScheduleAppointmentTypes();
@@ -665,6 +672,12 @@ export default function AppointmentsPage() {
     () => findKeyDatesForDate(keyDates, selectedDate),
     [keyDates, selectedDate],
   );
+  // Key Date special hours (partial closures): visits outside are flagged.
+  const isOutsideKeyDateHours = useCallback(
+    (appointment: { date: string; startTime: string }) =>
+      !isTimeWithinHours(appointment.startTime, keyDateHoursForDate(keyDates, appointment.date)),
+    [keyDates],
+  );
   const selectedDateClosedKeyDate = useMemo(
     () => findClosedKeyDateForDate(keyDates, selectedDate),
     [keyDates, selectedDate],
@@ -829,13 +842,13 @@ export default function AppointmentsPage() {
     setNewAppointmentError("");
   };
 
-  const handleQuickStatusUpdate = (appointmentId: string, nextStatus: AppointmentStatus) => {
+  const handleQuickStatusUpdate = async (appointmentId: string, nextStatus: AppointmentStatus) => {
     if (nextStatus === "Reschedule") {
       openRescheduleModal(appointmentId);
       return;
     }
     const target = scheduleAppointments.find((entry) => entry.id === appointmentId);
-    if (target && !confirmStatusChangeIfNeeded(target.status, nextStatus)) return;
+    if (target && !(await confirmStatusChangeIfNeeded(target.status, nextStatus))) return;
     const apply = () =>
       updateAppointment(appointmentId, (current) => ({
         ...current,
@@ -1057,8 +1070,14 @@ export default function AppointmentsPage() {
       return;
     }
 
+    const closedHits = scheduleDates.flatMap((dateIso) => {
+      const hit = closedDateHit(keyDates, dateIso);
+      return hit ? [hit] : [];
+    });
+    const closedDates = new Set(closedHits.map((hit) => hit.dateIso));
     const slotCapacity = Math.max(1, scheduleSettings.maxAppointmentsPerSlot);
     const overbookedDates = scheduleDates.filter((dateIso) => {
+      if (closedDates.has(dateIso)) return false;
       const countAtSlot = scheduleAppointments.filter(
         (entry) => entry.date === dateIso && entry.startTime === sanitizedDraft.startTime,
       ).length;
@@ -1074,19 +1093,10 @@ export default function AppointmentsPage() {
       return;
     }
 
-    const closedDate = scheduleDates.find((dateIso) => Boolean(findClosedKeyDateForDate(keyDates, dateIso)));
-    if (closedDate) {
-      const closedEntry = findClosedKeyDateForDate(keyDates, closedDate);
-      const reasonSuffix = closedEntry?.reason ? ` (${closedEntry.reason})` : "";
-      setNewAppointmentError(
-        `Cannot schedule on CLOSED key date ${formatUsDateFromIso(closedDate)}${reasonSuffix}.`,
-      );
-      return;
-    }
-
     if (scheduleSettings.enforceOfficeHours) {
       const outsideOfficeHoursDate = scheduleDates.find(
         (dateIso) =>
+          !closedDates.has(dateIso) &&
           !isAppointmentWithinOfficeHours(scheduleSettings, dateIso, sanitizedDraft.startTime, durationMin),
       );
       if (
@@ -1141,13 +1151,18 @@ export default function AppointmentsPage() {
       date: dateIso,
       startTime: sanitizedDraft.startTime,
       durationMin,
-      status: "Scheduled",
-      note: sanitizedDraft.note.trim(),
+      status: closedDates.has(dateIso) ? "Canceled" : "Scheduled",
+      note: closedDates.has(dateIso)
+        ? closedDateNote(closedHits.find((hit) => hit.dateIso === dateIso)?.reason ?? "", sanitizedDraft.note.trim())
+        : sanitizedDraft.note.trim(),
       overrideOfficeHours: Boolean(sanitizedDraft.overrideOfficeHours),
       recurringSeriesId: seriesId,
     }));
 
     addAppointments(records);
+    if (closedHits.length > 0) {
+      void appAlert(closedDateNotice(closedHits), { title: "Scheduled on a closed day" });
+    }
     const coveredDates = scheduleDates.filter((dateIso) =>
       findKeyDatesForDate(keyDates, dateIso).some((row) => row.officeStatus === "Covered"),
     );
@@ -1187,16 +1202,11 @@ export default function AppointmentsPage() {
       return;
     }
 
-    const closedEntry = findClosedKeyDateForDate(keyDates, editDateDraft);
-    if (closedEntry) {
-      const reasonSuffix = closedEntry.reason ? ` (${closedEntry.reason})` : "";
-      setEditError(
-        `This date is marked CLOSED in Key Dates: ${formatKeyDateRange(closedEntry)}${reasonSuffix}.`,
-      );
-      return;
-    }
+    const movedOntoClosed =
+      editDateDraft !== selectedAppointment.date ? closedDateHit(keyDates, editDateDraft) : null;
 
     if (
+      !movedOntoClosed &&
       scheduleSettings.enforceOfficeHours &&
       !isAppointmentWithinOfficeHours(
         scheduleSettings,
@@ -1217,7 +1227,7 @@ export default function AppointmentsPage() {
         entry.date === editDateDraft &&
         entry.startTime === editTimeDraft,
     ).length;
-    if (countAtSlot >= slotCapacity) {
+    if (!movedOntoClosed && countAtSlot >= slotCapacity) {
       setEditError(
         `Time slot ${formatTimeLabel(editTimeDraft)} is full for ${formatUsDateFromIso(editDateDraft)} (max ${slotCapacity}).`,
       );
@@ -1242,14 +1252,28 @@ export default function AppointmentsPage() {
 
     updateAppointment(selectedAppointment.id, (current) => ({
       ...current,
-      status: statusDraft,
+      status: movedOntoClosed ? "Canceled" : statusDraft,
       date: editDateDraft,
       startTime: editTimeDraft,
       room: editRoomDraft.trim(),
       overrideOfficeHours: editOverrideDraft,
-      note: editNoteDraft.trim(),
+      note: movedOntoClosed ? closedDateNote(movedOntoClosed.reason, editNoteDraft.trim()) : editNoteDraft.trim(),
       appointmentType: editTypeDraft.trim() || current.appointmentType,
     }));
+    if (movedOntoClosed) {
+      void appAlert(closedDateNotice([movedOntoClosed]), { title: "Scheduled on a closed day" });
+    }
+    // The note for this visit follows the appointment's new type.
+    void syncEncounterTypeForAppointment(
+      {
+        id: selectedAppointment.id,
+        patientId: selectedAppointment.patientId,
+        // The note is dated by the ORIGINAL visit date, even if the date was also edited.
+        date: selectedAppointment.date,
+      },
+      selectedAppointment.appointmentType,
+      editTypeDraft.trim() || selectedAppointment.appointmentType,
+    );
 
     const coveredOnEdit = findKeyDatesForDate(keyDates, editDateDraft).some(
       (entry) => entry.officeStatus === "Covered",
@@ -1276,7 +1300,7 @@ export default function AppointmentsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2">
             {multiLocation && (
-              <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.06)] px-3 py-2 text-sm font-semibold">
+              <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)] px-3 py-2 text-sm font-semibold">
                 Location
                 <select
                   className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
@@ -1303,7 +1327,7 @@ export default function AppointmentsPage() {
               />
             </label>
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+              className="btn btn-secondary"
               onClick={() => setSelectedDate(getTodayIsoDate())}
               title="Jump back to today's schedule"
               type="button"
@@ -1311,7 +1335,7 @@ export default function AppointmentsPage() {
               Today
             </button>
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+              className="btn btn-primary"
               onClick={openNewAppointmentModal}
               type="button"
             >
@@ -1362,7 +1386,7 @@ export default function AppointmentsPage() {
               />
             </label>
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!schedulePatientSearchQuery}
               onClick={() => setSchedulePatientSearch("")}
               type="button"
@@ -1383,7 +1407,7 @@ export default function AppointmentsPage() {
                   searchedPatientAppointments.slice(0, 30).map((appointment) => (
                     <button
                       key={`schedule-search-match-${appointment.id}`}
-                      className="flex w-full items-center justify-between gap-2 rounded-xl border border-[var(--line-soft)] px-3 py-2 text-left hover:border-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.06)]"
+                      className="flex w-full items-center justify-between gap-2 rounded-xl border border-[var(--line-soft)] px-3 py-2 text-left hover:border-[var(--brand-primary)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)]"
                       onClick={() => {
                         setMode("schedule");
                         setSelectedDate(appointment.date);
@@ -1435,12 +1459,12 @@ export default function AppointmentsPage() {
                   ? "border-[rgba(201,66,58,0.5)] bg-[rgba(201,66,58,0.11)] text-[#9f2f2a]"
                   : selectedDateKeyDates.every((entry) => entry.officeStatus === "Open")
                     ? "border-[rgba(46,155,93,0.45)] bg-[rgba(46,155,93,0.1)] text-[#257a49]"
-                    : "border-[rgba(13,121,191,0.45)] bg-[rgba(13,121,191,0.1)] text-[#0f5d92]"
+                    : "border-[color-mix(in_srgb,var(--brand-primary)_45%,transparent)] bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)] text-[#0f5d92]"
               }`}
             >
               <span className="font-semibold">Key Date Notice:</span>{" "}
               {selectedDateKeyDates
-                .map((entry) => `${entry.officeStatus}${entry.reason ? ` - ${entry.reason}` : ""}`)
+                .map((entry) => `${entry.officeStatus}${formatKeyDateHours(entry) ? ` (${formatKeyDateHours(entry)})` : ""}${entry.reason ? ` - ${entry.reason}` : ""}`)
                 .join("; ")}
             </div>
           )}
@@ -1478,6 +1502,11 @@ export default function AppointmentsPage() {
                             </p>
                             <p className="text-xs text-[var(--text-muted)]">
                               {formatTimeLabel(appointment.startTime)} • {appointment.durationMin} min
+                              {isOutsideKeyDateHours(appointment) && (
+                                <span className="ml-1.5 rounded-full bg-[rgba(201,66,58,0.15)] px-1.5 py-0.5 font-semibold text-[#b43b34]" title="Outside this day's Key Date hours — no text reminder is sent">
+                                  Outside hours
+                                </span>
+                              )}
                             </p>
                             <p className="text-xs text-[var(--text-muted)]">
                               {appointment.provider} • {appointment.location}
@@ -1494,7 +1523,7 @@ export default function AppointmentsPage() {
                               {appointment.status === "Scheduled" && (
                                 <>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openCheckInRoomPrompt(appointment.id, false);
@@ -1504,7 +1533,7 @@ export default function AppointmentsPage() {
                                     Check In
                                   </button>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openCheckInRoomPrompt(appointment.id, true);
@@ -1518,7 +1547,7 @@ export default function AppointmentsPage() {
                               {appointment.status === "Check In" && (
                                 <>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       handleQuickStatusUpdate(appointment.id, "Check Out");
@@ -1528,7 +1557,7 @@ export default function AppointmentsPage() {
                                     Check Out
                                   </button>
                                   <button
-                                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       openOrCreateEncounterForAppointment(appointment);
@@ -1660,6 +1689,11 @@ export default function AppointmentsPage() {
                         <p className="font-semibold">{appointment.patientName}{noOfficeTag(appointment.patientId)}</p>
                         <p className="text-sm">
                           {formatTimeLabel(appointment.startTime)} • {appointment.durationMin} min
+                          {isOutsideKeyDateHours(appointment) && (
+                                <span className="ml-1.5 rounded-full bg-[rgba(201,66,58,0.15)] px-1.5 py-0.5 font-semibold text-[#b43b34] text-xs" title="Outside this day's Key Date hours — no text reminder is sent">
+                                  Outside hours
+                                </span>
+                              )}
                         </p>
                         <p className="inline-flex items-center gap-2 text-sm text-[var(--text-muted)]">
                           <span
@@ -1725,7 +1759,7 @@ export default function AppointmentsPage() {
       )}
 
       {showNewAppointmentModal && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
           <ScrollLock />
           <section className="w-full max-w-5xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
             <div className="flex items-start justify-between gap-3">
@@ -1736,7 +1770,7 @@ export default function AppointmentsPage() {
                 </p>
               </div>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setShowNewAppointmentModal(false)}
                 type="button"
               >
@@ -1810,6 +1844,15 @@ export default function AppointmentsPage() {
                     <p className="text-xs text-[var(--text-muted)] sm:col-span-2 lg:col-span-3">
                       Save Appointment adds the patient and books this visit. The visit date becomes their Initial Exam. Attorney and Date of Injury go on their page later (Case info).
                     </p>
+                    <div className="sm:col-span-2 lg:col-span-3">
+                      <DuplicateCaseWarning
+                        matches={findDuplicateCases(patients, {
+                          firstName: newPtDraft.firstName,
+                          lastName: newPtDraft.lastName,
+                          dateOfLoss: newPtDraft.dateOfLoss,
+                        })}
+                      />
+                    </div>
                     {(newPtDraft.attorney.trim() || newPtDraft.dateOfLoss.trim()) && (
                       <p className="text-xs sm:col-span-2 lg:col-span-3" data-testid="new-pt-goat-extra">
                         <span className="font-semibold">Also from G.O.A.T. (saved to Case info):</span>
@@ -1836,7 +1879,7 @@ export default function AppointmentsPage() {
                       filteredPatientSuggestions.map((patient) => (
                         <button
                           key={`new-appointment-patient-${patient.id}`}
-                          className="flex w-full items-start justify-between gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-left last:border-b-0 hover:bg-[rgba(13,121,191,0.08)]"
+                          className="flex w-full items-start justify-between gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-left last:border-b-0 hover:bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)]"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => handleSelectPatient(patient)}
                           type="button"
@@ -1973,7 +2016,7 @@ export default function AppointmentsPage() {
               <button
                 className={`rounded-xl border px-4 py-3 text-left font-semibold ${
                   !newAppointmentDraft.isRecurring
-                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
+                    ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)]"
                     : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
                 }`}
                 onClick={() => setNewAppointmentDraft((current) => ({ ...current, isRecurring: false }))}
@@ -1984,7 +2027,7 @@ export default function AppointmentsPage() {
               <button
                 className={`rounded-xl border px-4 py-3 text-left font-semibold ${
                   newAppointmentDraft.isRecurring
-                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
+                    ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)]"
                     : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
                 }`}
                 onClick={() =>
@@ -2254,14 +2297,14 @@ export default function AppointmentsPage() {
 
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={() => setShowNewAppointmentModal(false)}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary"
                 onClick={handleSubmitNewAppointment}
                 type="button"
               >
@@ -2285,7 +2328,7 @@ export default function AppointmentsPage() {
       />
 
       {checkInRoomPrompt && checkInPromptAppointment && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
           <ScrollLock />
           <section className="w-full max-w-2xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
             <div className="flex items-start justify-between gap-3">
@@ -2298,7 +2341,7 @@ export default function AppointmentsPage() {
                 </p>
               </div>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setCheckInRoomPrompt(null);
                   setCheckInRoomDraft("");
@@ -2319,7 +2362,7 @@ export default function AppointmentsPage() {
                       key={`checkin-room-${room.id}`}
                       className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${
                         selected
-                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)]"
+                          ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)]"
                           : "border-[var(--line-soft)] bg-white"
                       }`}
                       onClick={() => setCheckInRoomDraft(room.name)}
@@ -2341,7 +2384,7 @@ export default function AppointmentsPage() {
 
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={() => {
                   setCheckInRoomPrompt(null);
                   setCheckInRoomDraft("");
@@ -2351,14 +2394,14 @@ export default function AppointmentsPage() {
                 Cancel
               </button>
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary"
                 onClick={() => completeCheckInWithRoom("")}
                 type="button"
               >
                 Check In Without Room
               </button>
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary"
                 onClick={() => completeCheckInWithRoom(checkInRoomDraft)}
                 type="button"
               >
@@ -2370,7 +2413,7 @@ export default function AppointmentsPage() {
       )}
 
       {selectedAppointment && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
           <ScrollLock />
           <section className="w-full max-w-2xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
             <div className="flex items-start justify-between gap-3">
@@ -2381,7 +2424,7 @@ export default function AppointmentsPage() {
                 </p>
               </div>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setSelectedAppointmentId(null)}
                 type="button"
               >
@@ -2394,13 +2437,13 @@ export default function AppointmentsPage() {
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Appointment Status</span>
                 <select
                   className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                  onChange={(event) => {
+                  onChange={async (event) => {
                     const nextStatus = event.target.value as AppointmentStatus;
                     if (nextStatus === "Reschedule" && selectedAppointment) {
                       openRescheduleModal(selectedAppointment.id);
                       return;
                     }
-                    if (selectedAppointment && !confirmStatusChangeIfNeeded(selectedAppointment.status, nextStatus)) {
+                    if (selectedAppointment && !(await confirmStatusChangeIfNeeded(selectedAppointment.status, nextStatus))) {
                       return;
                     }
                     setStatusDraft(nextStatus);
@@ -2489,16 +2532,16 @@ export default function AppointmentsPage() {
                     !selectable
                       ? "cursor-not-allowed border-[var(--line-soft)] bg-[var(--bg-soft)] text-[var(--text-muted)] opacity-50"
                       : statusDraft === status
-                      ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
+                      ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)]"
                       : "border-[var(--line-soft)] bg-white"
                   }`}
                   disabled={!selectable}
-                  onClick={() => {
+                  onClick={async () => {
                     if (status === "Reschedule" && selectedAppointment) {
                       openRescheduleModal(selectedAppointment.id);
                       return;
                     }
-                    if (selectedAppointment && !confirmStatusChangeIfNeeded(selectedAppointment.status, status)) return;
+                    if (selectedAppointment && !(await confirmStatusChangeIfNeeded(selectedAppointment.status, status))) return;
                     setStatusDraft(status);
                   }}
                   title={!selectable ? "Patient must be Checked In first" : undefined}
@@ -2578,13 +2621,11 @@ export default function AppointmentsPage() {
                   );
                   if (linkedEncounter) {
                     const chargeCount = linkedEncounter.charges.length;
-                    const proceed = window.confirm(
-                      `This appointment has an attached encounter${
-                        linkedEncounter.signed ? " (CLOSED)" : ""
-                      } on ${dateLabel}${chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""}.\n\n` +
-                        `Click OK to delete BOTH the appointment AND the encounter (and any attached charges).\n` +
-                        `Click Cancel to keep everything.`,
-                    );
+                    const proceed = (await appConfirm(`This appointment has an attached encounter${
+                                            linkedEncounter.signed ? " (CLOSED)" : ""
+                                          } on ${dateLabel}${chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""}.\n\n` +
+                                            `Click OK to delete BOTH the appointment AND the encounter (and any attached charges).\n` +
+                                            `Click Cancel to keep everything.`));
                     if (!proceed) {
                       return;
                     }
@@ -2601,9 +2642,7 @@ export default function AppointmentsPage() {
                     return;
                   }
 
-                  const confirmed = window.confirm(
-                    `Delete the ${selectedAppointment.appointmentType} appointment for ${selectedAppointment.patientName} on ${dateLabel} at ${formatTimeLabel(selectedAppointment.startTime)}? This cannot be undone.`,
-                  );
+                  const confirmed = (await appConfirm(`Delete the ${selectedAppointment.appointmentType} appointment for ${selectedAppointment.patientName} on ${dateLabel} at ${formatTimeLabel(selectedAppointment.startTime)}? This cannot be undone.`));
                   if (!confirmed) {
                     return;
                   }
@@ -2621,14 +2660,14 @@ export default function AppointmentsPage() {
               </button>
               <div className="flex flex-wrap justify-end gap-2">
                 <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary"
                   onClick={() => setSelectedAppointmentId(null)}
                   type="button"
                 >
                   Cancel
                 </button>
                 <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  className="btn btn-primary"
                   onClick={() => void handleSaveAppointmentUpdates()}
                   type="button"
                 >
@@ -2644,8 +2683,8 @@ export default function AppointmentsPage() {
       {doneTaskOffer && (
         <div className="fixed bottom-4 left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 flex-wrap items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-white px-4 py-3 text-sm shadow-[0_12px_24px_rgba(14,41,62,0.18)]" role="dialog" aria-label="Mark to-do done" data-testid="done-task-offer">
           <span>Booked. Mark the to-do &ldquo;{doneTaskOffer.title}&rdquo; done?</span>
-          <button className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 font-semibold text-white" onClick={() => { if (tasks.some((t) => t.id === doneTaskOffer.id && !t.done)) toggleTaskDone(doneTaskOffer.id); setDoneTaskOffer(null); }} type="button">Mark done</button>
-          <button className="rounded-lg border border-[var(--line-soft)] px-3 py-1 font-semibold" onClick={() => setDoneTaskOffer(null)} type="button">Keep it</button>
+          <button className="btn btn-primary btn-sm" onClick={() => { if (tasks.some((t) => t.id === doneTaskOffer.id && !t.done)) toggleTaskDone(doneTaskOffer.id); setDoneTaskOffer(null); }} type="button">Mark done</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setDoneTaskOffer(null)} type="button">Keep it</button>
         </div>
       )}
     </div>

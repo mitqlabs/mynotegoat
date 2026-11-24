@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { askGoat, type GoatAnswerGroup, type GoatBlock, type GoatContext, type GoatResult, type GoatSection } from "@/lib/goat";
-import { GOAT_LINES_PER_FILE, type GoatFileMatch, type GoatFilesResult } from "@/lib/goat-docs";
+import { GOAT_LINES_PER_FILE, pendingFilesNote, type GoatFileMatch, type GoatFilesResult } from "@/lib/goat-docs";
 import { makeMatcher } from "@/lib/goat-terms";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
 import { GoatAvatar } from "@/components/goat-avatar";
@@ -11,7 +11,7 @@ import { GoatStatusLine, type GoatStatus } from "@/components/goat-smart";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
 import { recFormatFromPrefs } from "@/lib/goat-answer-prefs";
 import { isGoatActionPhrase } from "@/lib/goat-intents";
-import { askGlobalGoat } from "@/components/global-goat";
+import { askGlobalGoat } from "@/components/global-goat-button";
 
 const SECTION_LABEL: Record<GoatSection, string> = {
   info: "Patient info",
@@ -34,7 +34,7 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
   for (const [start, end] of matcher.ranges(text)) {
     if (start > at) parts.push(<Fragment key={`t${at}`}>{text.slice(at, start)}</Fragment>);
     parts.push(
-      <mark key={`m${start}`} className="rounded bg-[#fff2b3] px-0.5 text-inherit">
+      <mark key={`m${start}`} className="tone-warn-badge rounded px-0.5 text-inherit">
         {text.slice(start, end)}
       </mark>,
     );
@@ -45,9 +45,9 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
 }
 
 const DOC_BADGE: Record<GoatFileMatch["docType"], { label: string; className: string }> = {
-  report: { label: "Report", className: "bg-emerald-50 text-emerald-800" },
-  referral: { label: "Referral", className: "bg-amber-50 text-amber-800" },
-  other: { label: "Document", className: "bg-slate-100 text-slate-700" },
+  report: { label: "Report", className: "tone-ok" },
+  referral: { label: "Referral", className: "tone-warn" },
+  other: { label: "Document", className: "tone-neutral" },
 };
 
 /** One region's findings: a subheading, then each item on its own line, in full. */
@@ -180,7 +180,7 @@ function FileMatchBlock({
 
 function FilesCard({ files, onOpen }: { files: GoatFilesResult; onOpen?: (fileId: string, page?: number) => void }) {
   return (
-    <div className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
+    <div className="rounded-xl theme-surface border border-[var(--line-soft)] p-2.5">
       <div className="text-sm font-semibold">
         {files.title ? (
           <>
@@ -258,8 +258,8 @@ function FilesStatus({ files }: { files: GoatFilesController }) {
       </div>
       {reader.running && (
         <>
-          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white">
-            <div className="h-full rounded-full bg-[#72bdcf] transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--bg-soft)]">
+            <div className="h-full rounded-full section-bar transition-all" style={{ width: `${Math.max(4, pct)}%` }} />
           </div>
           <div className="mt-1 truncate">
             {progress} {reader.total > 1 && `(${Math.min(reader.done + 1, reader.total)} of ${reader.total})`}
@@ -302,16 +302,31 @@ export function GoatPanel({
   const [open, setOpen] = useState(true);
   const [question, setQuestion] = useState("");
   const [asked, setAsked] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   // "Also mentioned" open/closed, per question (flipped from its default).
   const [hitsFlipped, setHitsFlipped] = useState("");
   // Settings → G.O.A.T.: Show costs / fees and Region order shape recommendations (and their Copy text).
   const { prefs } = useGoatAnswerPrefs();
   const context: GoatContext = useMemo(() => ({ ...pageContext, recFormat: recFormatFromPrefs(prefs) }), [pageContext, prefs]);
   // Recomputed from live page data, so an answer updates as the page is edited.
-  const ruleResult: GoatResult | null = useMemo(
-    () => (asked ? askGoat(context, asked) : null),
-    [asked, context],
-  );
+  // A throw here used to fail the render and leave the box looking like Send did nothing.
+  const ruleResult: GoatResult | null = useMemo(() => {
+    if (!asked) return null;
+    try {
+      return askGoat(context, asked);
+    } catch (err) {
+      console.error(err);
+      return {
+        answers: [{ title: "G.O.A.T.", lines: ["I couldn't finish that. Try sending it again."], source: "G.O.A.T.", section: "info" }],
+        hits: [],
+        terms: [],
+        files: null,
+        filesFirst: false,
+        highlight: [],
+        sourcesCollapsed: false,
+      };
+    }
+  }, [asked, context]);
   const result: GoatResult | null = ruleResult;
 
   // "Searching…" for a moment after Ask, so the status line follows what happens (static, no animation).
@@ -336,6 +351,10 @@ export function GoatPanel({
     setQuestion(trimmed);
     setAsked(trimmed);
     setSearchingFor(trimmed);
+  };
+  /** Enter and Send both read the box itself, so a stale disabled button cannot swallow them. */
+  const submitBox = (raw?: string) => {
+    ask(raw ?? inputRef.current?.value ?? question);
   };
 
   const fileResult = result?.files ?? null;
@@ -362,6 +381,11 @@ export function GoatPanel({
     ) : (
       filesCardInner
     );
+  const pendingNote = filesOn ? pendingFilesNote(files?.files) : null;
+  const resultBlob = result
+    ? [result.answers.flatMap((a) => [a.title, ...a.lines, ...(a.groups ?? []).flatMap((g) => [g.lead, ...g.blocks.flatMap((b) => b.items)])]).join("\n"), result.files?.notes.join("\n") ?? ""].join("\n")
+    : "";
+  const resultTextIncludesPending = /isn'?t read yet|aren'?t read yet/i.test(resultBlob);
   const status: GoatStatus = !result
     ? files?.reader.running
       ? "reading"
@@ -391,16 +415,16 @@ export function GoatPanel({
         href={fileHref}
         rel="noopener"
         target="_blank"
-        title={`Opens the patient file (${SECTION_LABEL[section]}) in a new tab`}
+        title={`Opens the case file (${SECTION_LABEL[section]}) in a new tab`}
       >
-        Patient file ↗
+        Case File ↗
       </a>
     ) : null;
 
   return (
     <article className="panel-card p-3" data-goat-section="goat">
       <button
-        className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
+        className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-lg font-semibold text-white"
         onClick={() => setOpen((v) => !v)}
         type="button"
       >
@@ -408,36 +432,37 @@ export function GoatPanel({
           <GoatAvatar className="bg-white/80" size={32} />
           <span className="flex flex-col items-start leading-tight">
             <span>G.O.A.T.</span>
-            <GoatStatusLine className="font-medium text-white/95" status={status} />
+            <GoatStatusLine className="font-medium opacity-90" status={status} />
           </span>
         </span>
         <span className="text-xl">{open ? "−" : "+"}</span>
       </button>
       {open && (
         <div className="mt-3">
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              ask(question);
-            }}
-          >
+          <div className="flex gap-2">
             <input
-              aria-label="Ask G.O.A.T. about this patient"
-              className="min-w-0 flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
+              aria-label="Message G.O.A.T. about this patient"
+              className="min-w-0 flex-1 rounded-xl theme-surface border border-[var(--line-soft)] px-3 py-2 text-sm"
+              enterKeyHint="send"
               onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+                e.preventDefault();
+                submitBox((e.target as HTMLInputElement).value);
+              }}
               placeholder={`Ask me about ${firstName}…`}
+              ref={inputRef}
               type="text"
               value={question}
             />
             <button
-              className="rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"
-              disabled={!question.trim()}
-              type="submit"
+              className="btn btn-primary shrink-0"
+              onClick={() => submitBox()}
+              type="button"
             >
-              Ask
+              Send
             </button>
-          </form>
+          </div>
 
           {!result && (
             <div className="mt-3 flex items-start gap-2">
@@ -470,7 +495,7 @@ export function GoatPanel({
               {result.filesFirst && filesCard}
 
               {result.answers.map((a) => (
-                <div key={a.title} className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
+                <div key={a.title} className="rounded-xl theme-surface border border-[var(--line-soft)] p-2.5">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 text-sm font-semibold">
                       <GoatAvatar size={22} />
@@ -493,7 +518,7 @@ export function GoatPanel({
                     </div>
                   )}
                   {a.flag && (
-                    <p className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800">
+                    <p className="tone-warn mt-1.5 rounded-md px-2 py-1 text-xs font-semibold">
                       {a.flag}
                     </p>
                   )}
@@ -526,7 +551,7 @@ export function GoatPanel({
               {!result.filesFirst && filesCard}
 
               {result.hits.length > 0 && (
-                <div className="rounded-xl border border-[var(--line-soft)] bg-white p-2.5">
+                <div className="rounded-xl theme-surface border border-[var(--line-soft)] p-2.5">
                   <button
                     aria-expanded={hitsOpen}
                     className="flex w-full items-center justify-between gap-2 text-left text-sm font-semibold"
@@ -582,6 +607,11 @@ export function GoatPanel({
                   I couldn&apos;t find that in {where}. I only read what&apos;s there and I won&apos;t
                   guess. Try asking about visits, gaps, X-ray or MRI, the treatment plan,
                   diagnoses, billing, notes{filesOn ? " or what a report says" : ""}.
+                </p>
+              )}
+              {pendingNote && !resultTextIncludesPending && (
+                <p className="rounded-xl bg-[var(--bg-soft)] p-2.5 text-sm" data-goat-unread>
+                  {pendingNote}
                 </p>
               )}
             </div>

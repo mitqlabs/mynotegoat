@@ -6,6 +6,7 @@
  */
 import type { GoatFile } from "@/lib/goat-docs";
 import { reportVisitDate, toMDY } from "@/lib/goat-referrals";
+import { levelsIn, regionOfLevel } from "@/lib/goat-regions";
 
 export type FactDocType = "referral" | "specialist report" | "xray" | "mri" | "ct" | "pt" | "letter" | "bill" | "other";
 export type FactDateLabel = "referral" | "visit" | "exam" | "injury" | "report" | "scheduled" | "follow-up" | "other";
@@ -31,7 +32,7 @@ export interface FileFacts {
   regions: string[];
 }
 
-export const FACTS_VERSION = 4;
+export const FACTS_VERSION = 5;
 /** Text read per file for facts (dates, headers and plans sit in the first pages). */
 export const MAX_FACT_CHARS = 250_000;
 
@@ -59,10 +60,26 @@ const DATE_LABELS: Array<[FactDateLabel, RegExp]> = [
   ["follow-up", /follow[\s-]?up\s+(?:on|date)|return\s+(?:visit\s+)?on/],
 ];
 
+/**
+ * A referral / order form (not a report). The file name usually says so, in any short form
+ * ("referral", "refer", "referred", "ref", "order", "requisition", "auth"), or the top of the form does.
+ * A form is never an MRI / X-ray report, even when "MRI" is in its name.
+ */
+export function isReferralForm(name: string, text: string): boolean {
+  const n = name.toLowerCase().replace(/\.(pdf|docx?|txt|png|jpe?g)$/i, "");
+  if (/(?<![a-z])(refer\w*|ref|requisition|rx|orders?|authorization|auth|prior[\s-]?auth)(?![a-z])/.test(n)) return true;
+  const t = text.slice(0, 1500).toLowerCase();
+  if (/\breferral\b[^\n]{0,20}\b(form|order|request)\b|\b(referral|imaging|mri|x-?ray) (order|requisition|request)\b|\bdate of referral\b|\breferred to\b|\breason for referral\b|\bplease (?:schedule|perform|authorize)\b/.test(t)) {
+    // A real report that merely mentions the referral keeps its own impression / findings section.
+    return !/^\s*(impressions?|findings)\s*:?\s*$/im.test(text.slice(0, 6000));
+  }
+  return false;
+}
+
 export function classifyFactsDoc(name: string, text: string): FactDocType {
   const n = name.toLowerCase();
   const t = text.slice(0, 3000).toLowerCase();
-  if (/referr?al/.test(n) || /\breferral form\b|date of referral/.test(t)) return "referral";
+  if (isReferralForm(name, text)) return "referral";
   if (/\b(x[\s-]?ray|xr|radiograph)/.test(n) || /\b(radiographs?|x-?rays?)\b.*\bviews?\b/.test(t)) return "xray";
   if (/\bmri\b/.test(n) || /\bmri\b|magnetic resonance/.test(t.slice(0, 600))) return "mri";
   if (/\bct\b/.test(n) || /computed tomography/.test(t.slice(0, 600))) return "ct";
@@ -111,6 +128,10 @@ const HEADERS: Array<[keyof Pick<FileFacts, "findings" | "impressions" | "diagno
 const ANY_HEADER = /^[A-Z][A-Za-z /&-]{2,40}:\s*|^[A-Z][A-Z /&-]{3,40}$/;
 
 const clean = (l: string) => l.replace(/^[\s•*·\-–\d.)]+(?=\S)/, "").replace(/\s+/g, " ").trim();
+/** "LUMBAR SPINE:", "MRI of the Lumbar Spine", "Cervical:" — a region sub-heading inside a section, not a new section. */
+const REGION_SUBHEADER = /^(?:(?:mri|ct|x-?ray)\s+(?:of\s+)?(?:the\s+)?)?(?:cervical|thoracic|lumbar|lumbosacral|c-spine|t-spine|l-spine)(?:\s+spine)?(?:\s+(?:mri|ct|x-?ray))?\s*(?::|$)/i;
+/** Imaging sections are kept whole (combined Cervical + Lumbar reports run long). */
+const LONG_SECTIONS = new Set<string>(["impressions", "findings"]);
 const push = (arr: string[], v: string, max = 15) => {
   const c = clean(v);
   if (c.length >= 3 && !/^none\.?$/i.test(c) && !arr.includes(c) && arr.length < max) arr.push(c);
@@ -136,8 +157,10 @@ export function extractFileFacts(file: GoatFile): FileFacts {
     specialty: "",
     dates: [], mainDate: "",
     findings: [], impressions: [], diagnoses: [], recommendations: [], procedures: [], medications: [], rom: [], followUp: [],
-    regions: REGIONS.filter(([, re]) => re.test(text)).map(([r]) => r),
+    regions: [],
   };
+  const isImaging = docType === "xray" || docType === "mri" || docType === "ct";
+  if (!isImaging) facts.regions = REGIONS.filter(([, re]) => re.test(text)).map(([r]) => r);
   const head = `${file.name}\n${text.slice(0, 3000)}`;
   facts.specialty = docType === "xray" || docType === "mri" || docType === "ct" ? "radiology" : docType === "pt" ? "physical therapy" : SPECIALTY.find(([, re]) => re.test(head))?.[0] ?? "";
 
@@ -150,7 +173,7 @@ export function extractFileFacts(file: GoatFile): FileFacts {
     }
   }
   const pick = (...ls: FactDateLabel[]) => ls.map((l) => facts.dates.find((d) => d.label === l)?.date).find(Boolean) ?? "";
-  facts.mainDate = docType === "referral" ? pick("referral", "visit", "report") : docType === "specialist report" ? reportVisitDate(text, { avoid: facts.dates.filter((d) => d.label === "injury").map((d) => d.date) }) || pick("visit", "exam", "report") : pick("visit", "exam", "report", "referral");
+  facts.mainDate = docType === "referral" ? pick("referral", "visit", "report") : isImaging ? pick("exam", "visit", "report") : docType === "specialist report" ? reportVisitDate(text, { avoid: facts.dates.filter((d) => d.label === "injury").map((d) => d.date) }) || pick("visit", "exam", "report") : pick("visit", "exam", "report", "referral");
   if (docType === "specialist report" && facts.mainDate && !facts.dates.some((d) => d.label === "visit")) facts.dates.push({ label: "visit", date: facts.mainDate, raw: "visit (from the report body)" });
   if (!facts.mainDate) {
     const any = new RegExp(`\\bdate\\s*:?\\s*${DATE}`, "i").exec(text);
@@ -170,12 +193,18 @@ export function extractFileFacts(file: GoatFile): FileFacts {
       taken = 0;
       const rest = line.replace(/^[^:]*:\s*/, "");
       if (cur === "rom") continue; // ROM is read as whole sentences below
-      if (rest !== line && rest) push(facts[cur], rest);
+      if (rest !== line && rest) push(facts[cur], rest, LONG_SECTIONS.has(cur) ? 80 : 15);
       else if (rest === line && /\s\S+\s\S+/.test(line)) push(facts[cur], line); // "Follow up in 4 weeks."
       continue;
     }
+    if (REGION_SUBHEADER.test(line)) {
+      // Region sub-heading: stay in the current section and keep any text after the colon.
+      const rest = line.replace(/^[^:]*:?\s*/, "");
+      if (cur && cur !== "rom" && rest && rest !== line) push(facts[cur], rest, LONG_SECTIONS.has(cur) ? 80 : 15);
+      continue;
+    }
     if (ANY_HEADER.test(line) && !/^\d/.test(line)) cur = null;
-    if (cur && cur !== "rom" && taken < 12) { push(facts[cur], line); taken++; }
+    if (cur && cur !== "rom" && (taken < 12 || LONG_SECTIONS.has(cur))) { push(facts[cur], line, LONG_SECTIONS.has(cur) ? 80 : 15); taken++; }
     // Anywhere in the text:
     if (/\b(injection|ESI|epidural|facet|medial branch|RFA|radiofrequency|nerve block|trigger point|PRP|surgery|discectomy|fusion|arthroscop\w*)\b/i.test(line) && /recommend|candidate|perform|schedul|underwent|consider|plan/i.test(line)) push(facts.procedures, line);
     if (/\bfollow[\s-]?up\b[^.\n]{0,30}\b(\d+|one|two|three|four|six)\s*(days?|weeks?|wks?|months?)\b|\breturn in\b/i.test(line)) push(facts.followUp, line);
@@ -187,7 +216,36 @@ export function extractFileFacts(file: GoatFile): FileFacts {
   if ((docType === "xray" || docType === "mri" || docType === "ct") && !facts.impressions.length && !facts.findings.length) {
     for (const l of lines) if (/\b(degenerat\w*|herniat\w*|bulg\w*|protrusion|stenosis|straightening|lordosis|fracture|spondylo\w*|osteophyte\w*|unremarkable|no acute)\b/i.test(l)) push(facts.findings, l, 8);
   }
+  if (isImaging) facts.regions = imagingRegions(lines, facts);
   return facts;
+}
+
+
+/**
+ * Body regions an imaging REPORT is about. Only what the report itself states: its title / study lines
+ * ("MRI CERVICAL AND LUMBAR SPINE", "Study Description: MRI LT/KNEE"), region sub-headings, and its
+ * own impression / findings. Never the history, clinical indication, letterhead, referral wording or
+ * a checklist elsewhere in the file, and never a region that is not literally written there.
+ */
+export function imagingRegions(lines: string[], facts: Pick<FileFacts, "impressions" | "findings">): string[] {
+  const MODALITY = /(?<![A-Za-z])(MRI|MR|CT|x-?rays?|radiographs?|magnetic resonance|computed tomography)(?![A-Za-z])/i;
+  const source: string[] = [];
+  for (const l of lines.slice(0, 400)) {
+    const line = l.trim();
+    if (!line || line.length > 140) continue;
+    if (/\brefer\w*\b/i.test(line)) continue;
+    if (REGION_SUBHEADER.test(line) || (MODALITY.test(line) && !/\b(history|indication|reason for)\b/i.test(line))) source.push(line);
+  }
+  source.push(...facts.impressions, ...facts.findings);
+  const found = new Set<string>();
+  for (const item of source) for (const [r, re] of REGIONS) if (re.test(item)) found.add(r);
+  for (const item of [...facts.impressions, ...facts.findings]) {
+    for (const lv of levelsIn(item)) {
+      const r = regionOfLevel(lv);
+      if (r === "Cervical" || r === "Thoracic" || r === "Lumbar") found.add(r);
+    }
+  }
+  return REGIONS.map(([r]) => r).filter((r) => found.has(r));
 }
 
 /** Which facts lists apply to the question (none asked → the overview). */
@@ -266,9 +324,12 @@ export function extractRom(lines: string[]): string[] {
       const sn = sentence.trim();
       if (!sn) continue;
       const hasMeasure = ROM_MOTION.test(sn) && /\d+\s*(?:°|deg|degrees)\b|\b(full|limited|restricted|reduced|decreased|normal|WNL|within normal limits)\b/i.test(sn);
-      if (!hasMeasure && !(inRom && ROM_MOTION.test(sn))) continue;
+      // "Extremity: Range of motion in within normal limits." — a whole-area statement with no movement named.
+      const bareRom = !ROM_MOTION.test(sn) && /^(?:[A-Za-z][A-Za-z /&-]{1,40}:\s*)?(range of motion|rom)\b/i.test(sn) && /\b(within normal limits|wnl|normal|full|limited|restricted|reduced|decreased)\b/i.test(sn);
+      if (!hasMeasure && !bareRom && !(inRom && ROM_MOTION.test(sn))) continue;
       const own = ROM_REGIONS.find(([, re]) => re.test(sn))?.[0];
-      const r = own ?? region;
+      const bareLabel = bareRom && !own && head && !headRegion && !/range of motion|rom/i.test(head[1]) ? head[1].trim().replace(/^./, (c) => c.toUpperCase()) : "";
+      const r = bareLabel || (own ?? region);
       const text = sn.replace(/\s*(\d+)\s*(?:degrees|deg)\b\.?/gi, " $1°").replace(/\s+/g, " ").trim();
       const lineOut = r && !new RegExp(`^${r}\\b`, "i").test(text) ? `${r}: ${text}` : text;
       if (!out.includes(lineOut) && out.length < 20) out.push(lineOut);

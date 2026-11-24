@@ -1,7 +1,7 @@
 "use client";
 
-import { demographicsLine } from "@/lib/age";
-
+import { caseNamePrefixFor } from "@/lib/file-storage";
+import { joinCaseNumberPrefix, splitCaseNumberPrefix } from "@/lib/file-naming";
 import { mainEmailOf } from "@/lib/contact-email";
 
 import { normalizeReferralDates, normalizeReferralList } from "@/lib/imaging-dates";
@@ -9,12 +9,14 @@ import { normalizeReferralDates, normalizeReferralList } from "@/lib/imaging-dat
 import { usableLegacyMriFindings } from "@/lib/legacy-mri";
 import { isPaidFilled, PAID_GREEN } from "@/lib/paid-status";
 import { locationFieldWidth, NO_OFFICE_LABEL } from "@/lib/location-filter";
-import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
+import { type MaritalStatus } from "@/lib/marital-status";
 import { nameSearchMatches } from "@/lib/patient-name-match";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
+import { useCasePatientPhoto } from "@/components/case-header-photo";
+import { PatientAddressFields, PatientIdentityFields } from "@/components/patient-person-fields";
 import { ScrollLock } from "@/components/scroll-lock";
 import { QuickGlance } from "@/components/quick-glance";
 import { GoatPanel } from "@/components/goat-panel";
@@ -28,17 +30,32 @@ import { normalizeReviewStatus, reviewSelectOptionsFor, reviewStatusTone } from 
 import { downloadVCard } from "@/lib/vcard";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
+import {
+  complianceAccess,
+  compliancePatchValue,
+  compliancePillStyle,
+  resolveComplianceOption,
+} from "@/lib/compliance";
+import { useComplianceOptions } from "@/hooks/use-compliance-options";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
+import { AttorneyEmailCopy } from "@/components/attorney-email-copy";
+import { AttorneyFirmSelect } from "@/components/attorney-firm-select";
+import { compareAttorneyPickerNames, isSelfRepresentedAttorney, SELF_ATTORNEY_VALUE } from "@/lib/attorney-picker";
+import { ContactEmailLine, findEmailContact } from "@/components/contact-email-line";
 import { DATE_SORT_KEYS, useDateSortPreference } from "@/hooks/use-date-sort-preference";
-import { useCaseNotes } from "@/hooks/use-case-notes";
+import { useCaseNotesText } from "@/hooks/use-case-note-entries";
+import { CaseNotesLog } from "@/components/case-notes-log";
 import { useDocumentTemplates } from "@/hooks/use-document-templates";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
+import { mergePatientCloudNotes } from "@/lib/encounter-merge";
+import { buildSoapPrintFragment, SOAP_PRINT_CSS } from "@/lib/print-soap";
 import { useModuleVisibility } from "@/hooks/use-module-visibility";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
 import { Icd10Search } from "@/components/icd10-search";
 import { sameCode } from "@/lib/icd10";
 import { DxSuggestions } from "@/components/dx-suggestions";
+import { useDxSuggestionIgnores } from "@/hooks/use-dx-suggestion-ignores";
 import type { DxSaveToListConfig } from "@/components/dx-save-to-list";
 import { guessDiagnosisFolderId, saveCodeToDiagnosisList } from "@/lib/dx-save-to-list";
 import { dxInputFromGoat, suggestDiagnosesDetailed } from "@/lib/dx-suggest";
@@ -47,6 +64,17 @@ import { usePatientBilling } from "@/hooks/use-patient-billing";
 import { editedPatch, flatten, takeExternal, decodeFlat, type Flat } from "@/lib/field-merge";
 import { onLocalChange } from "@/lib/local-sync";
 import { getPatientById, PATIENTS_STORAGE_KEY } from "@/lib/mock-data";
+import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
+import { folderForCase, splitFullName } from "@/lib/patient-folders";
+import {
+  addAdditionalDoi,
+  doiTokens,
+  extraDoisFor,
+  isoToLongUs,
+  isoToShortUs,
+  parseAdditionalDois,
+  serializeAdditionalDois,
+} from "@/lib/additional-dois";
 import { loadPatientBillingMap } from "@/lib/patient-billing";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
 import { useReportTemplates } from "@/hooks/use-report-templates";
@@ -56,7 +84,8 @@ import { findClosedKeyDateForDate } from "@/lib/key-dates";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { filterAppointmentTypesForPatient } from "@/lib/schedule-appointment-types";
 import { useTasks } from "@/hooks/use-tasks";
-import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
+import { PatientTodoList } from "@/components/patient-todo-list";
+import { softPillStyle } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { loadPatientPagePrefs } from "@/lib/patient-page-prefs";
 import {
@@ -99,8 +128,12 @@ import {
 import { NewAppointmentModal } from "@/components/new-appointment-modal";
 import { RescheduleAppointmentModal } from "@/components/reschedule-appointment-modal";
 import { EditAppointmentModal } from "@/components/edit-appointment-modal";
-import { DocumentScannerModal } from "@/components/document-scanner-modal";
-import { SmsSendMenu } from "@/components/sms-send-menu";
+import dynamic from "next/dynamic";
+// Scanner is only needed when the user taps Scan — load it on first use.
+const DocumentScannerModal = dynamic(
+  () => import("@/components/document-scanner-modal").then((m) => ({ default: m.DocumentScannerModal })),
+  { ssr: false },
+);
 import { QuestionnaireReviewCards, SendFormButton } from "@/components/patient-forms-panel";
 import { CashPaymentsSection } from "@/components/cash-payments-section";
 import { PatientPackagesSection } from "@/components/patient-packages-section";
@@ -108,8 +141,9 @@ import { TreatmentPlanSection } from "@/components/treatment-plan-section";
 import { usePatientPackages } from "@/hooks/use-patient-packages";
 import { useCashPayments } from "@/hooks/use-cash-payments";
 import { AddressFieldGroup } from "@/components/address-field-group";
-import { forceSyncNow } from "@/lib/storage-sync-interceptor";
+import { forceSyncNow, reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "@/lib/storage-sync-interceptor";
 import { buildFollowUpItems } from "@/lib/follow-up-queue";
+import { renderCaseNumber } from "@/lib/case-number";
 import { type TaskPriority } from "@/lib/tasks";
 import {
   patients as allPatients,
@@ -142,13 +176,14 @@ import {
 } from "@/lib/file-storage";
 import { loadEmailSettings, renderEmailTemplate } from "@/lib/email-settings";
 import { loadOfficeSettings } from "@/lib/office-settings";
-import { ensureDeleteAllowed } from "@/lib/delete-guard";
+import { checkOfficeDeletePassword, ensureDeleteAllowed } from "@/lib/delete-guard";
 import { usePlanTier } from "@/lib/plan-context";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { formatMonthDaySpan, localTodayIso, monthDaySpan, resolveDischargeDate } from "@/lib/discharge-date";
 import { resolveInitialExamDate } from "@/lib/initial-exam-date";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
 import { GoatDuplicateEncounters } from "@/components/goat-duplicate-encounters";
+import { appAlert, appConfirm } from "@/components/app-dialog";
 
 type ImagingMode = "xray" | "mri";
 type ImagingPanelKey = "xray" | "mri" | "specialist";
@@ -336,6 +371,64 @@ function buildPatientNameLookupSet(fullName: string, firstName: string, lastName
 /** Sentinel for "not in Contacts — I'll type the name". */
 const SPECIALIST_OTHER = "__type-a-name__";
 
+/** Imaging Center picker — same look and behavior as the Specialist
+ *  dropdown: pick a saved Imaging Center contact, or choose
+ *  "Someone else" to type a name. Saves the same plain center name. */
+function ImagingCenterSelect({
+  centers,
+  className,
+  onChange,
+  placeholder = "Select imaging center",
+  typePlaceholder = "Type the imaging center's name",
+  value,
+}: {
+  centers: string[];
+  className: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  typePlaceholder?: string;
+  value: string;
+}) {
+  const [typing, setTyping] = useState(false);
+  const known = centers.includes(value);
+  const showTyped = typing || (Boolean(value) && !known);
+  return (
+    <>
+      <select
+        className={className}
+        onChange={(event) => {
+          const picked = event.target.value;
+          if (picked === SPECIALIST_OTHER) {
+            setTyping(true);
+            onChange("");
+            return;
+          }
+          setTyping(false);
+          onChange(picked);
+        }}
+        value={showTyped ? SPECIALIST_OTHER : value}
+      >
+        <option value="">{placeholder}</option>
+        {centers.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+        <option value={SPECIALIST_OTHER}>Someone else — type a name</option>
+      </select>
+      {showTyped && (
+        <input
+          autoFocus={typing}
+          className={className}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={typePlaceholder}
+          value={value}
+        />
+      )}
+    </>
+  );
+}
+
 function isSpecialistReferralContactCategory(category: string) {
   // Only the fixed "Specialist" top-level category is a specialist.
   // Attorneys and Imaging Centers are categorically different; the
@@ -474,9 +567,6 @@ function toUsDate(value: string) {
   return formatUsDateInput(trimmed);
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
 
 function getPopupAnchorFromEvent(event: MouseEvent<HTMLElement>): PopupAnchor {
   return {
@@ -513,41 +603,29 @@ function getAnchoredModalStyle(
     (viewportHeight * maxHeightVh) / 100,
     Math.max(320, viewportHeight - margin * 2),
   );
-  const centerX = anchor?.x ?? viewportWidth / 2;
-  const centerY = anchor?.y ?? viewportHeight / 2;
-  const left = clamp(centerX - width / 2, margin, viewportWidth - width - margin);
-  const top = clamp(centerY - 48, margin, viewportHeight - maxHeight - margin);
-
-  // For resizable modals (Imaging Findings / Specialist Recommendations
-  // editors) we use minWidth instead of width so the user-applied inline
-  // width from the bottom-right resize handle isn't clobbered on every
-  // React re-render. Same for height: minHeight instead of maxHeight.
-  //
-  // These can be dragged taller than the viewport, and the page behind is
-  // scroll-locked, so a modal anchored part-way down the screen put its
-  // own bottom — Save included — out of reach. They're pinned to the top
-  // instead: the full screen height is available and the content scrolls
-  // inside the modal.
+  // Every pop-up opens centered on screen (not where the button was
+  // clicked) and always fits inside the viewport, so its buttons are
+  // never pushed off-screen. `anchor` is kept for call-site compatibility.
+  void anchor;
+  const centered: CSSProperties = {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    transform: "translate(-50%, -50%)",
+    maxWidth: viewportWidth - margin * 2,
+  };
+  // Resizable editors (Imaging Findings / Specialist Recommendations) use
+  // minWidth/minHeight so the user's resize isn't clobbered on re-render,
+  // and are capped to the viewport so Save stays reachable.
   if (options.resizable) {
-    const hardMaxHeight = Math.max(320, viewportHeight - margin * 2);
     return {
-      position: "absolute",
-      left,
-      top: margin,
+      ...centered,
       minWidth: width,
       minHeight: Math.min(maxHeight, 480),
-      maxHeight: hardMaxHeight,
-      maxWidth: viewportWidth - margin * 2,
+      maxHeight: Math.max(320, viewportHeight - margin * 2),
     };
   }
-
-  return {
-    position: "absolute",
-    left,
-    top,
-    width,
-    maxHeight,
-  };
+  return { ...centered, width, maxHeight };
 }
 
 function getTodayUsDate() {
@@ -660,6 +738,69 @@ function formatMonthDayDiff(diff: { months: number; days: number } | null) {
   const monthLabel = `${diff.months} month${diff.months === 1 ? "" : "s"}`;
   const dayLabel = `${diff.days} day${diff.days === 1 ? "" : "s"}`;
   return `${monthLabel}, ${dayLabel}`;
+}
+
+function formatCalcMoney(value: number) {
+  return value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+// Scratch "what should we ask for" tool. Nothing here is saved.
+function AskCalculator({ billed }: { billed: number }) {
+  const [mode, setMode] = useState<"pct" | "amt">("pct");
+  const [value, setValue] = useState("");
+  const n = Number.parseFloat(value);
+  const valid = billed > 0 && Number.isFinite(n) && n >= 0;
+  const pct = valid ? (mode === "pct" ? n : (n / billed) * 100) : null;
+  const amt = valid ? (mode === "pct" ? (billed * n) / 100 : n) : null;
+  const disc = pct === null ? null : 100 - pct;
+  return (
+    <div className="w-full shrink-0 rounded-lg border border-[var(--line-soft)] bg-white/60 px-3 py-2 text-sm sm:w-56">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="font-medium text-[var(--text-muted)]">Ask calculator</span>
+        <div className="flex overflow-hidden rounded-md border border-[var(--line-soft)] text-xs">
+          {(["pct", "amt"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => { setMode(m); setValue(""); }}
+              className={`px-2 py-0.5 font-medium ${mode === m ? "bg-[var(--brand-primary)] text-white" : "text-[var(--text-muted)]"}`}
+            >
+              {m === "pct" ? "%" : "$"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="relative">
+        {mode === "amt" && <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">$</span>}
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="any"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={mode === "pct" ? "50" : "1000"}
+          aria-label={mode === "pct" ? "Ask percentage" : "Ask amount"}
+          className={`w-full rounded-md border border-[var(--line-soft)] bg-white py-1 tabular-nums ${mode === "amt" ? "pl-5 pr-2" : "pl-2 pr-6"}`}
+        />
+        {mode === "pct" && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">%</span>}
+      </div>
+      <dl className="mt-1.5 space-y-0.5 tabular-nums">
+        <div className="flex justify-between gap-2">
+          <dt className="text-[var(--text-muted)]">{mode === "pct" ? "Ask for" : "% of billed"}</dt>
+          <dd className="font-medium text-[var(--text-main)]">
+            {mode === "pct" ? (amt === null ? "-" : formatCalcMoney(amt)) : formatPercentage(pct)}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-[var(--text-muted)]">Discount</dt>
+          <dd className="font-medium text-[var(--text-main)]">
+            {disc === null || amt === null ? "-" : `${formatPercentage(disc)} (${formatCalcMoney(billed - amt)})`}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
 }
 
 function formatPercentage(value: number | null) {
@@ -776,6 +917,13 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         margin: 0 !important; padding: 0 !important; border: 0 !important; text-indent: 0 !important;
         margin-left: 0 !important; padding-left: 0 !important;
       }
+      /* Never let one over-wide line shrink the whole printout. Chrome scales
+         the entire document down (tiny text, wide page) when anything
+         overflows the page width, so force every inline run to be breakable
+         and every box to stay inside the page. */
+      .content, .content * { max-width: 100%; overflow-wrap: anywhere; }
+      .content *:not(.kv-label) { white-space: pre-wrap !important; }
+      .content img, .content table, .content svg, .content video { max-width: 100% !important; height: auto; }
       h1, h2, h3, h4, h5, h6 { margin: 14px 0 4px 0; text-indent: 0; }
       p { margin: 0 0 6px 0; text-indent: 0; }
       ul, ol { margin: 0 0 6px 0; padding-left: 20px; text-indent: 0; }
@@ -876,17 +1024,16 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
          Use "all: initial" to completely isolate from the narrative
          document's CSS (its global p, *, body rules were leaking in
          and causing visible paragraph-indent / tab artefacts).
-         After the reset we re-declare every style the encounter print
-         needs — this is an EXACT copy of the standalone encounter
-         print CSS from encounter-workspace.tsx.                       */
+         The note layout itself lives in src/lib/print-soap.ts so this
+         attachment and Print Encounters break the same way.          */
       .soap-pages {
         all: initial !important;
         display: block !important;
         box-sizing: border-box !important;
         font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
         font-size: 12px !important;
-        line-height: 1.4 !important;
-        color: #1a1a1a !important;
+        line-height: 1.45 !important;
+        color: #111 !important;
         white-space: normal !important;
         background: #fff !important;
       }
@@ -902,112 +1049,7 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         line-height: inherit;
         color: inherit;
       }
-      /* Re-declare every style exactly matching the standalone encounter print */
-      .soap-pages .letterhead {
-        display: flex;
-        align-items: flex-start;
-        gap: 16px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #0d79bf;
-        margin-bottom: 10px;
-      }
-      .soap-pages .logo {
-        height: 70px;
-        width: auto;
-        max-width: 200px;
-        object-fit: contain;
-        flex-shrink: 0;
-        display: block;
-        margin: 0;
-        padding: 0;
-      }
-      .soap-pages .office-info { flex: 1; text-align: right; margin: 0; padding: 0; }
-      .soap-pages .office-name-lh { font-size: 15px; font-weight: 700; color: #0d79bf; margin: 0; padding: 0; line-height: 1.2; }
-      .soap-pages .office-detail { font-size: 11px; color: #444; line-height: 1.5; margin: 0; }
-      .soap-pages p { display: block; margin: 0 0 3px 0; padding: 0; text-indent: 0 !important; }
-      .soap-pages strong, .soap-pages b { font-weight: 700; }
-      .soap-pages em, .soap-pages i { font-style: italic; }
-      .soap-pages u { text-decoration: underline; }
-      .soap-pages s, .soap-pages strike, .soap-pages del { text-decoration: line-through; }
-      .soap-pages sub { vertical-align: sub; font-size: smaller; }
-      .soap-pages sup { vertical-align: super; font-size: smaller; }
-      .soap-pages br { display: block; }
-      .soap-pages img { display: inline; }
-      .soap-pages .patient-banner {
-        background: #f0f6fb;
-        border: 1px solid #d0dfe9;
-        border-radius: 4px;
-        padding: 6px 10px;
-        margin-bottom: 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .soap-pages .patient-banner .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: #5a7a8f; }
-      .soap-pages .patient-banner .name { font-size: 14px; font-weight: 700; color: #13293d; }
-      .soap-pages .patient-banner .doc-title { font-size: 11px; font-weight: 600; color: #0d79bf; }
-      .soap-pages .encounter {
-        border: 1px solid #d0dfe9;
-        border-radius: 4px;
-        margin-bottom: 8px;
-        display: block;
-      }
-      .soap-pages .encounter-header {
-        background: #0d79bf;
-        color: #fff;
-        padding: 4px 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .soap-pages .encounter-date { font-size: 12px; font-weight: 700; color: #fff; }
-      .soap-pages .encounter-type { font-size: 11px; opacity: 0.9; color: #fff; }
-      .soap-pages .encounter-meta {
-        background: #f7fafc;
-        padding: 3px 10px;
-        border-bottom: 1px solid #e2eaf0;
-        font-size: 10px;
-        color: #5a7a8f;
-        display: flex;
-        gap: 16px;
-      }
-      .soap-pages .soap-section {
-        padding: 4px 10px;
-        border-bottom: 1px solid #eef2f6;
-        display: block;
-      }
-      .soap-pages .soap-section:last-child { border-bottom: none; }
-      .soap-pages .soap-label {
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #0d79bf;
-        margin-bottom: 2px;
-        display: block;
-      }
-      .soap-pages .soap-content {
-        font-size: 12px;
-        line-height: 1.45;
-        color: #1a1a1a;
-        word-break: break-word;
-        display: block;
-      }
-      .soap-pages .soap-content p { margin: 0 0 3px 0; padding: 0; text-indent: 0 !important; display: block; }
-      .soap-pages .soap-content div { margin: 0; padding: 0; text-indent: 0 !important; display: block; }
-      .soap-pages .soap-content span { font-size: inherit; color: inherit; }
-      .soap-pages .soap-content b, .soap-pages .soap-content strong { font-weight: 700; }
-      .soap-pages .soap-content em, .soap-pages .soap-content i { font-style: italic; }
-      .soap-pages .soap-content u { text-decoration: underline; }
-      .soap-pages .print-footer {
-        margin-top: 14px;
-        padding-top: 6px;
-        border-top: 1px solid #d0dfe9;
-        font-size: 9px;
-        color: #8899a6;
-        text-align: center;
-        display: block;
-      }
+      ${SOAP_PRINT_CSS}
 
       /* ── Attached Billing Statement pages ── */
       .billing-pages {
@@ -1080,10 +1122,6 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
         size: Letter;
         margin: 0.55in;
       }
-      @media print {
-        .soap-pages * { break-inside: auto !important; break-before: auto !important; break-after: auto !important; }
-        .encounter { page-break-inside: auto !important; }
-      }
     </style>
   </head>
   <body>
@@ -1099,9 +1137,8 @@ function buildPrintableDocumentHtml(config: PrintableDocumentConfig) {
 }
 
 /**
- * Build a full standalone SOAP-notes HTML document — identical styling to the
- * encounter workspace print. Returns a complete `<!doctype html>…</html>`
- * string that can be concatenated before the narrative document.
+ * SOAP pages printed ahead of a narrative. Same visit-per-page layout as
+ * Print Encounters.
  */
 function buildSoapPrintHtmlForNarrative(config: {
   officeName: string;
@@ -1119,83 +1156,7 @@ function buildSoapPrintHtmlForNarrative(config: {
     soap: Record<string, string>;
   }>;
 }) {
-  if (!config.encounters.length) return "";
-
-  const formatSoapText = (text: string) => {
-    let cleaned = text.trim();
-    if (!cleaned) return "-";
-    // Nuclear fix: strip ALL inline style attributes from the HTML.
-    // The editor saves style="..." on <p>, <div>, <span> etc. with
-    // text-indent, padding, margins, white-space that cause visible
-    // tab/indent artefacts when embedded inside the narrative document.
-    // The print CSS handles all visual styling — inline styles only hurt.
-    cleaned = cleaned
-      .replace(/\s*style\s*=\s*"[^"]*"/gi, "")
-      .replace(/\s*style\s*=\s*'[^']*'/gi, "")
-      .replace(/\t/g, "")
-      .replace(/&(emsp|ensp|Tab|#9|#x9);/gi, "")
-      .replace(/^[ \t]+/gm, "");
-    return cleaned;
-  };
-
-  const logoMarkup = config.logoDataUrl.trim()
-    ? `<img alt="Office Logo" src="${escapeHtml(config.logoDataUrl)}" class="logo" />`
-    : "";
-
-  const encounterMarkup = config.encounters
-    .map(
-      (encounter) => `<section class="encounter">
-  <div class="encounter-header">
-    <div class="encounter-date">${escapeHtml(encounter.encounterDate)}</div>
-    <div class="encounter-type">${escapeHtml(encounter.appointmentType)}</div>
-  </div>
-  <div class="encounter-meta">
-    <span>Provider: <strong>${escapeHtml(encounter.provider)}</strong></span>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Subjective</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.subjective ?? "")}</div>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Objective</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.objective ?? "")}</div>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Assessment</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.assessment ?? "")}</div>
-  </div>
-  <div class="soap-section">
-    <div class="soap-label">Plan</div>
-    <div class="soap-content">${formatSoapText(encounter.soap.plan ?? "")}</div>
-  </div>
-</section>`,
-    )
-    .join("");
-
-  return `<div class="soap-pages" style="page-break-after: always;">
-    <header class="letterhead">
-      ${logoMarkup}
-      <div class="office-info">
-        <p class="office-name-lh">${escapeHtml(config.officeName)}</p>
-        <p class="office-detail">
-          ${escapeHtml(config.officeAddress)}<br />
-          T: ${escapeHtml(config.officePhone)}${config.officeFax.trim() ? ` &nbsp;|&nbsp; F: ${escapeHtml(config.officeFax)}` : ""}<br />
-          ${escapeHtml(config.officeEmail)}
-        </p>
-      </div>
-    </header>
-    <div class="patient-banner">
-      <div>
-        <p class="label">Patient</p>
-        <p class="name">${escapeHtml(config.patientName)}</p>
-      </div>
-      <div class="doc-title">Clinical SOAP Notes</div>
-    </div>
-    ${encounterMarkup}
-    <div class="print-footer">
-      ${escapeHtml(config.officeName)} &bull; Confidential Medical Record
-    </div>
-  </div>`;
+  return buildSoapPrintFragment(config);
 }
 
 /**
@@ -1380,7 +1341,8 @@ function printHtmlWithIframeFallback(printableHtml: string) {
 export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const router = useRouter();
   const { officeSettings } = useOfficeSettings();
-  const { caseStatuses, lienLabel, lienOptions } = useCaseStatuses();
+  const { caseStatuses, lienLabel, lienOptions, complianceEnabled } = useCaseStatuses();
+  const { options: complianceOptions, shownOptions: complianceShownOptions } = useComplianceOptions();
   const {
     billingMacros,
     addDiagnosis: addLibraryDiagnosis,
@@ -1405,7 +1367,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () => tasks.filter((task) => task.patientId === patient.id),
     [tasks, patient.id],
   );
-  const { encountersByNewest, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter, setSignedAndConfirm, putEncounterRecords } = useEncounterNotes();
+  const { encountersByNewest, updateEncounter, setSoapSection, addMacroRun, addCharge, deleteEncounter, setSignedAndConfirm, putEncounterRecords, syncEncounterTypeForAppointment } = useEncounterNotes();
   const { guardCheckout, checkoutNoteDialog } = useCheckoutNoteGuard();
   const { isFeatureEnabled } = useModuleVisibility();
   // Pulled in so encounter deletes cascade to the linked cash payment
@@ -1413,6 +1375,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // deleted encounter) and silently inflates Cash Payments totals.
   const { paymentsByPatient: cashPaymentsByPatient, updatePatientPayments: cascadeCashPaymentsOnEncounterDelete } = useCashPayments();
   const { entries: patientDiagnoses, addDiagnosis, addBulkDiagnoses, removeDiagnosis, reorderDiagnoses } = usePatientDiagnoses(patient.id);
+  const dxIgnores = useDxSuggestionIgnores(patient.id);
   const {
     recordsByPatientId: followUpOverridesByPatientId,
     getRecord: getPatientFollowUpOverride,
@@ -1429,9 +1392,27 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     () =>
       contacts
         .filter((contact) => normalizeLookupValue(contact.category) === "attorney")
-        .sort((a, b) => a.name.localeCompare(b.name)),
+        .sort((a, b) => compareAttorneyPickerNames(a.name, b.name)),
     [contacts],
   );
+  const folderCrumb = useMemo(() => {
+    if (!patientFoldersEnabled()) return null;
+    const found = folderForCase(
+      patient.id,
+      allPatients.filter((row) => !row.deleted).map((row) => ({
+        id: row.id,
+        fullName: row.fullName,
+        dob: row.dob,
+        phone: row.phone,
+        address: row.address,
+      })),
+    );
+    if (found) return found;
+    const parts = splitFullName(patient.fullName);
+    const name = parts.lastName && parts.firstName ? `${parts.lastName}, ${parts.firstName}` : patient.fullName.trim() || "Patient";
+    return { id: `pf-${patient.id}`, name };
+  }, [patient.id, patient.fullName, allPatients.length]);
+  const patientPhotoSrc = useCasePatientPhoto(folderCrumb?.id ?? null);
   const imagingCenterContacts = useMemo(
     () =>
       contacts
@@ -1516,6 +1497,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [patientSex, setPatientSex] = useState<"Male" | "Female" | "Other" | "">(patient.sex ?? "");
   const [maritalStatus, setMaritalStatus] = useState<MaritalStatus | "">(patient.maritalStatus ?? "");
   const [dateOfLoss, setDateOfLoss] = useState(toUsDate(patient.dateOfLoss));
+  // Extra dates of injury on this same record (a second accident during care), ISO. Saved in matrix.additionalDois.
+  const [additionalDois, setAdditionalDois] = useState<string[]>(() => parseAdditionalDois(patient.matrix?.additionalDois));
+  const [addDoiOpen, setAddDoiOpen] = useState(false);
+  const [addDoiDraft, setAddDoiDraft] = useState("");
+  const [addDoiError, setAddDoiError] = useState("");
+  const primaryDoiIso = toIsoDateFromUsDate(dateOfLoss) || patient.dateOfLoss;
+  const extraDois = extraDoisFor(primaryDoiIso, serializeAdditionalDois(additionalDois));
   const [initialExam, setInitialExam] = useState(toUsDate(patient.matrix?.initialExam ?? ""));
   const [patientPhone, setPatientPhone] = useState(formatUsPhoneInput(patient.phone));
   const [textRemindersOff, setTextRemindersOff] = useState(Boolean(patient.textRemindersOff));
@@ -1535,12 +1523,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     patient.matrix?.specialistRecommendations ?? "",
   );
   // Case Notes live in a shared store so this box mirrors the encounter
-  // workspace's Notes box (seeded from the legacy matrix.notes value).
-  const { notes: patientNotes, setNotes: setPatientNotes } = useCaseNotes(
-    patient.id,
-    patient.matrix?.notes ?? "",
-  );
+  // workspace's Notes box (quick-note log + old free-form text, seeded from the legacy matrix.notes value).
+  const patientNotes = useCaseNotesText(patient.id, patient.matrix?.notes ?? "");
   const [caseStatus, setCaseStatus] = useState<string>(patient.caseStatus);
+  // Optional Compliance (only shown while the office has switched it on). "" = not set.
+  const [compliance, setCompliance] = useState<string>(patient.compliance ?? "");
+  const complianceOption = resolveComplianceOption(compliance, complianceOptions);
   const [isCashPatient, setIsCashPatient] = useState<boolean>(Boolean(patient.isCashPatient));
   const [patientLocationId, setPatientLocationId] = useState<string>(patient.locationId ?? "");
 
@@ -1825,11 +1813,46 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const [dxDragOverIndex, setDxDragOverIndex] = useState<number | null>(null);
   const dxTouchStartY = useRef<number | null>(null);
   const dxTouchRowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
-  const caseNumber = useMemo(
-    () => buildCaseNumber(dateOfLoss, lastName, firstName),
-    [dateOfLoss, firstName, lastName],
-  );
+  const stampedCaseFormat = patient.matrix?.caseNumberFormat;
+  const stampedCaseSeq = patient.matrix?.caseSeq;
+  const caseNumber = useMemo(() => {
+    // A patient created under a custom case number format keeps that format.
+    if (stampedCaseFormat) {
+      const m = toUsDate(dateOfLoss).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      return renderCaseNumber(stampedCaseFormat, {
+        mm: m?.[1],
+        dd: m?.[2],
+        yyyy: m?.[3],
+        lastName,
+        firstName,
+        seq: parseInt(stampedCaseSeq ?? "", 10) || undefined,
+      });
+    }
+    return buildCaseNumber(dateOfLoss, lastName, firstName);
+  }, [dateOfLoss, firstName, lastName, stampedCaseFormat, stampedCaseSeq]);
   const mriStudyLabel = mri.isCt ? "CT" : "MRI";
+  // One handler for the Add to Contacts button and the new-patient prompt.
+  const addPatientToContacts = () =>
+    downloadVCard({
+      firstName,
+      lastName,
+      phone: patientPhone,
+      email: patientEmail,
+      dob: patientDob,
+      address: patientAddress,
+      note: caseNumber ? `Case #: ${caseNumber}` : undefined,
+    });
+  // Right after New Patient + Case, the list page links here with
+  // ?addContact=1. Offer once, then drop the flag so a refresh won't re-ask.
+  const [showAddContactPrompt, setShowAddContactPrompt] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("addContact") !== "1") return;
+    setShowAddContactPrompt(true);
+    url.searchParams.delete("addContact");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  }, []);
   const toggleImagingPanel = (panel: ImagingPanelKey) => {
     setImagingPanelsOpen((current) => ({
       ...current,
@@ -1955,9 +1978,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   const handlePatientFileDelete = useCallback(
     async (file: FileRecord) => {
       if (
-        !window.confirm(
-          `Permanently delete "${file.name}"?\n\nThis file will be removed from the cloud forever and cannot be recovered.`,
-        )
+        !(await appConfirm(`Permanently delete "${file.name}"?\n\nThis file will be removed from the cloud forever and cannot be recovered.`))
       ) {
         return;
       }
@@ -1980,14 +2001,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
   const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [renamePrefix, setRenamePrefix] = useState<string | null>(null);
 
   const startRenameFile = useCallback((file: FileRecord) => {
     setRenamingFileId(file.id);
-    setRenameDraft(file.name);
+    const split = caseNamePrefixFor(file.folderId, file.name) ?? splitCaseNumberPrefix(file.name, caseNumber, `${lastName}, ${firstName}`);
+    setRenamePrefix(split ? split.prefix : null);
+    setRenameDraft(split ? split.label : file.name);
   }, []);
 
   const commitRenameFile = useCallback(() => {
-    const trimmed = renameDraft.trim();
+    const trimmed = renamePrefix ? joinCaseNumberPrefix(renamePrefix, renameDraft) : renameDraft.trim();
     if (!renamingFileId || !trimmed) {
       setRenamingFileId(null);
       return;
@@ -1998,7 +2022,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       return next;
     });
     setRenamingFileId(null);
-  }, [renamingFileId, renameDraft]);
+  }, [renamingFileId, renameDraft, renamePrefix]);
 
   const [emailingFileId, setEmailingFileId] = useState<string | null>(null);
   const [emailToast, setEmailToast] = useState("");
@@ -2274,19 +2298,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   }, [patient.id]);
 
   const patientEncounterRecords = useMemo(() => {
-    const byId = new Map<string, (typeof encountersByNewest)[number]>();
-    for (const note of cloudPatientNotes) byId.set(note.id, note);
-    // In-memory copies win when newer: they carry edits made on this device
-    // that may not have reached the cloud snapshot fetched above.
-    for (const note of encountersByNewest) {
-      if (note.patientId !== patient.id) continue;
-      const cloud = byId.get(note.id);
-      if (!cloud || note.updatedAt >= cloud.updatedAt) byId.set(note.id, note);
-    }
-    return Array.from(byId.values()).sort(
-      (left, right) =>
-        toSortStampFromUsDate(right.encounterDate) - toSortStampFromUsDate(left.encounterDate),
-    );
+    // In-memory copies win when newer; notes deleted on this page never
+    // come back from the (older) cloud snapshot fetched above.
+    const merged = mergePatientCloudNotes(encountersByNewest, cloudPatientNotes, patient.id);
+    return merged
+      .filter((note) => note.patientId === patient.id)
+      .sort(
+        (left, right) =>
+          toSortStampFromUsDate(right.encounterDate) - toSortStampFromUsDate(left.encounterDate),
+      );
   }, [cloudPatientNotes, encountersByNewest, patient.id]);
 
   // openPatientEncounterRecords memo used to live here for the
@@ -2644,6 +2664,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       review: reviewStatus,
       isCashPatient,
       doi: dateOfLoss,
+      additionalDois: extraDoisFor(toIsoDateFromUsDate(dateOfLoss) || patient.dateOfLoss, serializeAdditionalDois(additionalDois)).map(isoToLongUs),
       initialExam: effectiveInitialExam,
       priorCare,
       xrayFindings,
@@ -2687,7 +2708,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     goatTermGroups, goatContacts, goatFiles.enabled, goatFiles.files,
     hiddenStyle, canView, goatMacroLibrary.templates, getPlansForPatient, patient.id, patient.fullName,
     lastName, firstName, patientDob, patientPhone, patientEmail, patientAddress, patientAlerts, attorney,
-    caseStatus, lienStatus, reviewStatus, isCashPatient, dateOfLoss, effectiveInitialExam, priorCare, xrayFindings,
+    caseStatus, lienStatus, reviewStatus, isCashPatient, dateOfLoss, additionalDois, patient.dateOfLoss, effectiveInitialExam, priorCare, xrayFindings,
     mriCtFindings, specialistRecommendations, xrayReferrals, mriReferrals, specialistReferrals, patientNotes,
     patientAppointmentRecords, patientEncounterRecords, patientDiagnoses, effectiveDischargeDate, dischargeInfo, billedAmount,
     paidAmount, paidDate, rbSentDate,
@@ -2836,10 +2857,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // patient-page rollup no longer renders.
 
   const matchedAttorneyContact = useMemo(
-    () =>
-      attorneyContacts.find(
-        (contact) => normalizeLookupValue(contact.name) === normalizeLookupValue(attorney),
-      ) ?? null,
+    () => {
+      // SELF is not a firm. A contact named "Self" must not fill the phone.
+      if (isSelfRepresentedAttorney(attorney)) return null;
+      return (
+        attorneyContacts.find(
+          (contact) => normalizeLookupValue(contact.name) === normalizeLookupValue(attorney),
+        ) ?? null
+      );
+    },
     [attorney, attorneyContacts],
   );
   const specialistReferralTemplate = useMemo(
@@ -2972,6 +2998,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       PATIENT_SEX: patientSex,
       MARITAL_STATUS: maritalStatus,
       DATE_OF_INJURY: toUsDate(dateOfLoss),
+      ...doiTokens(toIsoDateFromUsDate(dateOfLoss) || patient.dateOfLoss, serializeAdditionalDois(additionalDois)),
       PATIENT_PHONE: patientPhone,
       PATIENT_EMAIL: patientEmail,
       CASE_NUMBER: caseNumber,
@@ -3005,7 +3032,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const handleAttorneyChange = (nextValue: string) => {
-    setAttorney(nextValue);
+    setAttorney(isSelfRepresentedAttorney(nextValue) ? SELF_ATTORNEY_VALUE : nextValue);
     setAttorneyModalError("");
     if (showAddAttorneyPrompt || showAddAttorneyForm) {
       setShowAddAttorneyPrompt(false);
@@ -3015,15 +3042,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     }
   };
 
-  const handleAttorneyBlur = () => {
-    const trimmed = attorney.trim();
+  const handleAttorneyBlur = (raw?: string) => {
+    const trimmed = (raw ?? attorney).trim();
     if (!trimmed) {
       return;
     }
-    if (normalizeLookupValue(trimmed) === "self") {
+    if (isSelfRepresentedAttorney(trimmed)) {
+      if (attorney !== SELF_ATTORNEY_VALUE) setAttorney(SELF_ATTORNEY_VALUE);
       return;
     }
-    if (matchedAttorneyContact) {
+    const knownFirm = attorneyContacts.some(
+      (contact) => normalizeLookupValue(contact.name) === normalizeLookupValue(trimmed),
+    );
+    if (knownFirm) {
       return;
     }
     const isDismissed = dismissedAttorneyDrafts.some(
@@ -3459,13 +3490,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     autoSavePatientFile({ specialistReferrals: nextSpecialists });
   };
 
-  const generateSpecialistReferralPdf = (
+  const generateSpecialistReferralPdf = async (
     entry: SpecialistReferral,
     promptAnswers?: Record<string, string>,
   ) => {
     if (!specialistReferralTemplate) {
       setSpecialistMessage("NO PDF. Create Template?");
-      const shouldCreate = window.confirm("NO PDF. Create Template?");
+      const shouldCreate = (await appConfirm("NO PDF. Create Template?"));
       if (shouldCreate) {
         openTemplateSettings("specialistReferral");
       }
@@ -3571,7 +3602,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setSpecialistMessage(`Generated ${specialistReferralTemplate.name} for ${entry.specialist}. Use Save as PDF in the print dialog.`);
   };
 
-  const generateImagingRequestPdf = (
+  const generateImagingRequestPdf = async (
     mode: ImagingMode,
     entry: ImagingReferral,
     promptAnswers?: Record<string, string>,
@@ -3579,7 +3610,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     const setMessage = mode === "xray" ? setXrayMessage : setMriMessage;
     if (!imagingRequestTemplate) {
       setMessage("NO PDF. Create Template?");
-      const shouldCreate = window.confirm("NO PDF. Create Template?");
+      const shouldCreate = (await appConfirm("NO PDF. Create Template?"));
       if (shouldCreate) {
         openTemplateSettings("imagingRequest");
       }
@@ -3649,10 +3680,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setMessage(`Generated ${imagingRequestTemplate.name} for ${entry.modalityLabel}. Use Save as PDF in the print dialog.`);
   };
 
-  const generateLetterPdf = (promptAnswers?: Record<string, string>) => {
+  const generateLetterPdf = async (promptAnswers?: Record<string, string>) => {
     if (!selectedLetterTemplate) {
       setLetterMessage("NO PDF. Create Template?");
-      const shouldCreate = window.confirm("NO PDF. Create Template?");
+      const shouldCreate = (await appConfirm("NO PDF. Create Template?"));
       if (shouldCreate) {
         openTemplateSettings("generalLetter");
       }
@@ -3793,6 +3824,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         sex: patientSex,
         maritalStatus,
         dateOfLoss,
+        additionalDatesOfInjury: doiTokens(toIsoDateFromUsDate(dateOfLoss) || patient.dateOfLoss, serializeAdditionalDois(additionalDois)).ADDITIONAL_DATES_OF_INJURY,
+        allDatesOfInjury: doiTokens(toIsoDateFromUsDate(dateOfLoss) || patient.dateOfLoss, serializeAdditionalDois(additionalDois)).ALL_DATES_OF_INJURY,
         initialExam: effectiveInitialExam,
         phone: patientPhone,
         email: patientEmail,
@@ -3899,14 +3932,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
   // Diagnoses for this report: re-render the text when the template uses the
   // diagnosis tokens (the billing statement reads the ticks at print time).
-  const applyNarrativeDxExclusion = (next: Set<string>) => {
+  const applyNarrativeDxExclusion = async (next: Set<string>) => {
     if (!narrativePreview) return;
     const template = reportTemplates.templates.find((entry) => entry.id === narrativePreview.templateId);
     const headerBody = documentTemplates.header.active ? documentTemplates.header.body : "";
     if (template && /DIAGNOSIS_/.test(`${template.body}\n${headerBody}`)) {
       if (
         narrativePreviewEditedRef.current &&
-        !window.confirm("Update the report text with these diagnoses? Edits made in the preview will be lost.")
+        !(await appConfirm("Update the report text with these diagnoses? Edits made in the preview will be lost."))
       ) {
         return;
       }
@@ -3918,10 +3951,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setNarrativeExcludedDxIds(next);
   };
 
-  const startNarrativeGeneration = () => {
+  const startNarrativeGeneration = async () => {
     if (!selectedNarrativeTemplate) {
       setNarrativeMessage("NO PDF. Create Template?");
-      const shouldCreate = window.confirm("NO PDF. Create Template?");
+      const shouldCreate = (await appConfirm("NO PDF. Create Template?"));
       if (shouldCreate) {
         openReportTemplateSettings();
       }
@@ -4176,7 +4209,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
   const openEncounterEditor = (encounterId: string) => {
     if (!isFeatureEnabled("encounters")) {
-      window.alert("Encounters is turned off. Enable it in Settings → Features to use it.");
+      void appAlert("Encounters is turned off. Enable it in Settings → Features to use it.");
       return;
     }
     router.push(`/encounters?patientId=${patient.id}&encounterId=${encounterId}`);
@@ -4198,7 +4231,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     }
   };
 
-  const handleAppointmentStatusChange = (appointmentId: string, nextStatus: AppointmentStatus) => {
+  const handleAppointmentStatusChange = async (appointmentId: string, nextStatus: AppointmentStatus) => {
     if (appointmentsLocked) {
       setEncounterMessage("This case is closed. Unlock the Appointments panel to make changes.");
       return;
@@ -4221,14 +4254,12 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       const closedKeyDate = findClosedKeyDateForDate(keyDates, target.date);
       if (
         closedKeyDate &&
-        !window.confirm(
-          `${toUsDate(target.date)} is marked CLOSED (${closedKeyDate.reason}). Check in anyway?`,
-        )
+        !(await appConfirm(`${toUsDate(target.date)} is marked CLOSED (${closedKeyDate.reason}). Check in anyway?`))
       ) {
         return;
       }
     }
-    if (target && !confirmStatusChangeIfNeeded(target.status, nextStatus)) return;
+    if (target && !(await confirmStatusChangeIfNeeded(target.status, nextStatus))) return;
     const apply = () => {
       updateAppointment(appointmentId, (current) => ({
         ...current,
@@ -4341,7 +4372,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
    * Canceled / Reschedule are also left alone — they reflect
    * what actually happened and shouldn't disappear from the record.
    */
-  const handleCaseStatusChange = (nextStatus: string) => {
+  const handleCaseStatusChange = async (nextStatus: string) => {
     // Always commit the status change first — that's the user's
     // primary intent. The appointment cleanup is a secondary
     // convenience prompt.
@@ -4365,12 +4396,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       return;
     }
 
-    const proceed = window.confirm(
-      `Patient marked as Dropped. Delete ${futureScheduled.length} future Scheduled appointment${
-        futureScheduled.length === 1 ? "" : "s"
-      } as well?\n\n` +
-        `(Past, Checked In/Out, Canceled, and Rescheduled appointments are kept as case history.)`,
-    );
+    const proceed = (await appConfirm(`Patient marked as Dropped. Delete ${futureScheduled.length} future Scheduled appointment${
+            futureScheduled.length === 1 ? "" : "s"
+          } as well?\n\n` +
+            `(Past, Checked In/Out, Canceled, and Rescheduled appointments are kept as case history.)`));
     if (!proceed) return;
 
     futureScheduled.forEach((appt) => {
@@ -4470,11 +4499,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           normalizeLookupValue(entry.appointmentType) === normalizedEncType,
       );
       if (siblingAppointments.length > 0 && normalizedApptType === normalizedEncType) {
-        const proceed = window.confirm(
-          `There are ${siblingAppointments.length + 1} appointments on ${dateLabel} for "${appointment.appointmentType}" that all link to the same encounter.\n\n` +
-            `Click OK to delete ONLY this one appointment — the encounter and its charges stay intact and the other ${siblingAppointments.length} appointment${siblingAppointments.length === 1 ? "" : "s"} keep linking to it.\n\n` +
-            `Click Cancel to keep everything.`,
-        );
+        const proceed = (await appConfirm(`There are ${siblingAppointments.length + 1} appointments on ${dateLabel} for "${appointment.appointmentType}" that all link to the same encounter.\n\n` +
+                    `Click OK to delete ONLY this one appointment — the encounter and its charges stay intact and the other ${siblingAppointments.length} appointment${siblingAppointments.length === 1 ? "" : "s"} keep linking to it.\n\n` +
+                    `Click Cancel to keep everything.`));
         if (!proceed) return;
         removeAppointment(appointment.id);
         setEncounterMessage(
@@ -4484,13 +4511,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       }
 
       const chargeCount = linkedEncounter.charges.length;
-      const proceed = window.confirm(
-        `This appointment has an attached encounter${
-          linkedEncounter.signed ? " (CLOSED)" : ""
-        } on ${dateLabel}${chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""}.\n\n` +
-          `Click OK to delete BOTH the appointment AND the encounter (and any attached charges).\n` +
-          `Click Cancel to keep everything.`,
-      );
+      const proceed = (await appConfirm(`This appointment has an attached encounter${
+                linkedEncounter.signed ? " (CLOSED)" : ""
+              } on ${dateLabel}${chargeCount > 0 ? ` with ${chargeCount} charge${chargeCount === 1 ? "" : "s"}` : ""}.\n\n` +
+                `Click OK to delete BOTH the appointment AND the encounter (and any attached charges).\n` +
+                `Click Cancel to keep everything.`));
       if (!proceed) {
         return;
       }
@@ -4512,9 +4537,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Delete the ${appointment.appointmentType} appointment on ${dateLabel} at ${timeLabel}? This cannot be undone.`,
-    );
+    const confirmed = (await appConfirm(`Delete the ${appointment.appointmentType} appointment on ${dateLabel} at ${timeLabel}? This cannot be undone.`));
     if (!confirmed) {
       return;
     }
@@ -4606,7 +4629,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   // can't create the duplicate appointments that made the old path dangerous.
   // It stamps the durable appointmentId and aligns the encounter's date/type
   // to the appointment so the two rows merge into one.
-  const mergeEncounterIntoAppointment = (
+  const mergeEncounterIntoAppointment = async (
     note: (typeof patientEncounterRecords)[number],
     appointment: ScheduleAppointmentRecord,
     occupant?: (typeof patientEncounterRecords)[number] | null,
@@ -4628,9 +4651,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           merging.charges.length > 0 ? " and charges" : ""
         } will be merged into this one and it's removed. Nothing is lost.`
       : "";
-    const proceed = window.confirm(
-      `Merge this encounter (your note${chargeNote}) into the ${dateUs} ${appointment.appointmentType} appointment so they become one?${dateNote}${mergeNote}`,
-    );
+    const proceed = (await appConfirm(`Merge this encounter (your note${chargeNote}) into the ${dateUs} ${appointment.appointmentType} appointment so they become one?${dateNote}${mergeNote}`));
     if (!proceed) return;
 
     // 1) Point the note encounter at the appointment (durable link + aligned
@@ -4697,13 +4718,13 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setEncounterMessage(`Merged into the ${dateUs} ${appointment.appointmentType} appointment.`);
   };
 
-  const createEncounterFromAppointment = (appointment: ScheduleAppointmentRecord) => {
+  const createEncounterFromAppointment = async (appointment: ScheduleAppointmentRecord) => {
     if (appointmentsLocked) {
       setEncounterMessage("This case is closed. Unlock the Appointments panel to make changes.");
       return;
     }
     if (!isFeatureEnabled("encounters")) {
-      window.alert("Encounters is turned off. Enable it in Settings → Features to use it.");
+      void appAlert("Encounters is turned off. Enable it in Settings → Features to use it.");
       return;
     }
     const appointmentDate = toUsDate(appointment.date);
@@ -4741,10 +4762,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     })();
     if (appointment.date !== todayIso) {
       const direction = appointment.date > todayIso ? "in the future" : "in the past";
-      const proceed = window.confirm(
-        `This appointment is on ${appointmentDate}, which is ${direction}. ` +
-          `Are you sure you want to create an encounter now? Click Cancel if you opened the wrong appointment.`,
-      );
+      const proceed = (await appConfirm(`This appointment is on ${appointmentDate}, which is ${direction}. ` +
+                `Are you sure you want to create an encounter now? Click Cancel if you opened the wrong appointment.`));
       if (!proceed) {
         setEncounterMessage(`Encounter creation canceled — appointment is ${direction}.`);
         return;
@@ -4770,6 +4789,19 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     );
   };
 
+  const commitAddDoi = () => {
+    const result = addAdditionalDoi(additionalDois, primaryDoiIso, addDoiDraft);
+    if (result.error) {
+      setAddDoiError(result.error);
+      return;
+    }
+    setAdditionalDois(result.list);
+    setAddDoiOpen(false);
+    setAddDoiDraft("");
+    setAddDoiError("");
+    autoSavePatientFile({ additionalDois: result.list });
+  };
+
   // Build the full patch for updatePatientRecordById. Accepts overrides so
   // an autosave triggered right after a setState call can pass the
   // freshly-computed value (the closure-captured state would otherwise be
@@ -4782,6 +4814,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     locationId?: string;
     review?: string;
     textRemindersOff?: boolean;
+    additionalDois?: string[];
   } = {}): UpdatePatientRecordPatch => {
     const effectiveSpecialists = overrides.specialistReferrals ?? specialistReferrals;
     const effectiveXrays = overrides.xrayReferrals ?? xrayReferrals;
@@ -4807,6 +4840,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       email: patientEmail.trim(),
       address: patientAddress.trim(),
       caseStatus: caseStatus as PatientRecord["caseStatus"],
+      // undefined for a patient who never had a value, so saves never touch the column.
+      compliance: compliancePatchValue(compliance, patient.compliance),
       isCashPatient: isCashPatient || undefined,
       locationId: (overrides.locationId ?? patientLocationId) || undefined,
       lastUpdate: new Date().toISOString().slice(0, 10),
@@ -4817,6 +4852,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       alerts: patientAlerts.length > 0 ? patientAlerts : undefined,
       matrix: {
         initialExam: toIsoDateFromUsDate(initialExam),
+        additionalDois: serializeAdditionalDois(overrides.additionalDois ?? additionalDois),
         lien: resolvedLienStatus,
         priorCare: priorCare.trim(),
         xrayFindings: xrayFindings.trim(),
@@ -4878,17 +4914,25 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       if (!rec || !base || !live) return;
       const incoming = flatten({
         caseStatus: rec.caseStatus,
+        compliance: compliancePatchValue(rec.compliance ?? "", patient.compliance),
         attorney: rec.attorney,
-        matrix: { discharge: rec.matrix?.discharge ?? "", rbSent: rec.matrix?.rbSent ?? "", review: normalizeReviewStatus(rec.matrix?.review) },
+        matrix: {
+          discharge: rec.matrix?.discharge ?? "",
+          rbSent: rec.matrix?.rbSent ?? "",
+          review: normalizeReviewStatus(rec.matrix?.review),
+          additionalDois: serializeAdditionalDois(parseAdditionalDois(rec.matrix?.additionalDois)),
+        },
       });
       const { take } = takeExternal(base, flatten(live.build() as Record<string, unknown>), incoming);
       for (const k of take) {
         const v = decodeFlat(incoming[k]) as string;
         if (k === "caseStatus") setCaseStatus(v);
+        else if (k === "compliance") setCompliance(v ?? "");
         else if (k === "attorney") setAttorney(v);
         else if (k === "matrix.discharge") setDischargeDate(toUsDate(v ?? ""));
         else if (k === "matrix.rbSent") setRbSentDate(toUsDate(v ?? ""));
         else if (k === "matrix.review") setReviewStatus(v);
+        else if (k === "matrix.additionalDois") setAdditionalDois(parseAdditionalDois(v));
         base[k] = incoming[k];
       }
     };
@@ -5011,8 +5055,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       flag === "patientRefused" ? setPatientRefusedAsync
         : flag === "completedPriorCare" ? setCompletedPriorCareAsync
           : setNotNeededAsync;
+    reportCloudWriteStart("override-toggle");
     try {
       await setter(patient.id, category, enabled);
+      reportCloudWriteSuccess("override-toggle");
       setSaveStatus("saved");
       setSaveMessage(`Saved ${label}${enabled ? " ON" : " OFF"}`);
       window.setTimeout(() => {
@@ -5020,6 +5066,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       }, 2500);
     } catch (error) {
       console.error("[Override Toggle] cloud write failed:", error);
+      reportCloudWriteError("override-toggle", error);
       setSaveStatus("error");
       setSaveMessage(
         `⚠ "${label}" did NOT save to cloud. Don't refresh or close — try toggling again, or check your connection.`,
@@ -5041,17 +5088,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   };
 
   const handleDeletePatient = async () => {
-    // Role gate first (Settings → Admin Access), then the existing password.
-    if (!(await ensureDeleteAllowed("patients"))) {
+    // Role gate first (Settings → Roles & Permissions); this window asks for the password itself.
+    if (!(await ensureDeleteAllowed("patients", { passwordAlreadyAsked: true }))) {
       setShowDeleteModal(false);
       return;
     }
-    const settings = loadOfficeSettings();
-    if (!settings.deletePassword) {
+    // The office's one delete password lives in the cloud (hash) so it is the same on every device and for every team member.
+    const check = await checkOfficeDeletePassword(deletePasswordInput);
+    if (check === "none") {
       setDeleteError("No delete password is set. Go to Settings → Office to set one first.");
       return;
     }
-    if (deletePasswordInput !== settings.deletePassword) {
+    if (check === "wrong") {
       setDeleteError("Incorrect password.");
       return;
     }
@@ -5161,6 +5209,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     paidAmountValue >= 0
       ? (paidAmountValue / billedAmountValue) * 100
       : null;
+  const percentageDiscount =
+    billedAmountValue > 0 && Number.isFinite(paidAmountValue) && paidAmountValue > 0
+      ? ((billedAmountValue - paidAmountValue) / billedAmountValue) * 100
+      : null;
   const balanceDue =
     billedAmountValue >= 0
       ? billedAmountValue -
@@ -5192,118 +5244,123 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     <div className="space-y-5">
       {checkoutNoteDialog}
       <section className="panel-card p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
+        <div className="case-header">
+          {patientPhotoSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              alt=""
+              className="case-header-photo h-[140px] w-[110px] rounded-xl object-cover"
+              src={patientPhotoSrc}
+            />
+          ) : null}
+          <div className="case-header-name min-w-0">
             <p className="text-sm text-[var(--text-muted)]">
-              <Link href="/patients" className="underline">
-                Patients
-              </Link>{" "}
-              / Patient File
+              {folderCrumb ? (
+                <>
+                  <Link href="/patients" className="underline">
+                    Patients
+                  </Link>
+                  {" / "}
+                  <Link href={`/patients/${folderCrumb.id}`} className="underline">
+                    {folderCrumb.name}
+                  </Link>
+                  {" / Case"}
+                </>
+              ) : (
+                <>
+                  <Link href="/patients" className="underline">
+                    Patients
+                  </Link>{" "}
+                  / Patient File
+                </>
+              )}
             </p>
             <h2 className="text-2xl font-semibold">{patient.fullName}</h2>
-            {demographicsLine(patientSex, maritalStatus, patientDob) && (
-              <p className="text-sm text-[var(--text-muted)]" data-patient-demographics>
-                {demographicsLine(patientSex, maritalStatus, patientDob)}
-              </p>
-            )}
-            <p className="text-sm text-[var(--text-muted)]">
-              Case profile only. SOAP charting is kept in the Encounters module.
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              {isCashPatient && (
-                <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-700">
-                  Non-PI Patient
-                </span>
-              )}
-              {isFeatureEnabled("encounters") && (
-                <Link
-                  className="inline-flex items-center rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
-                  href={`/encounters?patientId=${patient.id}`}
-                >
-                  Open Encounters For This Patient
-                </Link>
-              )}
-              <button
-                className="inline-flex items-center rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
-                onClick={(event) => openQuickTaskModal(event)}
-                ref={quickTaskButtonRef}
-                type="button"
-              >
-                + To Do
-              </button>
-              <SendFormButton
-                email={patientEmail}
-                firstName={firstName}
-                patientId={patient.id}
-                patientName={patient.fullName}
-                phone={patientPhone}
-                visitTypes={formVisitTypes}
+          </div>
+          <div className="case-header-info min-w-0" data-patient-demographics>
+            <div className="grid grid-cols-1 items-start gap-x-3 gap-y-2 sm:grid-cols-2">
+              <PatientIdentityFields
+                emailClassName="sm:col-span-2"
+                onAddToContacts={addPatientToContacts}
+                onChange={(next) => {
+                  setLastName(next.lastName);
+                  setFirstName(next.firstName);
+                  setPatientDob(next.dob);
+                  setPatientPhone(next.phone);
+                  setPatientSex(next.sex);
+                  setMaritalStatus(next.maritalStatus);
+                  setPatientEmail(next.email);
+                }}
+                onTextRemindersOff={handleTextRemindersChange}
+                showAge
+                value={{
+                  lastName,
+                  firstName,
+                  dob: patientDob,
+                  phone: patientPhone,
+                  sex: patientSex,
+                  maritalStatus,
+                  email: patientEmail,
+                  address: patientAddress,
+                  textRemindersOff,
+                }}
+              />
+              <PatientAddressFields
+                address={patientAddress}
+                className="sm:col-span-2"
+                onChange={setPatientAddress}
               />
             </div>
-            {quickTaskStatusMessage && (
-              <p className="text-sm font-semibold text-[var(--brand-primary)]">{quickTaskStatusMessage}</p>
+          </div>
+          <div className="case-header-actions flex min-w-0 flex-col gap-2">
+            {patientAlerts.length > 0 && (
+              <div className="flex flex-wrap gap-2 xl:justify-end">
+                {patientAlerts.map((alert, index) => (
+                  <span
+                    key={`alert-${index}`}
+                    className="tone-warn inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-bold shadow-sm"
+                  >
+                    ⚠ {alert}
+                    <button
+                      className="ml-1 rounded-full text-[var(--text-muted)] transition hover:text-[var(--status-alert)]"
+                      onClick={() => setPatientAlerts((current) => current.filter((_, i) => i !== index))}
+                      title="Remove alert"
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
             )}
-          </div>
-          {!isCashPatient && (
-            <span
-              className="status-pill"
-              style={{
-                backgroundColor: withAlpha(statusColor, 0.2),
-                color: getContrastTextColor(statusColor),
-              }}
-            >
-              {caseStatus}
-            </span>
-          )}
-        </div>
-
-        {/* Patient Alerts */}
-        {patientAlerts.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {patientAlerts.map((alert, index) => (
-              <span
-                key={`alert-${index}`}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-[#e8b931] bg-[#fef9e7] px-3 py-1.5 text-sm font-bold text-[#92400e] shadow-sm"
+            <div className="flex items-center gap-2">
+              <input
+                className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm"
+                onChange={(event) => setAlertDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && alertDraft.trim()) {
+                    event.preventDefault();
+                    setPatientAlerts((current) => [...current, alertDraft.trim().toUpperCase()]);
+                    setAlertDraft("");
+                  }
+                }}
+                placeholder="Add Patient Alert (Ex: Hx of Cancer, Broken Rib, etc.)"
+                value={alertDraft}
+              />
+              <button
+                className="btn btn-secondary btn-sm shrink-0"
+                onClick={() => {
+                  if (alertDraft.trim()) {
+                    setPatientAlerts((current) => [...current, alertDraft.trim().toUpperCase()]);
+                    setAlertDraft("");
+                  }
+                }}
+                type="button"
               >
-                ⚠ {alert}
-                <button
-                  className="ml-1 rounded-full text-[#92400e]/60 transition hover:text-[#b43b34]"
-                  onClick={() => setPatientAlerts((current) => current.filter((_, i) => i !== index))}
-                  title="Remove alert"
-                  type="button"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
+                + Alert
+              </button>
+            </div>
           </div>
-        )}
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            className="flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm"
-            onChange={(event) => setAlertDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && alertDraft.trim()) {
-                event.preventDefault();
-                setPatientAlerts((current) => [...current, alertDraft.trim().toUpperCase()]);
-                setAlertDraft("");
-              }
-            }}
-            placeholder="Add Patient Alert (Ex: Hx of Cancer, Broken Rib, etc.)"
-            value={alertDraft}
-          />
-          <button
-            className="rounded-lg border border-[#e8b931] bg-[#fef9e7] px-3 py-1.5 text-sm font-bold text-[#92400e] transition hover:bg-[#fdf2c5]"
-            onClick={() => {
-              if (alertDraft.trim()) {
-                setPatientAlerts((current) => [...current, alertDraft.trim().toUpperCase()]);
-                setAlertDraft("");
-              }
-            }}
-            type="button"
-          >
-            + Alert
-          </button>
         </div>
       </section>
 
@@ -5312,11 +5369,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       {!isCashPatient && caseInfoMissing && !caseFieldsOpen && (
         // Added before the case details (e.g. quick add from a text): a gentle
         // nudge, never a blocker. Fields are right below (Case info).
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#f0d9a8] bg-[#fff8ea] px-4 py-2.5 text-sm" data-testid="case-info-missing">
-          <span className="font-semibold text-[#8a5a00]">Case info missing</span>
+        <div className="tone-warn flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5 text-sm" data-testid="case-info-missing">
+          <span className="font-semibold">Case info missing</span>
           <span className="text-[var(--text-muted)]">Attorney, Attorney Phone and Date Of Injury can be added any time; the Case # builds itself from the Date Of Injury.</span>
           <button
-            className="ml-auto rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+            className="btn btn-primary btn-sm ml-auto"
             onClick={() => {
               setCaseFieldsOpen(true);
               window.setTimeout(() => {
@@ -5332,153 +5389,58 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       )}
 
       <section className="panel-card overflow-hidden" data-goat-section="info">
-        <div className="grid items-start gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-4">
-          {/* Field order is deliberate, four to a row on xl:
-                1. Last Name | First Name | DOB | Phone
-                2. Sex | Marital Status | Email | Case #
-                3. Attorney | Attorney Phone | Date Of Injury | Initial Exam
-              Everything from Case # onward is PI-only, so a cash patient
-              simply drops those and the rest reflows. */}
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Last Name</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setLastName(event.target.value)}
-              value={lastName}
-            />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient First Name</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setFirstName(event.target.value)}
-              value={firstName}
-            />
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
-            <input
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              inputMode="numeric"
-              maxLength={10}
-              onChange={(event) => setPatientDob(formatUsDateInput(event.target.value))}
-              placeholder="MM/DD/YYYY"
-              value={patientDob}
-            />
-          </label>
-
-          <div className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Phone</span>
-            {/* Text and Add to Contacts sit side by side after the input (they
-                wrap under it when the column is narrow); the No reminder texts
-                checkbox goes on its own line underneath. */}
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                className="min-w-[9.5rem] flex-1 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                inputMode="numeric"
-                maxLength={12}
-                onChange={(event) => setPatientPhone(formatUsPhoneInput(event.target.value))}
-                value={patientPhone}
-              />
-              {/* Kept together so they wrap as a pair, never split. */}
-              <span className="inline-flex shrink-0 items-center gap-2">
-                {patientPhone.replace(/\D/g, "").length > 0 && (
-                  <SmsSendMenu
-                    align="right"
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-primary)]"
-                    context={{
-                      patient: {
-                        firstName,
-                        lastName,
-                        fullName: [firstName, lastName].filter(Boolean).join(" "),
-                      },
-                    }}
-                    label="Text"
-                    phone={patientPhone}
-                  />
-                )}
-                <button
-                  className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--brand-primary)]"
-                  onClick={() =>
-                    downloadVCard({
-                      firstName,
-                      lastName,
-                      phone: patientPhone,
-                      email: patientEmail,
-                      dob: patientDob,
-                      address: patientAddress,
-                      note: caseNumber ? `Case #: ${caseNumber}` : undefined,
-                    })
-                  }
-                  title="Download a .vcf — macOS opens it in Contacts to add this patient with their name, phone, birthday and address pre-filled"
-                  type="button"
-                >
-                  Add to Contacts
-                </button>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line-soft)] px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {isCashPatient && (
+              <span className="tone-ok inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider">
+                Non-PI Patient
               </span>
-            </div>
-            {patientPhone.replace(/\D/g, "").length > 0 && (
-              <label
-                className="inline-flex w-fit items-center gap-1.5 text-xs leading-4 font-semibold text-[var(--text-muted)]"
-                title="Stops appointment reminder texts for this patient. Their number still works for texts you send by hand."
-              >
-                <input
-                  checked={textRemindersOff}
-                  onChange={(event) => handleTextRemindersChange(event.target.checked)}
-                  type="checkbox"
-                />
-                No reminder texts
-              </label>
+            )}
+            {!isCashPatient && (
+              <span className="status-pill" style={softPillStyle(statusColor)}>
+                {caseStatus}
+              </span>
+            )}
+            {complianceEnabled && complianceOption && (
+              <span className="status-pill" style={compliancePillStyle(complianceOption)} title="Compliance">
+                Compliance: {complianceOption.label}
+              </span>
             )}
           </div>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Sex</span>
-            <select
-              className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setPatientSex(event.target.value as "Male" | "Female" | "Other" | "")}
-              value={patientSex}
-            >
-              <option value="">—</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-            </select>
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Marital Status</span>
-            <select
-              className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setMaritalStatus(event.target.value as MaritalStatus | "")}
-              value={maritalStatus}
-            >
-              <option value="">—</option>
-              {maritalStatusOptions.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-              {maritalStatus === "Other" && <option value="Other">Other</option>}
-            </select>
-          </label>
-
-          <label className="grid gap-1">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Email</span>
-            <input
-              className="min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => setPatientEmail(event.target.value)}
-              type="email"
-              value={patientEmail}
-            />
-          </label>
-
-          {!isCashPatient && showCaseFields && (
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {isFeatureEnabled("encounters") && (
+            <Link className="btn btn-secondary btn-sm" href={`/encounters?patientId=${patient.id}`}>
+              Open Encounters
+            </Link>
+          )}
+          <button
+            className="btn btn-secondary btn-sm inline-flex items-center"
+            onClick={(event) => openQuickTaskModal(event)}
+            ref={quickTaskButtonRef}
+            type="button"
+          >
+            + To Do
+          </button>
+          <SendFormButton
+            email={patientEmail}
+            firstName={firstName}
+            patientId={patient.id}
+            patientName={patient.fullName}
+            phone={patientPhone}
+            visitTypes={formVisitTypes}
+          />
+          </div>
+        </div>
+        {quickTaskStatusMessage && (
+          <p className="px-4 pt-2 text-right text-sm font-semibold text-[var(--brand-primary)]">{quickTaskStatusMessage}</p>
+        )}
+        {!isCashPatient && (
+        <div className="grid items-start gap-3 border-b border-[var(--line-soft)] p-4 md:grid-cols-2 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.1fr)_minmax(0,0.95fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.9fr)]">
+          {showCaseFields && (
             <label className="grid gap-1">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
               <input
-                className="rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.08em] text-[var(--text-strong)]"
+                className="rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 py-2 font-semibold tracking-[0.08em] text-[var(--text-main)]"
                 placeholder="MMDDYYLASTFIRST"
                 readOnly
                 value={caseNumber}
@@ -5486,25 +5448,31 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {!isCashPatient && showCaseFields && (
+          {showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
-              <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                list="attorney-contacts"
-                ref={attorneyInputRef}
-                onBlur={handleAttorneyBlur}
-                onChange={(event) => handleAttorneyChange(event.target.value)}
-                value={attorney}
+              <AttorneyFirmSelect
+                attorney={attorney}
+                attorneys={attorneyContacts}
+                nameInputRef={attorneyInputRef}
+                nameTestId="patient-attorney-name"
+                onCustomBlur={handleAttorneyBlur}
+                onCustomName={handleAttorneyChange}
+                onSelect={(choice) => {
+                  if (choice.type === "firm") handleAttorneyChange(choice.name);
+                  else if (choice.type === "self") handleAttorneyChange(SELF_ATTORNEY_VALUE);
+                  else handleAttorneyChange("");
+                }}
+                selectTestId="patient-attorney"
               />
             </label>
           )}
 
-          {!isCashPatient && showCaseFields && (
+          {showCaseFields && (
             <label className="grid gap-1 self-start">
               <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
               <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                className="rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 py-2 text-[var(--text-main)]"
                 readOnly
                 placeholder="(000) 000-0000"
                 value={attorneyPhone}
@@ -5512,22 +5480,99 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </label>
           )}
 
-          {!isCashPatient && showCaseFields && (
-            <label className="grid gap-1 self-start">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Date Of Injury</span>
+          {showCaseFields && (
+            <div className="grid min-w-0 gap-1 self-start">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Email</span>
+              <AttorneyEmailCopy contact={matchedAttorneyContact} key={matchedAttorneyContact?.name ?? ""} />
+            </div>
+          )}
+
+          {showCaseFields && (
+            <div className="grid gap-1 self-start" data-testid="doi-field">
+              <div className="flex items-baseline justify-between gap-2">
+                <label className="text-sm font-semibold text-[var(--text-muted)]" htmlFor="patient-doi-input">Date Of Injury</label>
+                <button
+                  className="text-sm font-semibold text-[var(--brand-primary)] hover:underline"
+                  data-testid="add-doi-link"
+                  onClick={() => {
+                    setAddDoiOpen((open) => !open);
+                    setAddDoiDraft("");
+                    setAddDoiError("");
+                  }}
+                  title="A second accident during care: adds another date of injury to this same patient. The main date, Case # and everything else stay the same."
+                  type="button"
+                >
+                  + Add date of injury
+                </button>
+              </div>
               <input
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                className="rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 py-2 text-[var(--text-main)]"
+                id="patient-doi-input"
                 inputMode="numeric"
                 maxLength={10}
                 onChange={(event) => setDateOfLoss(formatUsDateInput(event.target.value))}
                 placeholder="MM/DD/YYYY"
                 value={dateOfLoss}
               />
-            </label>
+              {extraDois.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1.5" data-testid="additional-dois">
+                  {extraDois.map((iso) => (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2.5 py-0.5 text-sm font-semibold tabular-nums"
+                      key={iso}
+                    >
+                      <span className="font-normal text-[var(--text-muted)]">Also injured</span>
+                      {isoToShortUs(iso)}
+                      <button
+                        aria-label={`Remove date of injury ${isoToShortUs(iso)}`}
+                        className="rounded-full px-1 text-[var(--text-muted)] hover:text-[#b43b34]"
+                        onClick={() => {
+                          const next = additionalDois.filter((d) => d !== iso);
+                          setAdditionalDois(next);
+                          autoSavePatientFile({ additionalDois: next });
+                        }}
+                        title="Remove this date of injury"
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {addDoiOpen && (
+                <div className="mt-1 grid gap-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      autoFocus
+                      className="w-32 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                      inputMode="numeric"
+                      maxLength={10}
+                      onChange={(event) => {
+                        setAddDoiDraft(formatUsDateInput(event.target.value));
+                        setAddDoiError("");
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          commitAddDoi();
+                        } else if (event.key === "Escape") {
+                          setAddDoiOpen(false);
+                        }
+                      }}
+                      placeholder="MM/DD/YY"
+                      value={addDoiDraft}
+                    />
+                    <button className="btn btn-primary btn-sm" onClick={commitAddDoi} type="button">Add</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setAddDoiOpen(false)} type="button">Cancel</button>
+                  </div>
+                  {addDoiError && <span className="text-sm text-[#b43b34]">{addDoiError}</span>}
+                </div>
+              )}
+            </div>
           )}
 
-          {!isCashPatient && (
-            <div className="grid content-start gap-1">
+          <div className="grid content-start gap-1">
               <label className="grid gap-1">
                 {/* Drives Case Flow's Initial Visit step, the initial-to-discharge
                     duration and the Initial Exam column on the patient list.
@@ -5536,18 +5581,16 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     (lib/initial-exam-date). A date entered here wins. */}
                 <span className="text-sm font-semibold text-[var(--text-muted)]">Initial Exam</span>
                 <input
-                  className={`rounded-xl border px-3 py-2 ${
+                  className={`rounded-xl border px-3 py-2 text-[var(--text-main)] ${
                     initialExamInfo.source === "visit"
-                      ? "border-[#9cc9e3] bg-[#f2f8fc] font-semibold"
-                      : "border-[var(--line-soft)] bg-white"
+                      ? "border-[color-mix(in_srgb,var(--brand-primary)_45%,var(--line-soft))] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--field-bg))] font-semibold text-[var(--brand-ink)]"
+                      : "border-[var(--line-soft)] bg-[var(--field-bg)]"
                   }`}
                   data-initial-exam-source={initialExamInfo.source}
                   inputMode="numeric"
                   maxLength={10}
                   onChange={(event) => setInitialExam(formatUsDateInput(event.target.value))}
                   placeholder="MM/DD/YYYY"
-                  // Inline: global input styles out-rank Tailwind's text colour utilities.
-                  style={initialExamInfo.source === "visit" ? { color: "#0d79bf" } : undefined}
                   title={
                     initialExamInfo.source === "visit"
                       ? `From the first New Patient visit (${initialExamInfo.visit?.status ?? "Checked Out"})`
@@ -5562,7 +5605,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </span>
               )}
               {initialExamInfo.source === "manual" && initialExamInfo.differsFromVisit && initialExamInfo.visit && (
-                <span className="text-xs text-[#9a5b00]" data-initial-exam-mismatch>
+                <span className="tone-warn-text text-xs" data-initial-exam-mismatch>
                   The Initial Exam box says {initialExamInfo.date} but the first New Patient visit was{" "}
                   {initialExamInfo.visit.date} ({initialExamInfo.visit.status}).{" "}
                   <button
@@ -5582,18 +5625,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </span>
               )}
             </div>
-          )}
-
-          <div className="md:col-span-2 xl:col-span-4">
-            <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Address</span>
-            <div className="mt-1">
-              <AddressFieldGroup
-                onChange={setPatientAddress}
-                value={patientAddress}
-              />
-            </div>
-          </div>
         </div>
+        )}
 
         {/* Every field has a fixed width on sm+ (full width on phones) so the
             row wraps tidily. Prior Care is capped; Location is sized to fit the
@@ -5645,6 +5678,26 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 {caseStatuses.map((statusConfigEntry) => (
                   <option key={statusConfigEntry.name} value={statusConfigEntry.name}>
                     {statusConfigEntry.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {/* Compliance: optional, shown only while switched on in Settings. */}
+          {complianceAccess(complianceEnabled, !patientReadOnly).showField && (
+            <label className="grid gap-1 w-full sm:w-44">
+              <span className="text-sm font-semibold text-[var(--text-muted)]">Compliance</span>
+              <select
+                className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
+                disabled={!complianceAccess(complianceEnabled, !patientReadOnly).canEdit}
+                onChange={(event) => setCompliance(event.target.value)}
+                value={complianceOption?.id ?? ""}
+              >
+                <option value="">Not set</option>
+                {(complianceOption && !complianceOption.show ? [...complianceShownOptions, complianceOption] : complianceShownOptions).map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
                   </option>
                 ))}
               </select>
@@ -5731,7 +5784,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       <div className="grid items-start gap-5 lg:grid-cols-2 xl:grid-cols-3">
         <section className="panel-card p-4" style={hiddenStyle("notes")} data-goat-section="notes">
           <button
-            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+            className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-center text-lg font-semibold text-white"
             onClick={() => toggleSectionPanel("notes")}
             type="button"
           >
@@ -5739,15 +5792,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <span className="text-xl">{sectionPanelsOpen.notes ? "−" : "+"}</span>
           </button>
           {sectionPanelsOpen.notes && (
-            <label className="mt-3 grid gap-1">
-              <span className="text-sm font-semibold text-[var(--text-muted)]">Case Notes</span>
-              <textarea
-                className="min-h-[140px] rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                onChange={(event) => setPatientNotes(event.target.value)}
-                placeholder="Enter any free-form case notes..."
-                value={patientNotes}
-              />
-            </label>
+            <div className="mt-3">
+              <CaseNotesLog patientId={patient.id} patientName={patient.fullName} seed={patient.matrix?.notes ?? ""} />
+            </div>
           )}
         </section>
 
@@ -5758,6 +5805,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           legacyReviewed={{ xray: patient.matrix?.xrayReviewed, mri: patient.matrix?.mriReviewed }}
           billed={currentBillTotal}
           doi={dateOfLoss}
+          additionalDois={extraDois}
           ie={effectiveInitialExam}
           discharge={hiddenStyle("additionalDetails") ? undefined : dischargeInfo}
           mriReferrals={mriReferrals}
@@ -5776,9 +5824,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           stack on smaller widths. Each panel keeps its own toggle
           state via imagingPanelsOpen.* */}
       <section className="grid items-start gap-5 xl:grid-cols-3">
-          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" data-goat-section="xray">
+          <article className="tint-panel rounded-2xl p-4" data-goat-section="xray">
             <button
-              className="flex w-full items-center justify-between rounded-xl bg-[#6db5c8] px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
+              className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
               onClick={() => toggleImagingPanel("xray")}
               type="button"
             >
@@ -5805,11 +5853,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   </label>
                   <label className="grid gap-1">
                     <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Imaging Center</span>
-                    <input
+                    <ImagingCenterSelect
+                      centers={imagingCenters}
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      list="imaging-centers"
-                      onChange={(event) => setXray((current) => ({ ...current, center: event.target.value }))}
-                      placeholder="Select or type center"
+                      onChange={(center) => setXray((current) => ({ ...current, center }))}
                       value={xray.center}
                     />
                   </label>
@@ -5820,7 +5867,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Regions</span>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[#ecf4fa]"
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--bg-soft)]"
                       onClick={(event) => {
                         setRegionModalAnchor(getPopupAnchorFromEvent(event));
                         setActiveRegionModal("xray");
@@ -5830,7 +5877,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       Select / Update
                     </button>
                   </div>
-                  <div className="min-h-[36px] rounded-lg border border-[#b7ccdc] bg-white/90 px-2 py-1.5">
+                  <div className="theme-field min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] px-2 py-1.5">
                     {xray.regions.length === 0 ? (
                       <p className="text-xs text-[var(--text-muted)]">No regions selected.</p>
                     ) : (
@@ -5838,11 +5885,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         {xray.regions.map((region) => (
                           <span
                             key={`xray-region-${region}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-[#9ab8cc] bg-[#ecf4fa] px-2 py-0.5 text-xs font-semibold text-[#35566f]"
+                            className="tone-info inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold"
                           >
                             {formatRegionLabel(region, xray.lateralityByRegion)}
                             {xray.flexExtRegions.includes(region) && (
-                              <span className="rounded-full bg-[#0d79bf] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                              <span className="rounded-full bg-[var(--btn-bg,var(--brand-primary))] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
                                 F/E
                               </span>
                             )}
@@ -5856,14 +5903,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 {/* Actions */}
                 <div className="flex gap-2">
                   <button
-                    className="w-full rounded-lg bg-[var(--brand-primary)] px-3 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+                    className="btn btn-primary w-full"
                     type="submit"
                   >
                     {editingXrayReferralId ? "Update X-Ray Sent" : "Add X-Ray Sent"}
                   </button>
                   {editingXrayReferralId && (
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2.5 text-sm font-semibold"
+                      className="btn btn-secondary"
                       onClick={() => cancelImagingReferralEdit("xray")}
                       type="button"
                     >
@@ -5901,7 +5948,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </p>
             )}
             <div
-              className={`mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white p-2 ${
+              className={`theme-surface mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] p-2 ${
                 imagingPanelsOpen.xray ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
@@ -5919,27 +5966,24 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               {xrayReferrals.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`rounded-lg border p-2 ${
-                    entry.patientRefused
-                      ? "border-amber-300 bg-amber-50/60"
-                      : "border-[var(--line-soft)]"
-                  }`}
+                  className="theme-surface rounded-lg border border-[var(--line-soft)] p-2"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">
                       {entry.modalityLabel} — {entry.center || (entry.isPrior ? "Outside facility" : "No Center")}
                     </p>
                     {entry.isPrior && (
-                      <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900">
+                      <span className="tone-info rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Prior / outside
                       </span>
                     )}
                     {entry.patientRefused && (
-                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                      <span className="tone-warn-badge rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Patient Refused
                       </span>
                     )}
                   </div>
+                  <ContactEmailLine contact={findEmailContact(contacts, entry.center)} key={`em-${entry.center}`} />
                   <p>Regions: {formatImagingRegionsSummary(entry, "xray")}</p>
                   {entry.isPrior ? (
                     <p>Date done: {entry.doneDate || "-"}</p>
@@ -5959,7 +6003,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <div className="mt-2 flex gap-2">
                     {!entry.isPrior && (
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => generateImagingRequestPdf("xray", entry)}
                       type="button"
                     >
@@ -5967,15 +6011,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     </button>
                     )}
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={(event) => openImagingEditor("xray", entry, event)}
                       type="button"
                     >
                       Edit
                     </button>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
-                      onClick={() => { if (window.confirm("Remove this X-ray referral?")) removeImagingReferral("xray", entry.id); }}
+                      className="btn btn-secondary btn-sm"
+                      onClick={async () => { if ((await appConfirm("Remove this X-ray referral?"))) removeImagingReferral("xray", entry.id); }}
                       type="button"
                     >
                       Remove
@@ -5986,9 +6030,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
           </article>
 
-          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" data-goat-section="mri">
+          <article className="tint-panel rounded-2xl p-4" data-goat-section="mri">
             <button
-              className="flex w-full items-center justify-between rounded-xl bg-[#6db5c8] px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
+              className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
               onClick={() => toggleImagingPanel("mri")}
               type="button"
             >
@@ -6027,11 +6071,10 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   </label>
                   <label className="grid gap-1">
                     <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Imaging Center</span>
-                    <input
+                    <ImagingCenterSelect
+                      centers={imagingCenters}
                       className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      list="imaging-centers"
-                      onChange={(event) => setMri((current) => ({ ...current, center: event.target.value }))}
-                      placeholder="Select or type center"
+                      onChange={(center) => setMri((current) => ({ ...current, center }))}
                       value={mri.center}
                     />
                   </label>
@@ -6042,7 +6085,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">Regions</span>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[#ecf4fa]"
+                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--bg-soft)]"
                       onClick={(event) => {
                         setRegionModalAnchor(getPopupAnchorFromEvent(event));
                         setActiveRegionModal("mri");
@@ -6052,7 +6095,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       Select / Update
                     </button>
                   </div>
-                  <div className="min-h-[36px] rounded-lg border border-[#b7ccdc] bg-white/90 px-2 py-1.5">
+                  <div className="theme-field min-h-[36px] rounded-lg border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] px-2 py-1.5">
                     {mri.regions.length === 0 ? (
                       <p className="text-xs text-[var(--text-muted)]">No regions selected.</p>
                     ) : (
@@ -6060,7 +6103,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         {mri.regions.map((region) => (
                           <span
                             key={`mri-region-${region}`}
-                            className="inline-flex items-center rounded-full border border-[#9ab8cc] bg-[#ecf4fa] px-2 py-0.5 text-xs font-semibold text-[#35566f]"
+                            className="tone-info inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold"
                           >
                             {formatRegionLabel(region, mri.lateralityByRegion)}
                           </span>
@@ -6073,14 +6116,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 {/* Actions */}
                 <div className="flex gap-2">
                   <button
-                    className="w-full rounded-lg bg-[var(--brand-primary)] px-3 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+                    className="btn btn-primary w-full"
                     type="submit"
                   >
                     {editingMriReferralId ? "Update MRI / CT Sent" : "Add MRI / CT Sent"}
                   </button>
                   {editingMriReferralId && (
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-2.5 text-sm font-semibold"
+                      className="btn btn-secondary"
                       onClick={() => cancelImagingReferralEdit("mri")}
                       type="button"
                     >
@@ -6118,7 +6161,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </p>
             )}
             <div
-              className={`mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white p-2 ${
+              className={`theme-surface mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] p-2 ${
                 imagingPanelsOpen.mri ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
@@ -6142,27 +6185,24 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               {mriReferrals.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`rounded-lg border p-2 ${
-                    entry.patientRefused
-                      ? "border-amber-300 bg-amber-50/60"
-                      : "border-[var(--line-soft)]"
-                  }`}
+                  className="theme-surface rounded-lg border border-[var(--line-soft)] p-2"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">
                       {entry.modalityLabel} — {entry.center || (entry.isPrior ? "Outside facility" : "No Center")}
                     </p>
                     {entry.isPrior && (
-                      <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900">
+                      <span className="tone-info rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Prior / outside
                       </span>
                     )}
                     {entry.patientRefused && (
-                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                      <span className="tone-warn-badge rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Patient Refused
                       </span>
                     )}
                   </div>
+                  <ContactEmailLine contact={findEmailContact(contacts, entry.center)} key={`em-${entry.center}`} />
                   <p>Regions: {formatImagingRegionsSummary(entry, "mri")}</p>
                   {entry.isPrior ? (
                     <p>Date done: {entry.doneDate || "-"}</p>
@@ -6183,7 +6223,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <div className="mt-2 flex gap-2">
                     {!entry.isPrior && (
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => generateImagingRequestPdf("mri", entry)}
                       type="button"
                     >
@@ -6191,15 +6231,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     </button>
                     )}
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={(event) => openImagingEditor("mri", entry, event)}
                       type="button"
                     >
                       Edit
                     </button>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
-                      onClick={() => { if (window.confirm("Remove this MRI referral?")) removeImagingReferral("mri", entry.id); }}
+                      className="btn btn-secondary btn-sm"
+                      onClick={async () => { if ((await appConfirm("Remove this MRI referral?"))) removeImagingReferral("mri", entry.id); }}
                       type="button"
                     >
                       Remove
@@ -6210,9 +6250,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
           </article>
 
-          <article className="rounded-2xl border border-[#bfd2e0] bg-gradient-to-b from-[#d8e7f2] to-[#cfe0ec] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]" data-goat-section="specialist">
+          <article className="tint-panel rounded-2xl p-4" data-goat-section="specialist">
             <button
-              className="flex w-full items-center justify-between rounded-xl bg-[#6db5c8] px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
+              className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-2xl font-semibold tracking-[-0.01em] text-white"
               onClick={() => toggleImagingPanel("specialist")}
               type="button"
             >
@@ -6287,7 +6327,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   />
                 </label>
                 <button
-                  className="w-full self-end rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-semibold"
+                  className="btn btn-secondary w-full self-end"
                   onClick={addSpecialist}
                   type="button"
                 >
@@ -6330,7 +6370,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </p>
             )}
             <div
-              className={`mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] bg-white p-2 ${
+              className={`theme-surface mt-2 space-y-2 overflow-auto rounded-xl border border-[var(--line-soft)] p-2 ${
                 imagingPanelsOpen.specialist ? "max-h-36 text-xs" : "max-h-56 text-sm"
               }`}
             >
@@ -6348,20 +6388,17 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               {specialistReferrals.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`rounded-lg border p-2 ${
-                    entry.patientRefused
-                      ? "border-amber-300 bg-amber-50/60"
-                      : "border-[var(--line-soft)]"
-                  }`}
+                  className="theme-surface rounded-lg border border-[var(--line-soft)] p-2"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">{entry.specialist}</p>
                     {entry.patientRefused && (
-                      <span className="rounded-md bg-amber-200/70 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">
+                      <span className="tone-warn-badge rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                         Patient Refused
                       </span>
                     )}
                   </div>
+                  <ContactEmailLine contact={findEmailContact(contacts, entry.specialist)} key={`em-${entry.specialist}`} />
                   <p>Sent: {entry.sentDate || "-"} | Scheduled: {entry.scheduledDate || "-"} | Completed: {entry.completedDate || "-"}</p>
                   {entry.recommendations.trim() && (
                     <p className="mt-1 text-[var(--text-muted)]">{entry.recommendations}</p>
@@ -6387,7 +6424,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                           className={`rounded-full border px-3 py-1 text-xs font-semibold ${
                             active
                               ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                              : "border-[var(--line-soft)] bg-white text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
+                              : "tone-neutral border text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
                           }`}
                           key={opt.value}
                           onClick={() => {
@@ -6421,22 +6458,22 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   </div>
                   <div className="mt-2 flex gap-2">
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => generateSpecialistReferralPdf(entry)}
                       type="button"
                     >
                       Generate PDF
                     </button>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                      className="btn btn-secondary btn-sm"
                       onClick={(event) => openSpecialistEditor(entry, event)}
                       type="button"
                     >
                       Edit
                     </button>
                     <button
-                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
-                      onClick={() => { if (window.confirm("Remove this specialist referral?")) removeSpecialist(entry.id); }}
+                      className="btn btn-secondary btn-sm"
+                      onClick={async () => { if ((await appConfirm("Remove this specialist referral?"))) removeSpecialist(entry.id); }}
                       type="button"
                     >
                       Remove
@@ -6455,7 +6492,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       <section className="grid gap-4 xl:grid-cols-6 items-start">
         <section className="panel-card p-4 order-4 xl:col-span-2" style={hiddenStyle("appointments")} data-goat-section="appointments">
         <button
-          className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
+          className="flex w-full items-center justify-between gap-3 rounded-xl section-bar px-3 py-2 text-lg font-semibold text-white"
           onClick={() => toggleSectionPanel("appointments")}
           type="button"
         >
@@ -6479,7 +6516,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         {sectionPanelsOpen.appointments && (
           <>
             {blockedAppointments.length > 0 && (
-              <div className="mt-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <div className="tone-alert mt-2 rounded-xl border px-3 py-2 text-sm">
                 <span className="font-semibold">
                   ⚠ {blockedAppointments.length} scheduled appointment
                   {blockedAppointments.length === 1 ? "" : "s"} on a now-CLOSED date:
@@ -6503,9 +6540,9 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   >
                     {type}:{" "}
                     <span className="font-semibold tabular-nums">
-                      <span className="text-[#111]">{c.scheduled}</span>
+                      <span className="text-[var(--text-main)]">{c.scheduled}</span>
                       <span className="text-[var(--text-muted)]"> / </span>
-                      <span className="text-[#0d79bf]">{c.checkedIn}</span>
+                      <span className="text-[var(--brand-ink)]">{c.checkedIn}</span>
                       <span className="text-[var(--text-muted)]"> / </span>
                       <span className="text-[#047857]">{c.checkedOut}</span>
                       <span className="text-[var(--text-muted)]"> / </span>
@@ -6530,8 +6567,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <button
                     className={`rounded-lg px-2.5 py-1.5 text-sm font-semibold ${
                       appointmentsLocked
-                        ? "border border-amber-300 bg-amber-50 text-amber-800"
-                        : "border border-emerald-300 bg-emerald-50 text-emerald-800"
+                        ? "tone-warn border"
+                        : "tone-ok border"
                     }`}
                     onClick={() => setAppointmentsUnlocked((v) => !v)}
                     title={appointmentsLocked ? "Unlock to edit this closed case" : "Re-lock this closed case"}
@@ -6550,7 +6587,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   📅 Appt.
                 </button>
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-sm font-medium hover:bg-[var(--bg-soft)]"
+                  className="btn btn-secondary btn-sm"
                   onClick={handlePrintAppointments}
                   title="Print this patient's scheduled appointments"
                   type="button"
@@ -6578,7 +6615,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 especially useful inside the new 2-col patient-page
                 layout where this section is already half-width. */}
             <div className="mt-3">
-              <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+              <article className="theme-surface rounded-xl border border-[var(--line-soft)] p-3">
                 <h4 className="text-base font-semibold">Scheduled Appointments</h4>
                 <div className="mt-2 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
                   <table className="min-w-full table-fixed border-collapse text-sm">
@@ -6855,7 +6892,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                     return (
                                       <span className="mt-1 flex items-center gap-1">
                                         <span
-                                          className="max-w-[110px] truncate rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700"
+                                          className="tone-ok max-w-[110px] truncate rounded-full border px-2 py-0.5 text-[10px] font-semibold"
                                           title={appliedPkg.snapshot.name}
                                         >
                                           {appliedPkg.snapshot.name}
@@ -6906,7 +6943,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                               {linkedEncounter ? (
                                 <div className="flex flex-col items-start gap-1">
                                   <button
-                                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                    className="btn btn-secondary btn-sm"
                                     onClick={() => openEncounterEditor(linkedEncounter.id)}
                                     type="button"
                                   >
@@ -6924,7 +6961,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                       if (!targets.length) return null;
                                       return (
                                         <select
-                                          className="w-full rounded-md border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.06)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
+                                          className="w-full rounded-md border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--brand-primary)]"
                                           onChange={(event) => {
                                             const target = targets.find(
                                               (r) => r.appointment!.id === event.target.value,
@@ -6955,7 +6992,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                               ) : appointment ? (
                                 (appointment.status === "Check In") ? (
                                     <button
-                                      className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                                      className="btn btn-secondary btn-sm"
                                       onClick={() => createEncounterFromAppointment(appointment)}
                                       title="Start encounter"
                                       type="button"
@@ -6972,7 +7009,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             <td className="px-2 py-2 text-right">
                               {appointment ? (
                                 <button
-                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
+                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] transition-colors"
                                   onClick={() => void handleDeleteAppointment(appointment)}
                                   title="Delete appointment"
                                   type="button"
@@ -6999,17 +7036,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 // schedule + "+ Encounter" on the
                                 // check-in row.
                                 <button
-                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-red-50 transition-colors"
-                                  onClick={() => {
+                                  className="rounded-lg p-1.5 text-[#b43b34] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] transition-colors"
+                                  onClick={async () => {
                                     const chargeCount = linkedEncounter.charges.length;
                                     const status = linkedEncounter.signed ? " (CLOSED)" : "";
-                                    const proceed = window.confirm(
-                                      `Delete this encounter${status} on ${linkedEncounter.encounterDate}${
-                                        chargeCount > 0
-                                          ? ` and its ${chargeCount} charge${chargeCount === 1 ? "" : "s"}`
-                                          : ""
-                                      }?\n\nThis cannot be undone.`,
-                                    );
+                                    const proceed = (await appConfirm(`Delete this encounter${status} on ${linkedEncounter.encounterDate}${
+                                                                            chargeCount > 0
+                                                                              ? ` and its ${chargeCount} charge${chargeCount === 1 ? "" : "s"}`
+                                                                              : ""
+                                                                          }?\n\nThis cannot be undone.`));
                                     if (!proceed) return;
                                     deleteEncounter(linkedEncounter.id);
                                     cascadeCashPaymentsOnEncounterDelete(
@@ -7051,7 +7086,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       </section>
         <article className="panel-card p-4 order-1 xl:col-span-2" style={hiddenStyle("reExam")}>
           <button
-            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+            className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-center text-lg font-semibold text-white"
             onClick={() => toggleSectionPanel("reExam")}
             type="button"
           >
@@ -7091,43 +7126,23 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                   To-Do
                 </div>
-                {patientTasks.length === 0 ? (
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">No to-do items for this patient.</p>
-                ) : (
-                  <ul className="mt-1 grid gap-2">
-                    {patientTasks.map((task) => (
-                      <li
-                        key={task.id}
-                        className="flex items-start gap-2 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      >
-                        <input
-                          checked={task.done}
-                          className="mt-1"
-                          onChange={() => toggleTaskDone(task.id)}
-                          type="checkbox"
-                        />
-                        <div className="flex-1">
-                          <div className={task.done ? "line-through text-[var(--text-muted)]" : "font-semibold"}>
-                            {task.title}
-                          </div>
-                          {(task.dueDate || task.priority) && (
-                            <div className="text-xs text-[var(--text-muted)]">
-                              {task.priority}
-                              {task.dueDate ? ` • Due ${task.dueDate}` : ""}
-                            </div>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <PatientTodoList
+                  items={patientTasks.map((task) => ({
+                    id: task.id,
+                    title: task.title,
+                    done: task.done,
+                    priority: task.priority,
+                    dueDate: task.dueDate,
+                  }))}
+                  onToggle={toggleTaskDone}
+                />
               </div>
             </div>
           )}
         </article>
         <article className="panel-card p-4 order-2 xl:col-span-2" style={hiddenStyle("relatedCases")}>
           <button
-            className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-center text-lg font-semibold text-white"
+            className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-center text-lg font-semibold text-white"
             onClick={() => toggleSectionPanel("relatedCases")}
             type="button"
           >
@@ -7183,7 +7198,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   )}
                 </div>
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary btn-sm"
                   onClick={addRelatedCase}
                   type="button"
                 >
@@ -7209,7 +7224,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     </button>
                     <button
                       className="rounded-full border border-[var(--line-soft)] px-2 text-xs font-semibold"
-                      onClick={() => { if (window.confirm("Remove this related case?")) removeRelatedCase(entry.patientId); }}
+                      onClick={async () => { if ((await appConfirm("Remove this related case?"))) removeRelatedCase(entry.patientId); }}
                       type="button"
                     >
                       x
@@ -7223,7 +7238,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </article>
         <section className="panel-card p-4 order-3 xl:col-span-2" style={hiddenStyle("letters")}>
         <button
-          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
+          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "section-bar" : "bg-gray-400"}`}
           onClick={() => isCompletePlan && toggleSectionPanel("letters")}
           type="button"
         >
@@ -7264,7 +7279,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </label>
 
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => generateLetterPdf()}
                 type="button"
               >
@@ -7272,7 +7287,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </button>
 
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => openTemplateSettings("generalLetter")}
                 type="button"
               >
@@ -7294,7 +7309,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           // even one is added, the bar reverts to the regular teal so
           // the warning quiets down.
           className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${
-            patientDiagnoses.length === 0 ? "bg-[#c93b1d]" : "bg-[#72bdcf]"
+            patientDiagnoses.length === 0 ? "bg-[#c93b1d]" : "section-bar"
           }`}
           onClick={() => toggleSectionPanel("diagnosis")}
           type="button"
@@ -7316,7 +7331,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 Add one code or a preset bundle for this patient file.
               </p>
               <button
-                className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white"
+                className="btn btn-primary btn-sm shrink-0"
                 onClick={openAddDxModal}
                 type="button"
               >
@@ -7355,7 +7370,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     ))}
                   </select>
                   <button
-                    className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                    className="btn btn-primary btn-sm shrink-0 disabled:opacity-40"
                     disabled={!diagnosisBundleIdDraft}
                     onClick={addDiagnosisBundle}
                     type="button"
@@ -7368,8 +7383,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 <DxSuggestions
                   hasMriText={dxSuggestState.hasMriText}
                   heldBack={dxSuggestState.heldBack}
+                  ignored={dxSuggestState.list.filter((s) => dxIgnores.isIgnored("mri", s.code))}
                   onAdd={(code, description) => addDiagnosisWithMessage(code, description, "G.O.A.T. (MRI)")}
-                  suggestions={dxSuggestState.list}
+                  onIgnore={(code, description) => dxIgnores.ignore("mri", code, `${code} — ${description}`)}
+                  onRestore={(code) => dxIgnores.restore("mri", code)}
+                  suggestions={dxSuggestState.list.filter((s) => !dxIgnores.isIgnored("mri", s.code))}
                   unreadFiles={goatFiles.enabled ? goatFiles.counts.waiting + goatFiles.counts.scanned : 0}
                 />
               </div>
@@ -7378,15 +7396,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   hasMriText={xrayDxState.hasText}
                   heldBack={xrayDxState.heldBack}
                   kind="X-ray"
+                  ignored={xrayDxState.list.filter((s) => dxIgnores.isIgnored("xray", s.code))}
                   onAdd={(code, description) => addDiagnosisWithMessage(code, description, "G.O.A.T. (X-ray)")}
-                  suggestions={xrayDxState.list}
+                  onIgnore={(code, description) => dxIgnores.ignore("xray", code, `${code} — ${description}`)}
+                  onRestore={(code) => dxIgnores.restore("xray", code)}
+                  suggestions={xrayDxState.list.filter((s) => !dxIgnores.isIgnored("xray", s.code))}
                 />
               </div>
             </div>
 
             {diagnosisMessage && <p className="mt-3 text-sm font-semibold text-[var(--brand-primary)]">{diagnosisMessage}</p>}
 
-            <div className="mt-3 overflow-x-auto rounded-xl border border-[var(--line-soft)] bg-white">
+            <div className="theme-surface mt-3 overflow-x-auto rounded-xl border border-[var(--line-soft)]">
               <table className="min-w-full border-collapse text-sm">
                 <thead>
                   <tr className="bg-[var(--bg-soft)] text-left">
@@ -7467,8 +7488,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                         <td className="px-3 py-2 text-[var(--text-muted)]">{entry.source}</td>
                         <td className="px-3 py-2 text-right">
                           <button
-                            className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
-                            onClick={() => { if (window.confirm(`Remove diagnosis "${entry.code}"?`)) removeDiagnosis(entry.id); }}
+                            className="btn btn-secondary btn-sm"
+                            onClick={async () => { if ((await appConfirm(`Remove diagnosis "${entry.code}"?`))) removeDiagnosis(entry.id); }}
                             type="button"
                           >
                             Remove
@@ -7492,7 +7513,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       </section>
       <section className="panel-card p-4 order-8 xl:col-span-2" style={hiddenStyle("narrative")}>
         <button
-          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "bg-[#72bdcf]" : "bg-gray-400"}`}
+          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-center text-lg font-semibold text-white ${isCompletePlan ? "section-bar" : "bg-gray-400"}`}
           onClick={() => isCompletePlan && toggleSectionPanel("narrative")}
           type="button"
         >
@@ -7511,7 +7532,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
             {checkedOutOpenNoteVisits.length > 0 && (
               <div
-                className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                className="tone-warn mt-3 rounded-xl border px-3 py-2 text-sm"
                 data-open-note-warning
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -7532,7 +7553,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <ul className="mt-2 grid gap-1">
                     {checkedOutOpenNoteVisits.map((visit) => (
                       <li
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/70 px-2 py-1"
+                        className="theme-surface flex flex-wrap items-center justify-between gap-2 rounded-lg px-2 py-1"
                         key={visit.noteId}
                       >
                         <span className="text-xs">
@@ -7698,7 +7719,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
       <section className="panel-card p-4 order-6 xl:col-span-2" style={hiddenStyle("patientFiles")}>
         <button
-          className="flex w-full items-center justify-between rounded-2xl bg-[#6db5c8] px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
+          className="flex w-full items-center justify-between rounded-2xl section-bar px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
           onClick={() => toggleSectionPanel("patientFiles")}
           type="button"
         >
@@ -7723,7 +7744,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <button
-                  className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  className="btn btn-primary btn-sm"
                   disabled={fileUploading}
                   onClick={() => {
                     const input = document.createElement("input");
@@ -7738,7 +7759,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   {fileUploading ? "Uploading..." : "Upload"}
                 </button>
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary btn-sm"
                   disabled={fileUploading}
                   onClick={() => setScannerOpen(true)}
                   type="button"
@@ -7809,9 +7830,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       >
                         <td className="max-w-[260px] py-2.5 pr-3 font-medium">
                           {renamingFileId === file.id ? (
-                            <input
+                            <span className="flex items-center gap-1.5">
+                                {renamePrefix ? (
+                                  <span
+                                    className="shrink-0 select-none whitespace-nowrap rounded bg-[var(--bg-soft)] px-1.5 py-0.5 text-sm text-[var(--text-muted)]"
+                                    title="Added automatically — not editable"
+                                  >
+                                    {renamePrefix}
+                                  </span>
+                                ) : null}
+                                <input
                               autoFocus
-                              className="w-full rounded border border-[var(--brand-primary)] px-1.5 py-0.5 text-sm focus:outline-none"
+                              className="min-w-0 flex-1 w-full rounded border border-[var(--brand-primary)] px-1.5 py-0.5 text-sm focus:outline-none"
                               value={renameDraft}
                               onChange={(e) => setRenameDraft(e.target.value)}
                               onBlur={commitRenameFile}
@@ -7820,6 +7850,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                                 if (e.key === "Escape") setRenamingFileId(null);
                               }}
                             />
+</span>
                           ) : (
                             <span className="block break-words line-clamp-2" title={file.name}>{file.name}</span>
                           )}
@@ -7898,7 +7929,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                             )}
                             {/* Delete */}
                             <button
-                              className="rounded-lg p-1.5 text-red-500 hover:bg-red-50 transition-colors"
+                              className="rounded-lg p-1.5 text-red-500 hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] transition-colors"
                               onClick={() => handlePatientFileDelete(file)}
                               title="Delete"
                               type="button"
@@ -7925,7 +7956,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           if (isCashPatient) {
             return (
               <button
-                className="flex w-full items-center justify-between rounded-2xl bg-[#6db5c8] px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
+                className="flex w-full items-center justify-between rounded-2xl section-bar px-3 py-2 text-center text-3xl font-semibold tracking-[-0.01em] text-white"
                 onClick={() => toggleSectionPanel("additionalDetails")}
                 type="button"
               >
@@ -7961,14 +7992,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           // header colour or badge either.
           const showsMoney = !hiddenStyle("billingFigures");
           const headerColor = !showsMoney
-            ? "bg-[#6db5c8]"
+            ? "section-bar"
             : isPaidFilled(paidDate, paidAmount)
             ? PAID_GREEN.header // money green — Paid Date and $ Paid Amount both in
             : billingMissing
             ? "bg-[#c93b1d]" // red — billing not yet complete
             : paidMissing
               ? "bg-[#d4a017]" // amber/yellow — billed but unpaid
-              : "bg-[#6db5c8]"; // teal — fully closed out
+              : "section-bar"; // teal — fully closed out
           const statusBadge = !showsMoney
             ? null
             : isPaidFilled(paidDate, paidAmount)
@@ -8042,7 +8073,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <input
                     className={`rounded-xl border px-3 py-2 ${
                       dischargeInfo.source === "visit"
-                        ? "border-[#9cc9e3] bg-[#f2f8fc] font-semibold"
+                        ? "border-[color-mix(in_srgb,var(--brand-primary)_45%,var(--line-soft))] bg-[var(--field-bg)] font-semibold"
                         : "border-[var(--line-soft)] bg-white"
                     }`}
                     data-discharge-source={dischargeInfo.source}
@@ -8051,7 +8082,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     onChange={(event) => setDischargeDate(formatUsDateInput(event.target.value))}
                     placeholder="MM/DD/YYYY"
                     // Inline: global input styles out-rank Tailwind's text colour utilities.
-                    style={dischargeInfo.source === "visit" ? { color: "#0d79bf" } : undefined}
+                    style={dischargeInfo.source === "visit" ? { color: "var(--brand-ink)" } : undefined}
                     title={
                       dischargeInfo.source === "visit"
                         ? `From the Discharge visit (${dischargeInfo.visit?.status ?? "Checked Out"})`
@@ -8066,7 +8097,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   </span>
                 )}
                 {dischargeInfo.source === "manual" && dischargeInfo.differsFromVisit && dischargeInfo.visit && (
-                  <span className="text-xs text-[#9a5b00]">
+                  <span className="tone-warn-text text-xs">
                     The Discharge box says {dischargeInfo.date} but the Discharge visit was {dischargeInfo.visit.date} (
                     {dischargeInfo.visit.status}).{" "}
                     <button
@@ -8158,7 +8189,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 }`}
                 data-paid={isPaidFilled(paidDate, paidAmount) ? "true" : undefined}
               >
-                <dl className="space-y-2 text-sm sm:text-base">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <dl className="min-w-0 flex-1 space-y-2 text-sm sm:text-base">
                   <div className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)] items-baseline gap-x-4">
                     <dt className="font-medium text-[var(--text-muted)]">Initial To Discharge:</dt>
                     <dd className="font-medium tabular-nums text-[var(--text-main)]">{initialToDischarge}</dd>
@@ -8172,12 +8204,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                     <dd className="font-medium tabular-nums text-[var(--text-main)]">{rbToPaid}</dd>
                   </div>
                   <div className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)] items-baseline gap-x-4">
-                    <dt className="font-medium text-[var(--text-muted)]">Percentage Paid:</dt>
-                    <dd className="font-medium tabular-nums text-[var(--text-main)]">
-                      {formatPercentage(percentagePaid)}
+                    <dt className="font-medium text-[var(--text-muted)]">% Paid:</dt>
+                    <dd className="flex flex-wrap items-baseline gap-x-4 font-medium tabular-nums text-[var(--text-main)]">
+                      <span>{formatPercentage(percentagePaid)}</span>
+                      <span>
+                        <span className="text-[var(--text-muted)]">% Disc.: </span>
+                        {formatPercentage(percentageDiscount)}
+                      </span>
                     </dd>
                   </div>
                 </dl>
+                <AskCalculator billed={billedAmountValue} />
+                </div>
               </div>
 
               {/* Review lives in the pill beside Lien and Case Status at the top. */}
@@ -8192,7 +8230,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       <div className="panel-card flex flex-wrap items-center justify-between gap-2 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <button
-            className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-600 transition-all hover:bg-red-50 active:scale-[0.97] active:shadow-inner"
+            className="tone-alert rounded-lg border bg-[var(--bg-panel)] px-2.5 py-1 text-xs font-semibold transition-all hover:brightness-95 active:scale-[0.97] active:shadow-inner"
             onClick={() => { setShowDeleteModal(true); setDeletePasswordInput(""); setDeleteError(""); }}
             type="button"
           >
@@ -8201,20 +8239,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           {/* Save status — bright, can't-miss-it pill. Replaces the
               tiny blue "Updated…" line that was way too easy to miss
               and led to "did the save actually work?" anxiety. */}
-          {saveStatus !== "idle" && saveMessage && (
+          {/* Saving… / Saved show on the circular G.O.A.T. button.
+              This spot only speaks up when something actually failed. */}
+          {saveStatus === "error" && saveMessage && (
             <span
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold shadow-sm ${
-                saveStatus === "saving"
-                  ? "border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)] text-[var(--brand-primary)]"
-                  : saveStatus === "saved"
-                    ? "border border-emerald-300 bg-emerald-50 text-emerald-800"
-                    : "border-2 border-red-400 bg-red-50 text-red-800"
-              }`}
-              role={saveStatus === "error" ? "alert" : undefined}
+              className="tone-alert inline-flex items-center gap-2 rounded-full border-2 px-3 py-1 text-sm font-semibold shadow-sm"
+              role="alert"
             >
-              {saveStatus === "saving" && "⟳"}
-              {saveStatus === "saved" && "✓"}
-              {saveStatus === "error" && "⚠"}
+              ⚠
               <span>{saveMessage}</span>
             </span>
           )}
@@ -8237,7 +8269,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
           can be generated. Same look + feel as the narrative-report
           prompt modal below. */}
       {docPromptState && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <form
             className="panel-card max-h-[85vh] w-full max-w-md overflow-auto p-4"
             onSubmit={(e) => {
@@ -8251,7 +8283,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">{docPromptState.title}</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setDocPromptState(null)}
                 type="button"
               >
@@ -8288,14 +8320,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setDocPromptState(null)}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white"
+                className="btn btn-primary btn-sm"
                 type="submit"
               >
                 Generate
@@ -8306,7 +8338,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       )}
 
       {showNarrativePromptModal && narrativePromptTemplate && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
             <ScrollLock />
             <div className="panel-card mx-auto w-full max-w-3xl overflow-auto p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -8315,7 +8347,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <p className="text-sm text-[var(--text-muted)]">{narrativePromptTemplate.name}</p>
                 </div>
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                  className="btn btn-secondary btn-sm"
                   onClick={closeNarrativePromptModal}
                   type="button"
                 >
@@ -8345,7 +8377,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                               <button
                                 className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold ${
                                   checked
-                                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
+                                    ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] text-[var(--brand-primary)]"
                                     : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
                                 }`}
                                 key={`${prompt.id}-${option}`}
@@ -8397,14 +8429,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
               <div className="mt-4 flex justify-end gap-2">
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary btn-sm"
                   onClick={closeNarrativePromptModal}
                   type="button"
                 >
                   Cancel
                 </button>
                 <button
-                  className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  className="btn btn-primary btn-sm"
                   onClick={continueNarrativeGeneration}
                   type="button"
                 >
@@ -8416,7 +8448,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       )}
 
       {showNarrativePreviewModal && narrativePreview && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
             <ScrollLock />
             <div className="panel-card mx-auto w-full max-w-5xl overflow-auto p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -8432,14 +8464,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
-                    className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                    className="btn btn-primary btn-sm"
                     onClick={printNarrativePreview}
                     type="button"
                   >
                     Print / Save PDF
                   </button>
                   <button
-                    className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                    className="btn btn-secondary btn-sm"
                     onClick={closeNarrativePreviewModal}
                     type="button"
                   >
@@ -8513,7 +8545,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                           {enc.appointmentType && (
                             <span className="text-xs text-[var(--text-muted)]">• {enc.appointmentType}</span>
                           )}
-                          <span className={`text-xs ${enc.signed ? "text-emerald-600" : "text-amber-600"}`}>
+                          <span className={`text-xs ${enc.signed ? "text-[var(--status-active)]" : "tone-warn-text"}`}>
                             {enc.signed ? "Signed" : "Open"}
                           </span>
                         </label>
@@ -8643,7 +8675,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 {activeRegionModal === "xray" ? "X-Ray Regions" : `${mriStudyLabel} Regions`}
               </h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setActiveRegionModal(null);
                   setRegionModalAnchor(null);
@@ -8670,7 +8702,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       aria-pressed={checked}
                       className={`flex min-h-12 w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm font-semibold transition ${
                         checked
-                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
+                          ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] text-[var(--brand-primary)]"
                           : "border-[var(--line-soft)] bg-white text-[var(--text-main)] hover:border-[var(--brand-primary)]"
                       }`}
                       onClick={() => {
@@ -8719,7 +8751,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                           !checked
                             ? "cursor-not-allowed border-[var(--line-soft)] bg-[var(--bg-soft)] text-[var(--text-muted)] opacity-70"
                             : flexExt
-                              ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.12)] text-[var(--brand-primary)]"
+                              ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] text-[var(--brand-primary)]"
                               : "border-[var(--line-soft)] bg-white text-[var(--text-main)] hover:border-[var(--brand-primary)]"
                         }`}
                         disabled={!checked}
@@ -8800,7 +8832,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h3 className="text-xl font-semibold">Quick Add To Do</h3>
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                  className="btn btn-secondary btn-sm"
                   onClick={closeQuickTaskModal}
                   type="button"
                 >
@@ -8856,20 +8888,53 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
               <div className="mt-4 flex justify-end gap-2">
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary btn-sm"
                   onClick={closeQuickTaskModal}
                   type="button"
                 >
                   Cancel
                 </button>
                 <button
-                  className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  className="btn btn-primary btn-sm"
                   type="submit"
                 >
                   Add To Do
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showAddContactPrompt && (
+        <div className="fixed inset-0 z-50 bg-black/45 p-4">
+          <ScrollLock />
+          <div className="relative h-full w-full">
+            <div className="panel-card p-4" style={getAnchoredModalStyle(null, 560, 50)}>
+            <h3 className="text-xl font-semibold">Add to Contacts?</h3>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
+              Save {[firstName, lastName].filter(Boolean).join(" ") || "this patient"} to your phone or Mac contacts.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                onClick={() => setShowAddContactPrompt(false)}
+                type="button"
+              >
+                Not now
+              </button>
+              <button
+                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                onClick={() => {
+                  setShowAddContactPrompt(false);
+                  addPatientToContacts();
+                }}
+                type="button"
+              >
+                Yes
+              </button>
+            </div>
+            </div>
           </div>
         </div>
       )}
@@ -8885,14 +8950,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={dismissAttorneyPrompt}
                 type="button"
               >
                 No
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary btn-sm"
                 onClick={(event) => openAttorneyForm(event)}
                 type="button"
               >
@@ -8912,7 +8977,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="text-xl font-semibold">Add New Attorney</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setShowAddAttorneyForm(false);
                   setAttorneyModalError("");
@@ -8994,7 +9059,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
 
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setShowAddAttorneyForm(false);
                   setAttorneyModalError("");
@@ -9005,7 +9070,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary btn-sm"
                 type="submit"
               >
                 Save Attorney
@@ -9024,7 +9089,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-xl font-semibold">Edit Specialist Referral</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setEditingSpecialist(null);
                   setSpecialistEditorAnchor(null);
@@ -9203,7 +9268,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 hides them. */}
             <div className="sticky bottom-0 -mx-4 -mb-4 mt-4 flex justify-end gap-2 border-t border-[var(--line-soft)] bg-white px-4 py-3">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setEditingSpecialist(null);
                   setSpecialistEditorAnchor(null);
@@ -9213,7 +9278,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary btn-sm"
                 type="submit"
               >
                 Save Specialist
@@ -9236,7 +9301,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   : `Edit ${editingImagingReferral.modalityLabel} Referral`}
               </h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setEditingImagingReferral(null);
                   setImagingEditorAnchor(null);
@@ -9252,15 +9317,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               <div className="grid grid-cols-2 gap-2">
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Facility (optional)</span>
-                  <input
+                  <ImagingCenterSelect
+                    centers={imagingCenters}
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    list="imaging-centers"
-                    onChange={(event) =>
-                      setEditingImagingReferral((current) =>
-                        current ? { ...current, center: event.target.value } : current,
-                      )
+                    onChange={(center) =>
+                      setEditingImagingReferral((current) => (current ? { ...current, center } : current))
                     }
                     placeholder="Where it was done"
+                    typePlaceholder="Where it was done"
                     value={editingImagingReferral.center}
                   />
                 </label>
@@ -9300,13 +9364,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 </label>
                 <label className="grid gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">Imaging Center</span>
-                  <input
+                  <ImagingCenterSelect
+                    centers={imagingCenters}
                     className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    list="imaging-centers"
-                    onChange={(event) =>
-                      setEditingImagingReferral((current) =>
-                        current ? { ...current, center: event.target.value } : current,
-                      )
+                    onChange={(center) =>
+                      setEditingImagingReferral((current) => (current ? { ...current, center } : current))
                     }
                     value={editingImagingReferral.center}
                   />
@@ -9531,7 +9593,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                   <button
                     className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-0.5 text-[11px] font-semibold text-[var(--brand-primary)] disabled:cursor-not-allowed disabled:text-[var(--text-muted)]"
                     disabled={editingImagingReferral.regions.length === 0}
-                    onClick={() => {
+                    onClick={async () => {
                       const template = buildFindingsTemplate(
                         editingImagingReferral.regions,
                         editingImagingReferral.lateralityByRegion,
@@ -9539,10 +9601,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                       if (!template) return;
                       const existing = editingImagingReferral.findings ?? "";
                       if (existing.trim().length > 0) {
-                        const proceed = window.confirm(
-                          "Replace the existing findings text with the region template? " +
-                            "Anything you've typed will be lost.",
-                        );
+                        const proceed = (await appConfirm("Replace the existing findings text with the region template? " +
+                                                    "Anything you've typed will be lost."));
                         if (!proceed) return;
                       }
                       setEditingImagingReferral((current) =>
@@ -9594,7 +9654,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 that scrolls underneath. */}
             <div className="sticky bottom-0 -mx-4 -mb-4 mt-4 flex justify-end gap-2 border-t border-[var(--line-soft)] bg-white px-4 py-3">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setEditingImagingReferral(null);
                   setImagingEditorAnchor(null);
@@ -9604,7 +9664,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary btn-sm"
                 type="submit"
               >
                 Save {editingImagingReferral.modalityLabel}
@@ -9626,14 +9686,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
               </p>
               <div className="mt-4 flex justify-end gap-2">
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                  className="btn btn-secondary btn-sm"
                   onClick={closeRelatedCaseNavigatePrompt}
                   type="button"
                 >
                   No
                 </button>
                 <button
-                  className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                  className="btn btn-primary btn-sm"
                   onClick={confirmRelatedCaseNavigation}
                   type="button"
                 >
@@ -9645,19 +9705,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         </div>
       )}
 
-      <datalist id="imaging-centers">
-        {imagingCenters.map((name) => (
-          <option key={name} value={name} />
-        ))}
-      </datalist>
-      <datalist id="attorney-contacts">
-        {attorneyContacts.map((contact) => (
-          <option key={contact.id} value={contact.name} />
-        ))}
-      </datalist>
-
       {showAddDxModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
           <form
             className="panel-card mx-auto w-full max-w-md p-5"
@@ -9669,7 +9718,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-xl font-semibold">Add Diagnosis Code</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setShowAddDxModal(false)}
                 type="button"
               >
@@ -9734,14 +9783,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             {dxError && <p className="mt-3 text-sm font-semibold text-red-600">{dxError}</p>}
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold"
+                className="btn btn-secondary"
                 onClick={() => setShowAddDxModal(false)}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white"
+                className="btn btn-primary"
                 type="submit"
               >
                 Add Code
@@ -9773,6 +9822,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         appointment={editTargetAppointment}
         onClose={() => setEditAppointmentId(null)}
         onSaved={(updated) => {
+          // The note for this visit follows the appointment's new type.
+          if (editTargetAppointment) {
+            void syncEncounterTypeForAppointment(
+              editTargetAppointment,
+              editTargetAppointment.appointmentType,
+              updated.appointmentType,
+            );
+          }
           setEncounterMessage(
             `Appointment updated for ${toUsDate(updated.date)} at ${formatTimeLabel(updated.startTime)}.`,
           );
@@ -9780,7 +9837,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         open={Boolean(editTargetAppointment)}
       />
 
-      <DocumentScannerModal
+      {scannerOpen && <DocumentScannerModal
         onCapture={(file) => {
           const dt = new DataTransfer();
           dt.items.add(file);
@@ -9788,11 +9845,11 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         }}
         onClose={() => setScannerOpen(false)}
         open={scannerOpen}
-      />
+      />}
 
 
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
           <div className="panel-card mx-auto w-full max-w-md p-5">
             <h3 className="text-xl font-semibold text-red-600">Delete Patient</h3>
@@ -9818,14 +9875,14 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
             )}
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => { setShowDeleteModal(false); setDeletePasswordInput(""); setDeleteError(""); }}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-danger btn-sm"
                 onClick={handleDeletePatient}
                 type="button"
               >

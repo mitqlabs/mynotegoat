@@ -68,8 +68,8 @@ test("quick lookups from anywhere: bill/balance routes to the patient, not the o
 });
 test("notes save through the Notes store only after Confirm", () => {
   const g = readFileSync("src/components/global-goat.tsx", "utf8");
-  assert.ok(g.includes("setCaseNote(d.patientId, appendNote(existing, line))"));
-  assert.ok(g.indexOf("setCaseNote(") > g.indexOf("const saveNote"));
-  assert.ok(!/isAddNoteRequest[\s\S]{0,1500}setCaseNote/.test(g.slice(g.indexOf("if (isAddNoteRequest"), g.indexOf("if (isAddNoteRequest") + 1500)));
+  assert.ok(g.includes("entryFromGoatNote({ patientId: d.patientId"));
+  assert.ok(g.indexOf("saveCaseNoteEntries(") > g.indexOf("const saveNote"));
+  assert.ok(!/isAddNoteRequest[\s\S]{0,1500}saveCaseNoteEntries/.test(g.slice(g.indexOf("if (isAddNoteRequest"), g.indexOf("if (isAddNoteRequest") + 1500)));
 });
 console.log(`${passed} passed`);

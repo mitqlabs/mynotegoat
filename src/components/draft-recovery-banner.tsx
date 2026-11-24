@@ -26,6 +26,7 @@ import {
 } from "@/lib/encounter-notes";
 import { clearDraft, scanDrafts, type DraftEntry } from "@/lib/draft-recovery";
 import type { EncounterNoteRecord } from "@/lib/encounter-notes";
+import { appAlert, appConfirm } from "@/components/app-dialog";
 
 function formatAge(at: number): string {
   const diff = Date.now() - at;
@@ -225,21 +226,19 @@ export function DraftRecoveryBanner() {
     // Drafts that matched a real encounter get cleared. Orphans stay.
     for (const draft of restoredDrafts) clearDraft(draft.key);
     if (orphanDrafts.length > 0) {
-      window.alert(
-        `Restored ${restoredDrafts.length} draft${restoredDrafts.length === 1 ? "" : "s"}.\n\n` +
-          `${orphanDrafts.length} draft${orphanDrafts.length === 1 ? "" : "s"} could not be restored ` +
-          "because the encounter they belong to wasn't in the local cache " +
-          "(it may still be loading from the cloud). These drafts are kept " +
-          "in place — open the encounter or reload the page to try again. " +
-          "Use Delete all drafts only when you're sure you don't need them.",
-      );
+      void appAlert(`Restored ${restoredDrafts.length} draft${restoredDrafts.length === 1 ? "" : "s"}.\n\n` +
+                  `${orphanDrafts.length} draft${orphanDrafts.length === 1 ? "" : "s"} could not be restored ` +
+                  "because the encounter they belong to wasn't in the local cache " +
+                  "(it may still be loading from the cloud). These drafts are kept " +
+                  "in place — open the encounter or reload the page to try again. " +
+                  "Use Delete all drafts only when you're sure you don't need them.");
     }
     setDismissed(true);
     // Reload so every open React tree picks up the restored state.
     router.refresh();
   };
 
-  const handleDismissAll = () => {
+  const handleDismissAll = async () => {
     // Count orphans separately so the warning is sharper — the user
     // can decide whether to throw away typed text that has nowhere
     // to land (vs. drafts that were just stale duplicates of saved
@@ -253,12 +252,10 @@ export function DraftRecoveryBanner() {
           "had no matching encounter on this device — their text exists ONLY in the draft. " +
           "Deleting will lose that text permanently."
         : "";
-    const confirmed = window.confirm(
-      `You have ${pending.length} unsaved draft(s) from a prior session.\n\n` +
-        "Dismissing will PERMANENTLY delete these drafts without restoring them." +
-        extra +
-        "\n\nAre you absolutely sure?",
-    );
+    const confirmed = (await appConfirm(`You have ${pending.length} unsaved draft(s) from a prior session.\n\n` +
+            "Dismissing will PERMANENTLY delete these drafts without restoring them." +
+            extra +
+            "\n\nAre you absolutely sure?"));
     if (!confirmed) return;
     for (const draft of pending) clearDraft(draft.key);
     setDismissed(true);

@@ -15,6 +15,8 @@
 
 import { recordUserPrefWrite } from "@/lib/user-prefs-cloud";
 import { pushLocalStateToCloud } from "@/lib/cloud-state";
+import { cloudBackingFor } from "@/lib/cloud-key-registry";
+import { markKeyDirty } from "@/lib/dirty-keys";
 
 const CASEMATE_PREFIX = "casemate.";
 const IGNORE_KEYS = new Set([
@@ -65,8 +67,8 @@ export function resumeSync() {
 
 // Sync status callback for UI indicator.
 // Callbacks now receive an optional detail payload (error message or a
-// "saved-at" timestamp) so the UI can show the actual reason for a failure
-// and flash a green "Cloud Saved!" confirmation after a successful push.
+// "saved-at" timestamp) so the UI can show the actual reason for a failure.
+// A successful push is what turns the circular G.O.A.T. button green.
 export type SyncStatus = "syncing" | "synced" | "error";
 export interface SyncStatusDetail {
   /** Source that reported the status — used for log correlation. */
@@ -77,20 +79,25 @@ export interface SyncStatusDetail {
   at: number;
 }
 type SyncStatusCallback = (status: SyncStatus, detail: SyncStatusDetail) => void;
-let statusCallback: SyncStatusCallback | null = null;
+const statusListeners = new Set<SyncStatusCallback>();
 
-export function onSyncStatusChange(callback: SyncStatusCallback) {
-  statusCallback = callback;
+/** Subscribe to cloud save status. Returns an unsubscribe. Several listeners can watch at once. */
+export function onSyncStatusChange(callback: SyncStatusCallback): () => void {
+  statusListeners.add(callback);
+  return () => {
+    statusListeners.delete(callback);
+  };
 }
 
 function notifyStatus(status: SyncStatus, detail: Partial<SyncStatusDetail> = {}) {
-  if (statusCallback) {
+  const payload: SyncStatusDetail = { at: Date.now(), ...detail };
+  statusListeners.forEach((callback) => {
     try {
-      statusCallback(status, { at: Date.now(), ...detail });
+      callback(status, payload);
     } catch {
       // ignore
     }
-  }
+  });
 }
 
 /**
@@ -99,7 +106,12 @@ function notifyStatus(status: SyncStatus, detail: Partial<SyncStatusDetail> = {}
  * indicator to "error" and logs for diagnosis. Callers should still throw
  * upstream so the caller's own error-handling can run.
  */
+// How many cloud writes are in flight, so a burst of parallel saves shows
+// one steady "Saving…" and a single "Saved ✓" when the LAST one lands.
+let inflightWrites = 0;
+
 export function reportCloudWriteError(source: string, error: unknown) {
+  inflightWrites = Math.max(0, inflightWrites - 1);
   syncErrorCount += 1;
   const msg = error instanceof Error ? error.message : String(error);
   console.error(`[Cloud Write] ${source} failed:`, msg);
@@ -108,14 +120,18 @@ export function reportCloudWriteError(source: string, error: unknown) {
 
 /**
  * Companion to reportCloudWriteError for cloud-table write SUCCESSES. Flips
- * the UI indicator to "synced" so the green "Cloud Saved ✓" pill flashes.
+ * the UI indicator to "synced" so the circular G.O.A.T. button flashes Saved.
  * Without this, dedicated-table dual-writes (patients, appointments,
  * encounter-notes) succeeded silently — the user had no positive signal
  * that their save actually made it to the cloud. That's scary when you
  * just hit "Save Encounters" and the button just returns a plain message
- * without the familiar confirmation pill.
+ * without the goat flashing Saved.
  */
-export function reportCloudWriteSuccess(source: string) {
+export function reportCloudWriteSuccess(source: string, opts: { force?: boolean } = {}) {
+  if (!opts.force) {
+    inflightWrites = Math.max(0, inflightWrites - 1);
+    if (inflightWrites > 0) return;
+  }
   // Reset the error counter so a stale error from a prior failed write
   // doesn't keep the indicator red after a clean success.
   syncErrorCount = 0;
@@ -125,10 +141,11 @@ export function reportCloudWriteSuccess(source: string) {
 /**
  * Flip the indicator to "syncing" for dedicated-table writes — mirrors
  * what the blob autosave path already does. Call this right before the
- * cloud op starts so the user sees the blue "Saving to cloud..." pill
+ * cloud op starts so the circular G.O.A.T. button shows Saving
  * while the write is in flight.
  */
 export function reportCloudWriteStart(source: string) {
+  inflightWrites += 1;
   notifyStatus("syncing", { source });
 }
 
@@ -216,6 +233,9 @@ export function installStorageSyncInterceptor() {
       }
     }
     if (shouldSyncKey(key)) {
+      // Remember this device changed a workspace setting, until the cloud confirms it
+      // (Settings → "Save to Cloud" pushes exactly these). Not during bootstrap writes.
+      if (!paused && cloudBackingFor(key) === "workspace") markKeyDirty(key);
       scheduleSyncNow();
     }
   };

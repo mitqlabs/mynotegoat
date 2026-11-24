@@ -2,8 +2,10 @@
 
 import { DRILL_SORT_KEY, nextDrillSort, parseDrillSort, sortDrillPatients, type DrillSort } from "@/lib/referral-drill-sort";
 import { useReferralTicks } from "@/hooks/use-referral-ticks";
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
+import { PatientDemographicsSection } from "@/components/patient-demographics-section";
+import { ATTORNEY_PERFORMANCE_SECTION, useRememberedOpen } from "@/components/remembered-open";
 import { ScrollLock } from "@/components/scroll-lock";
 import { ReviewsSummary, WeeklySummary } from "@/components/weekly-summary";
 import { ActivityLogPanel } from "@/components/activity-log-panel";
@@ -23,6 +25,8 @@ import { useCashPayments } from "@/hooks/use-cash-payments";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { buildDischargeIndex, patientDischargeIso } from "@/lib/discharge-date";
 import { buildInitialExamIndex, patientInitialExamIso } from "@/lib/initial-exam-date";
+import { isInNewPatientIntake } from "@/lib/patient-list-intake";
+import { paidCaseMissingLabel, paidCasePercent, type PaidCaseMoney } from "@/lib/paid-case-percent";
 
 // Legacy single-level sort keys, preserved only for migration to v2.
 const ATTORNEY_SORT_COLUMN_KEY = "casemate.attorney-perf-sort-column.v1";
@@ -242,6 +246,13 @@ function parseDollar(value: string | undefined): number {
   return Number.isFinite(num) ? num : 0;
 }
 
+/** Live billing amount when one was entered, otherwise the saved field. 0 means blank. */
+function enteredDollar(live: number | undefined, saved: string | undefined): number {
+  if (typeof live === "number" && live > 0) return live;
+  const parsed = parseDollar(saved);
+  return parsed > 0 ? parsed : 0;
+}
+
 function parseMatrixDate(value: string | undefined): Date | null {
   if (!value) return null;
   const s = value.trim();
@@ -314,22 +325,6 @@ function getDefaultYear(): string {
   return hasCurrentYear ? currentYear : "ALL";
 }
 
-const DASHBOARD_SECTIONS_KEY = "casemate.dashboard.sections-open.v1";
-
-function subscribeToStorage(onChange: () => void) {
-  window.addEventListener("storage", onChange);
-  return () => window.removeEventListener("storage", onChange);
-}
-
-function readSectionOpen(id: string): boolean {
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(DASHBOARD_SECTIONS_KEY) ?? "{}") as Record<string, boolean>;
-    return saved[id] !== false;
-  } catch {
-    return true;
-  }
-}
-
 /** Collapsible Dashboard section; open/closed is remembered per user (cloud-backed prefs). */
 function DashboardSection({
   id,
@@ -340,30 +335,11 @@ function DashboardSection({
   title: string;
   children: React.ReactNode;
 }) {
-  // Saved open/closed via useSyncExternalStore: the server snapshot is
-  // "open", the client reads localStorage, and React reconciles the two
-  // without a hydration mismatch or a setState-in-effect.
-  const savedOpen = useSyncExternalStore(
-    subscribeToStorage,
-    () => readSectionOpen(id),
-    () => true,
-  );
-  const [override, setOverride] = useState<boolean | null>(null);
-  const open = override ?? savedOpen;
-  const toggle = () => {
-    const next = !open;
-    setOverride(next);
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(DASHBOARD_SECTIONS_KEY) ?? "{}") as Record<string, boolean>;
-      window.localStorage.setItem(DASHBOARD_SECTIONS_KEY, JSON.stringify({ ...saved, [id]: next }));
-    } catch {
-      // Per-browser convenience only.
-    }
-  };
+  const { open, toggle } = useRememberedOpen(id);
   return (
     <section className="panel-card p-4">
       <button
-        className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
+        className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-lg font-semibold text-white"
         onClick={toggle}
         type="button"
       >
@@ -375,8 +351,24 @@ function DashboardSection({
   );
 }
 
+function CollapseChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      className={`h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      viewBox="0 0 24 24"
+    >
+      <path d="m9 5 7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function DashboardPage() {
   const { roleTier } = useWorkspaceAccess();
+  const attorneyPerformance = useRememberedOpen(ATTORNEY_PERFORMANCE_SECTION);
   // Discharge dates as the patient page's Discharge box shows them.
   const { scheduleAppointments } = useScheduleAppointments();
   const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
@@ -576,6 +568,8 @@ export default function DashboardPage() {
   const filteredPatients = useMemo(() => {
     return patients.filter((patient) => {
       if (patient.deleted) return false; // Trash never counts.
+      // Still in New Patient Intake (no attorney, or never seen). Not a case yet.
+      if (isInNewPatientIntake(patient, initialExamIndex)) return false;
       const matchesYear =
         year === "ALL" ||
         (parseFlexibleDate(patient.dateOfLoss)?.year.toString() === year);
@@ -588,7 +582,12 @@ export default function DashboardPage() {
 
       return matchesYear && matchesAttorney && matchesStatus;
     });
-  }, [attorney, status, year]);
+  }, [attorney, initialExamIndex, status, year]);
+
+  const locationPatients = useMemo(
+    () => patients.filter((patient) => !isInNewPatientIntake(patient, initialExamIndex)),
+    [initialExamIndex],
+  );
 
   // Billing data from Additional Details → $ Billed, $ Paid Amount.
   // Prefer the live patient-billing record (canonical post-rollout
@@ -602,35 +601,33 @@ export default function DashboardPage() {
   const billingData = useMemo(() => {
     let billedTotal = 0;
     let paidTotal = 0;
-    let billedPaidCases = 0;
-    let paidPaidCases = 0;
     let billedCaseCount = 0; // patients with billed > 0
     let paidCaseCount = 0; // patients with paid > 0
+    const paidCaseMoney: PaidCaseMoney[] = [];
 
     filteredPatients.forEach((patient) => {
       const billing = getPatientBillingRecord(patient.id);
-      const billed = billing && billing.billedAmount > 0
-        ? billing.billedAmount
-        : parseDollar(patient.matrix?.billed);
-      const paid = billing && billing.paidAmount > 0
-        ? billing.paidAmount
-        : parseDollar(patient.matrix?.paidAmount);
+      const billed = enteredDollar(billing?.billedAmount, patient.matrix?.billed);
+      const paid = enteredDollar(billing?.paidAmount, patient.matrix?.paidAmount);
       billedTotal += billed;
       paidTotal += paid;
       if (billed > 0) billedCaseCount += 1;
       if (paid > 0) paidCaseCount += 1;
-
-      if (paid > 0 || patient.caseStatus === "Paid") {
-        billedPaidCases += billed;
-        paidPaidCases += paid;
-      }
+      paidCaseMoney.push({ caseStatus: patient.caseStatus, billed, paid });
     });
 
-    const paidRate = billedPaidCases === 0 ? 0 : (paidPaidCases / billedPaidCases) * 100;
+    const paidCases = paidCasePercent(paidCaseMoney);
     const avgBilled = billedCaseCount ? billedTotal / billedCaseCount : 0;
     const avgPaid = paidCaseCount ? paidTotal / paidCaseCount : 0;
 
-    return { billedTotal, paidTotal, paidRate, avgBilled, avgPaid };
+    return {
+      billedTotal,
+      paidTotal,
+      paidRate: paidCases.percent,
+      paidMissingAmount: paidCases.missingAmount,
+      avgBilled,
+      avgPaid,
+    };
   }, [filteredPatients, getPatientBillingRecord]);
 
   const statusCounts = useMemo(() => {
@@ -877,9 +874,9 @@ export default function DashboardPage() {
   // of a specialist's patients the Year filter (by Date of Loss) is hiding.
   const specialistAllYears = useMemo(() => {
     if (year === "ALL") return null;
-    const list = patients.filter((p) => !p.deleted && (attorney === "ALL" || normalizeAttorneyKey(p.attorney) === normalizeAttorneyKey(attorney)) && (status === "ALL" || p.caseStatus === status));
+    const list = patients.filter((p) => !p.deleted && !isInNewPatientIntake(p, initialExamIndex) && (attorney === "ALL" || normalizeAttorneyKey(p.attorney) === normalizeAttorneyKey(attorney)) && (status === "ALL" || p.caseStatus === status));
     return new Map(buildSpecialistStats(list).map((r) => [r.specialist.toLowerCase(), r.cases]));
-  }, [attorney, buildSpecialistStats, status, year]);
+  }, [attorney, buildSpecialistStats, initialExamIndex, status, year]);
 
   const attorneyStats = useMemo(() => {
     const grouped: Record<
@@ -895,6 +892,7 @@ export default function DashboardPage() {
         paid: number;
         billed: number;
         collected: number;
+        paidCaseMoney: PaidCaseMoney[];
         timeToRbValues: number[];
         timeToPaidValues: number[];
       }
@@ -914,6 +912,7 @@ export default function DashboardPage() {
           paid: 0,
           billed: 0,
           collected: 0,
+          paidCaseMoney: [],
           timeToRbValues: [],
           timeToPaidValues: [],
         };
@@ -933,12 +932,11 @@ export default function DashboardPage() {
       // reasoning as the Billing Snapshot above: the matrix mirror can
       // be stale while the billing record holds the user-entered value.
       const billing = getPatientBillingRecord(patient.id);
-      row.billed += billing && billing.billedAmount > 0
-        ? billing.billedAmount
-        : parseDollar(patient.matrix?.billed);
-      row.collected += billing && billing.paidAmount > 0
-        ? billing.paidAmount
-        : parseDollar(patient.matrix?.paidAmount);
+      const billed = enteredDollar(billing?.billedAmount, patient.matrix?.billed);
+      const paid = enteredDollar(billing?.paidAmount, patient.matrix?.paidAmount);
+      row.billed += billed;
+      row.collected += paid;
+      row.paidCaseMoney.push({ caseStatus: patient.caseStatus, billed, paid });
 
       // Timeline from the saved milestone dates (completed spans only).
       const dtr = daysBetween(patientDischargeIso(patient, dischargeIndex), patient.matrix?.rbSent);
@@ -950,12 +948,13 @@ export default function DashboardPage() {
     return Object.values(grouped).map((row) => {
       const avgTimeToRb = average(row.timeToRbValues);
       const avgTimeToPaid = average(row.timeToPaidValues);
-      const percentPaid = row.billed ? (row.collected / row.billed) * 100 : 0;
+      const paidCases = paidCasePercent(row.paidCaseMoney);
       return {
         ...row,
         avgTimeToRb,
         avgTimeToPaid,
-        percentPaid,
+        percentPaid: paidCases.percent,
+        paidMissingAmount: paidCases.missingAmount,
       };
     });
   }, [dischargeIndex, filteredPatients, getPatientBillingRecord]);
@@ -977,9 +976,9 @@ export default function DashboardPage() {
       let cmp: number;
       if (column === "attorney") {
         cmp = a.attorney.localeCompare(b.attorney);
-      } else if (column === "avgTimeToRb" || column === "avgTimeToPaid") {
-        // Rows with no timing data (value === 0, displayed as "N/A") always
-        // sort to the bottom regardless of direction.
+      } else if (column === "avgTimeToRb" || column === "avgTimeToPaid" || column === "percentPaid") {
+        // Rows with no timing data, or no Paid cases (displayed as "N/A"),
+        // always sort to the bottom regardless of direction.
         const av = a[column];
         const bv = b[column];
         if (!av && !bv) cmp = 0;
@@ -1007,7 +1006,7 @@ export default function DashboardPage() {
     <div className="space-y-5">
       {visibleSections === 0 && (
         <section className="panel-card p-4 text-sm text-[var(--text-muted)]">
-          Your role doesn&apos;t include any Dashboard sections. An admin can change that in Settings → Admin Access.
+          Your role doesn&apos;t include any Statistics sections. An admin can change that in Settings → Roles & Permissions.
         </section>
       )}
       {canSee("weeklySummary") && (
@@ -1085,12 +1084,52 @@ export default function DashboardPage() {
       </section>
 
       <div className="space-y-5">
-        <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 xl:items-start">
-          {/* Column 1 — money: Billing Snapshot over Cash Patients */}
-          <div className="flex flex-col gap-5">
-          <article className="panel-card p-4">
+        {/* Left: the four snapshot cards in a 2×2. Beside them, on a wide
+            screen: Cases By Month, Imaging, and Specialists. Narrow screens
+            stack the whole row. */}
+        <section
+          className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-[minmax(22rem,36rem)_minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,0.95fr)]"
+          data-statistics-layout="top"
+        >
+          <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2" data-statistics-layout="2x2">
+          <article className="panel-card h-full p-3">
+            <h4 className="text-sm font-semibold">Total Cases</h4>
+            <p className="mt-1 text-2xl font-bold tabular-nums">{filteredPatients.length}</p>
+            <div className="mt-2 space-y-0.5">
+              {caseStatuses.map((statusConfig) => (
+                <p key={statusConfig.name} className="flex items-center gap-2 text-xs">
+                  <span
+                    className="inline-block h-2.5 w-2.5 rounded-full border border-[var(--line-soft)]"
+                    style={{ backgroundColor: statusConfig.color }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{statusConfig.name.toUpperCase()}</span>
+                  <span className="font-semibold tabular-nums">{statusCounts[statusConfig.name] ?? 0}</span>
+                </p>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel-card h-full p-3">
+            <h4 className="text-sm font-semibold">Cycle Lengths</h4>
+            <div className="mt-2 space-y-1.5 text-xs">
+              <p className="flex items-center justify-between gap-2">
+                <span className="text-[var(--text-muted)]">Avg. Initial To Discharge</span>
+                <span className="font-semibold tabular-nums">{formatMonthsFromDays(timelineAverages.initialToDischarge)}</span>
+              </p>
+              <p className="flex items-center justify-between gap-2">
+                <span className="text-[var(--text-muted)]">Avg. Discharge To R&B</span>
+                <span className="font-semibold tabular-nums">{formatMonthsFromDays(timelineAverages.dischargeToRb)}</span>
+              </p>
+              <p className="flex items-center justify-between gap-2">
+                <span className="text-[var(--text-muted)]">Avg. R&B To Paid</span>
+                <span className="font-semibold tabular-nums">{formatMonthsFromDays(timelineAverages.rbToPaid)}</span>
+              </p>
+            </div>
+          </article>
+
+          <article className="panel-card h-full p-3">
             <div className="flex items-center justify-between gap-2">
-              <h4 className="text-lg font-semibold">Billing Snapshot</h4>
+              <h4 className="text-sm font-semibold">Billing Snapshot</h4>
               <button
                 aria-label={showBilling ? "Hide billing numbers" : "Show billing numbers"}
                 className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--surface-muted)]"
@@ -1107,9 +1146,9 @@ export default function DashboardPage() {
               on top. This is for office-walk-by privacy — anyone glancing
               at the screen shouldn't see totals.
             */}
-            <div className="relative mt-4">
+            <div className="relative mt-2">
               <div
-                className={`space-y-2 text-sm transition-[filter] ${showBilling ? "" : "pointer-events-none select-none blur-md"}`}
+                className={`space-y-1.5 text-xs transition-[filter] ${showBilling ? "" : "pointer-events-none select-none blur-md"}`}
                 aria-hidden={!showBilling}
               >
                 <p className="flex items-center justify-between">
@@ -1122,10 +1161,15 @@ export default function DashboardPage() {
                 </p>
                 <p className="flex items-center justify-between">
                   <span className="text-[var(--text-muted)]">% Paid (Paid Cases)</span>
-                  <span className="font-bold">{billingData.paidRate.toFixed(1)}%</span>
+                  <span className="font-bold tabular-nums">{billingData.paidRate === null ? "N/A" : `${billingData.paidRate.toFixed(1)}%`}</span>
                 </p>
+                {billingData.paidMissingAmount > 0 && (
+                  <p className="text-[11px] text-[var(--text-muted)]" title="These Paid cases have no paid amount, so they are left out of the percent.">
+                    {paidCaseMissingLabel(billingData.paidMissingAmount)}
+                  </p>
+                )}
                 <p className="text-xs text-[var(--text-muted)]">
-                  Uses only cases with payments or Paid status for percentage.
+                  Paid cases only. A Paid case with no paid amount is left out.
                 </p>
                 <div className="my-2 border-t border-[var(--line-soft)]" />
                 <p className="flex items-center justify-between">
@@ -1150,9 +1194,9 @@ export default function DashboardPage() {
             </div>
           </article>
 
-          <article className="panel-card p-4">
+          <article className="panel-card h-full p-3">
             <div className="flex items-center justify-between gap-2">
-              <h4 className="text-lg font-semibold">Cash Patients &amp; Packages</h4>
+              <h4 className="text-sm font-semibold">Cash Snapshot</h4>
               <button
                 aria-label={showCash ? "Hide cash numbers" : "Show cash numbers"}
                 className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold text-[var(--text-muted)] hover:bg-[var(--surface-muted)]"
@@ -1162,9 +1206,9 @@ export default function DashboardPage() {
                 {showCash ? "Hide" : "Show"}
               </button>
             </div>
-            <div className="relative mt-4">
+            <div className="relative mt-2">
               <div
-                className={`space-y-2 text-sm transition-[filter] ${showCash ? "" : "pointer-events-none select-none blur-md"}`}
+                className={`space-y-1.5 text-xs transition-[filter] ${showCash ? "" : "pointer-events-none select-none blur-md"}`}
                 aria-hidden={!showCash}
               >
                 <p className="flex justify-between">
@@ -1205,7 +1249,7 @@ export default function DashboardPage() {
                 {cashStats.outstandingList.length === 0 ? (
                   <p className="text-xs text-[var(--text-muted)]">No outstanding balances.</p>
                 ) : (
-                  <ul className="max-h-48 space-y-1 overflow-y-auto">
+                  <ul className="max-h-32 space-y-1 overflow-y-auto">
                     {cashStats.outstandingList.map((row) => (
                       <li
                         key={row.pid}
@@ -1235,170 +1279,108 @@ export default function DashboardPage() {
             </div>
           </article>
           </div>
-
-          {/* Column 2 — counts: Total Reports over Cycle Time Averages */}
-          <div className="flex flex-col gap-5">
-          <article className="panel-card p-4">
-            <h4 className="text-lg font-semibold">Total Reports</h4>
-            <p className="mt-2 text-3xl font-bold">{filteredPatients.length}</p>
-            <div className="mt-3 space-y-1">
-              {caseStatuses.map((statusConfig) => (
-                <p key={statusConfig.name} className="flex items-center gap-2 text-sm">
-                  <span
-                    className="inline-block h-3 w-3 rounded-full border border-[var(--line-soft)]"
-                    style={{ backgroundColor: statusConfig.color }}
-                  />
-                  <span>{statusConfig.name.toUpperCase()}</span>
-                  <span className="font-semibold">{statusCounts[statusConfig.name] ?? 0}</span>
-                </p>
-              ))}
-            </div>
-          </article>
-
-          <article className="panel-card p-4">
-            <h4 className="text-lg font-semibold">Cycle Time Averages</h4>
-            <div className="mt-4 space-y-2 text-sm">
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Avg. Initial To Discharge</span>
-                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.initialToDischarge)}</span>
-              </p>
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Avg. Discharge To R&B</span>
-                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.dischargeToRb)}</span>
-              </p>
-              <p className="flex items-center justify-between">
-                <span className="text-[var(--text-muted)]">Avg. R&B To Paid</span>
-                <span className="font-semibold">{formatMonthsFromDays(timelineAverages.rbToPaid)}</span>
-              </p>
-            </div>
-          </article>
-          </div>
-
-          {/* Column 3 — Cases By Month */}
-          <article className="panel-card p-4">
-            <h4 className="text-lg font-semibold">Cases By Month</h4>
-            <div className="mt-2 space-y-1 text-sm">
+          <article className="panel-card flex h-auto min-h-0 flex-col overflow-hidden p-3 xl:h-full">
+            <h4 className="text-sm font-semibold">Cases By Month</h4>
+            <div className="mt-2 max-h-80 min-h-0 flex-1 space-y-0.5 overflow-y-auto text-sm xl:max-h-none">
               {monthCounts.map((entry) => (
                 <div key={entry.month} className="flex items-center justify-between">
                   <span>{entry.month}</span>
-                  <span className="font-semibold">{entry.count}</span>
+                  <span className="font-semibold tabular-nums">{entry.count}</span>
                 </div>
               ))}
               <div className="my-2 border-t border-[var(--line-soft)]" />
               <div className="flex items-center justify-between">
                 <span className="font-semibold">Average / Month</span>
-                <span className="font-bold">{formatAverageCaseCount(averageCasesPerMonth)}</span>
+                <span className="font-bold tabular-nums">{formatAverageCaseCount(averageCasesPerMonth)}</span>
               </div>
             </div>
           </article>
 
-        </section>
-
-        <section className="grid gap-4 xl:grid-cols-[1.5fr_2fr]">
-          <article className="panel-card overflow-hidden">
-            <div className="border-b border-[var(--line-soft)] p-4">
-              <h4 className="text-lg font-semibold">Referral Totals</h4>
-              <p className="text-sm text-[var(--text-muted)]">
-                Imaging: Cases = distinct patients per facility; Xrays / MRIs = one per imaged
-                region (a bilateral BL extremity counts as two). Specialists: case counts only.
-              </p>
-            </div>
-            <div className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-              Imaging
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr className="bg-[var(--bg-soft)] text-left text-sm">
-                    <th className="px-4 py-3">Facility</th>
-                    <th className="px-4 py-3">Cases</th>
-                    <th className="px-4 py-3">Xrays</th>
-                    <th className="px-4 py-3">MRIs</th>
-                    <th className="px-4 py-3">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {imagingFacilityStats.map((row) => (
-                    <tr
-                      key={row.facility}
-                      className="border-t border-[var(--line-soft)] transition-colors hover:bg-[rgba(13,121,191,0.04)]"
-                      onClick={() =>
-                        setReferralDrill({
-                          kind: "imaging",
-                          title: row.facility,
-                          subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"} · ${row.xray} X-Ray · ${row.mri} MRI/CT`,
-                          patients: row.patients,
-                        })
-                      }
-                    >
-                      {/* Deliberately styled as plain text: the office didn't
-                          want the drill-down advertised on the page. */}
-                      <td className="px-4 py-3 font-semibold">{row.facility}</td>
-                      <td className="px-4 py-3">{row.cases}</td>
-                      <td className="px-4 py-3">{row.xray}</td>
-                      <td className="px-4 py-3">{row.mri}</td>
-                      <td className="px-4 py-3">{row.total}</td>
-                    </tr>
-                  ))}
-                  {imagingFacilityStats.length === 0 && (
-                    <tr className="border-t border-[var(--line-soft)]">
-                      <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={5}>
-                        No imaging rows for selected filters.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="border-t border-[var(--line-soft)] px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-              Specialists
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr className="bg-[var(--bg-soft)] text-left text-sm">
-                    <th className="px-4 py-3">Specialist</th>
-                    <th className="px-4 py-3">Cases</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {specialistReferralStats.map((row) => (
-                    <tr
-                      key={row.specialist}
-                      className="border-t border-[var(--line-soft)] transition-colors hover:bg-[rgba(13,121,191,0.04)]"
-                      onClick={() =>
-                        setReferralDrill({
-                          kind: "specialist",
-                          title: row.specialist,
-                          subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"}`,
-                          patients: row.patients,
-                        })
-                      }
-                    >
-                      <td className="px-4 py-3 font-semibold">{row.specialist}</td>
-                      <td className="px-4 py-3">{row.cases}</td>
-                    </tr>
-                  ))}
-                  {specialistReferralStats.length === 0 && (
-                    <tr className="border-t border-[var(--line-soft)]">
-                      <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={2}>
-                        No specialist rows for selected filters.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+          <article className="panel-card flex h-auto min-h-0 flex-col overflow-hidden p-3 xl:h-full">
+            <h4 className="text-sm font-semibold">Imaging Referrals</h4>
+            <div className="mt-2 max-h-80 min-h-0 flex-1 overflow-y-auto text-xs xl:max-h-none">
+              <div className="sticky top-0 grid grid-cols-[minmax(0,1fr)_2.75rem_2.6rem_2.4rem_2.5rem] gap-x-1 bg-white py-1 font-semibold text-[var(--text-muted)]">
+                <span>Facility</span>
+                <span className="text-right">Cases</span>
+                <span className="text-right">Xrays</span>
+                <span className="text-right">MRIs</span>
+                <span className="text-right">Total</span>
+              </div>
+              {imagingFacilityStats.map((row) => (
+                <button
+                  key={row.facility}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_2.75rem_2.6rem_2.4rem_2.5rem] gap-x-1 border-t border-[var(--line-soft)] py-1 text-left hover:bg-[color-mix(in_srgb,var(--brand-primary)_4%,transparent)]"
+                  onClick={() =>
+                    setReferralDrill({
+                      kind: "imaging",
+                      title: row.facility,
+                      subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"} · ${row.xray} X-Ray · ${row.mri} MRI/CT`,
+                      patients: row.patients,
+                    })
+                  }
+                  type="button"
+                >
+                  <span className="truncate font-semibold">{row.facility}</span>
+                  <span className="text-right tabular-nums">{row.cases}</span>
+                  <span className="text-right tabular-nums">{row.xray}</span>
+                  <span className="text-right tabular-nums">{row.mri}</span>
+                  <span className="text-right tabular-nums">{row.total}</span>
+                </button>
+              ))}
+              {imagingFacilityStats.length === 0 && (
+                <p className="border-t border-[var(--line-soft)] py-3 text-[var(--text-muted)]">No imaging rows for selected filters.</p>
+              )}
             </div>
           </article>
 
+          <article className="panel-card flex h-auto min-h-0 flex-col overflow-hidden p-3 xl:h-full">
+            <h4 className="text-sm font-semibold">Specialist Referrals</h4>
+            <div className="mt-2 max-h-80 min-h-0 flex-1 overflow-y-auto text-xs xl:max-h-none">
+              <div className="sticky top-0 grid grid-cols-[minmax(0,1fr)_3rem] gap-x-2 bg-white py-1 font-semibold text-[var(--text-muted)]">
+                <span>Specialist</span>
+                <span className="text-right">Cases</span>
+              </div>
+              {specialistReferralStats.map((row) => (
+                <button
+                  key={row.specialist}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_3rem] gap-x-2 border-t border-[var(--line-soft)] py-1 text-left hover:bg-[color-mix(in_srgb,var(--brand-primary)_4%,transparent)]"
+                  onClick={() =>
+                    setReferralDrill({
+                      kind: "specialist",
+                      title: row.specialist,
+                      subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"}`,
+                      patients: row.patients,
+                    })
+                  }
+                  type="button"
+                >
+                  <span className="truncate font-semibold">{row.specialist}</span>
+                  <span className="text-right tabular-nums">{row.cases}</span>
+                </button>
+              ))}
+              {specialistReferralStats.length === 0 && (
+                <p className="border-t border-[var(--line-soft)] py-3 text-[var(--text-muted)]">No specialist rows for selected filters.</p>
+              )}
+            </div>
+          </article>
+        </section>
+
+        <section>
           <article className="panel-card overflow-hidden">
-          <div className="border-b border-[var(--line-soft)] p-4">
-            <h4 className="text-lg font-semibold">Attorney Performance</h4>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Click any column heading to sort by it; click again to reverse.
-            </p>
+          <div className={attorneyPerformance.open ? "border-b border-[var(--line-soft)] p-4" : "p-4"}>
+            <h4 className="text-lg font-semibold">
+              <button
+                aria-expanded={attorneyPerformance.open}
+                className="flex w-full items-center gap-2 text-left"
+                onClick={attorneyPerformance.toggle}
+                type="button"
+              >
+                <CollapseChevron open={attorneyPerformance.open} />
+                <span>Attorney Performance</span>
+              </button>
+            </h4>
           </div>
+          {attorneyPerformance.open && (
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
               <thead>
@@ -1437,7 +1419,14 @@ export default function DashboardPage() {
                     <td className="px-4 py-3">{row.paid}</td>
                     <td className="px-4 py-3">{formatMonthsFromDays(row.avgTimeToRb)}</td>
                     <td className="px-4 py-3">{formatMonthsFromDays(row.avgTimeToPaid)}</td>
-                    <td className="px-4 py-3">{row.percentPaid.toFixed(2)}%</td>
+                    <td className="px-4 py-3">
+                      <div className="tabular-nums">{row.percentPaid === null ? "N/A" : `${row.percentPaid.toFixed(2)}%`}</div>
+                      {row.paidMissingAmount > 0 && (
+                        <div className="text-[11px] text-[var(--text-muted)]" title="These Paid cases have no paid amount, so they are left out of the percent.">
+                          {paidCaseMissingLabel(row.paidMissingAmount)}
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {sortedAttorneyStats.length === 0 && (
@@ -1450,6 +1439,7 @@ export default function DashboardPage() {
               </tbody>
             </table>
           </div>
+          )}
           </article>
         </section>
       </div>
@@ -1457,9 +1447,16 @@ export default function DashboardPage() {
       </DashboardSection>
       )}
 
+      {visibleSections > 0 && (
+        <PatientDemographicsSection
+          patients={locationPatients}
+          statuses={statusFilterOptions}
+        />
+      )}
+
       {referralDrill && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8"
+          className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8"
           onClick={() => setReferralDrill(null)}
         >
           <ScrollLock />
@@ -1474,7 +1471,7 @@ export default function DashboardPage() {
                 <p className="text-sm text-[var(--text-muted)]">{referralDrill.subtitle}</p>
               </div>
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => setReferralDrill(null)}
                 type="button"
               >
@@ -1592,7 +1589,7 @@ export default function DashboardPage() {
                       className="font-semibold text-[var(--brand-primary)] hover:underline"
                       onClick={() => {
                         setYear("ALL");
-                        const row = buildSpecialistStats(patients.filter((p) => !p.deleted && (attorney === "ALL" || normalizeAttorneyKey(p.attorney) === normalizeAttorneyKey(attorney)) && (status === "ALL" || p.caseStatus === status))).find((r) => r.specialist.toLowerCase() === referralDrill.title.toLowerCase());
+                        const row = buildSpecialistStats(patients.filter((p) => !p.deleted && !isInNewPatientIntake(p, initialExamIndex) && (attorney === "ALL" || normalizeAttorneyKey(p.attorney) === normalizeAttorneyKey(attorney)) && (status === "ALL" || p.caseStatus === status))).find((r) => r.specialist.toLowerCase() === referralDrill.title.toLowerCase());
                         if (row) setReferralDrill({ ...referralDrill, subtitle: `${row.cases} case${row.cases === 1 ? "" : "s"}`, patients: row.patients });
                       }}
                       type="button"

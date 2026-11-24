@@ -7,6 +7,7 @@ import type {
 } from "@/lib/dashboard-workspace-settings";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { PatientFollowUpOverrideMap } from "@/lib/patient-follow-up-overrides";
+import { renderCaseNumber } from "@/lib/case-number";
 import { clearedIdSet, followUpClearId } from "@/lib/cleared-tasks";
 
 export type FollowUpCategory =
@@ -181,9 +182,25 @@ export function getDaysFromToday(usDate: string) {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
-export function buildCaseNumber(dateOfLoss: string, fullName: string) {
+export function buildCaseNumber(
+  dateOfLoss: string,
+  fullName: string,
+  /** A patient's stamped format/counter (matrix). None = the original format. */
+  stamp?: { caseNumberFormat?: string; caseSeq?: string },
+) {
   const formattedDate = toUsDateCanonical(dateOfLoss);
   const dateMatch = formattedDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (stamp?.caseNumberFormat) {
+    const [last = "", first = ""] = fullName.split(",").map((entry) => entry.trim());
+    return renderCaseNumber(stamp.caseNumberFormat, {
+      mm: dateMatch?.[1],
+      dd: dateMatch?.[2],
+      yyyy: dateMatch?.[3],
+      lastName: last,
+      firstName: first,
+      seq: parseInt(stamp.caseSeq ?? "", 10) || undefined,
+    });
+  }
   if (!dateMatch) {
     return "";
   }
@@ -194,6 +211,11 @@ export function buildCaseNumber(dateOfLoss: string, fullName: string) {
   const cleanLast = lastName.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 2);
   const cleanFirst = firstName.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 2);
   return `${month}${day}${year}${cleanLast}${cleanFirst}`;
+}
+
+/** The case number for a patient: their stamped format if they have one, else the original. */
+export function caseNumberOf(patient: Pick<PatientRecord, "dateOfLoss" | "fullName" | "matrix">) {
+  return buildCaseNumber(patient.dateOfLoss, patient.fullName, patient.matrix);
 }
 
 function cleanAttorneyLabel(value: string) {
@@ -342,7 +364,7 @@ export function buildFollowUpItems(
     //  status simply don't mark that status as Case Closed.)
 
     const matrix = patient.matrix ?? {};
-    const caseNumber = buildCaseNumber(patient.dateOfLoss, patient.fullName);
+    const caseNumber = caseNumberOf(patient);
 
     // Stale-matrix heal: if the user has no X-Ray (or MRI) entries
     // in the patient file, the matrix still carries the last-sent
@@ -768,19 +790,10 @@ export function buildFollowUpItems(
       const normalizedLien = lienRaw.trim().toLowerCase();
       const lienHasValue = hasMatrixValue(lienRaw);
       const isSelectedClearStatus = matchesLienClearStatus(lienRaw, lienLopClearStatuses);
-      const isNotSent =
-        !lienHasValue || normalizedLien === "not set" || normalizedLien === "not sent";
-      const isReceived =
-        normalizedLien.includes("received") ||
-        normalizedLien.includes("complete") ||
-        normalizedLien.includes("resolved");
+      const stage = lienFollowUpStage(lienRaw);
+      const isNotSent = stage === "Not sent yet" || !lienHasValue;
 
-      if (!isSelectedClearStatus && (isNotSent || !isReceived)) {
-        const stage = isNotSent
-          ? "Not sent yet"
-          : normalizedLien.includes("request")
-            ? "Requested, waiting for received"
-            : "Sent, waiting for received";
+      if (!isSelectedClearStatus && stage) {
         const anchorDate =
           extractLeadingDatePart(lienRaw) ||
           extractLeadingDatePart(initialExamRaw) ||
@@ -819,4 +832,19 @@ export function buildFollowUpItems(
   });
 
   return maxItems ? sorted.slice(0, maxItems) : sorted;
+}
+
+/**
+ * Case Flow step for a Lien / LOP value. "" = nothing to chase (received).
+ * Pending (the default on a new case), Not Set, Not Sent or blank all mean
+ * nobody has sent it yet, so they read "Not sent yet", never "Sent".
+ */
+export function lienFollowUpStage(lienRaw: string): "" | "Not sent yet" | "Requested, waiting for received" | "Sent, waiting for received" {
+  const v = stripLeadingDatePart(lienRaw ?? "").trim().toLowerCase();
+  if (!hasMatrixValue(lienRaw ?? "") || !v || v === "not set" || v === "not sent" || v === "pending" || v === "-" || v === "—") {
+    return "Not sent yet";
+  }
+  if (v.includes("received") || v.includes("complete") || v.includes("resolved")) return "";
+  if (v.includes("request")) return "Requested, waiting for received";
+  return "Sent, waiting for received";
 }

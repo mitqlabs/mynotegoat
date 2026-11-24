@@ -52,6 +52,8 @@ export interface ActivityEntry {
   createdAt: string;
   actorLabel: string;
   actorEmail: string;
+  /** Auth user id of who did it (empty on very old rows). */
+  actorUserId: string;
   /** The role the actor held when they did it: owner/admin/manager/staff. */
   actorRole: string;
   category: string;
@@ -143,6 +145,7 @@ function rowToEntry(row: Record<string, unknown>): ActivityEntry {
     createdAt: String(row.created_at ?? ""),
     actorLabel: String(row.actor_label ?? "") || String(row.actor_email ?? "") || "Unknown",
     actorEmail: String(row.actor_email ?? ""),
+    actorUserId: String(row.actor_user_id ?? ""),
     actorRole: String(row.actor_role || details.actorRole || ""),
     category: String(row.category || details.category || ""),
     action: String(row.action ?? ""),

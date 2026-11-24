@@ -69,42 +69,43 @@ export function OfficeCellMenu({
     }
   };
 
-  const pill = `ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+  // Fixed width so every row's pill starts at the same x and has the same size;
+// long office names truncate with an ellipsis (full name in the tooltip).
+const pill = `inline-flex w-[8.5rem] max-w-full shrink-0 items-center justify-between gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
     assigned ? "bg-[var(--bg-soft)] text-[var(--text-main)]" : "bg-[var(--bg-soft)] text-[var(--text-muted)]"
   }`;
 
-  if (readOnly) return <span className={pill}>{label}</span>;
+  if (readOnly) return <span className={pill} title={label}><span className="min-w-0 truncate">{label}</span></span>;
 
   return (
-    <span className="relative inline-block" ref={boxRef}>
+    <span className="relative inline-flex shrink-0 items-center" ref={boxRef}>
       <button
         aria-expanded={open}
         aria-haspopup="menu"
         className={`${pill} hover:ring-1 hover:ring-[var(--brand-primary)]`}
         onClick={() => setOpen((o) => !o)}
-        title="Choose this patient's office"
+        title={`${label} — choose this patient's office`}
         type="button"
       >
-        {label} ▾
+        <span className="min-w-0 truncate">{label}</span>
+        <span aria-hidden="true">▾</span>
       </button>
-      {state !== "idle" && (
+      {state === "error" && (
         <span
-          className={`ml-1 text-[11px] font-semibold ${
-            state === "saving" ? "text-[var(--text-muted)]" : state === "saved" ? "text-emerald-700" : "text-red-700"
-          }`}
+          className="ml-1 text-[11px] font-semibold text-red-700"
           role="status"
         >
-          {state === "saving" ? "Saving…" : state === "saved" ? "Saved ✓" : "Not saved"}
+          Not saved
         </span>
       )}
       {open && (
         <span
-          className="absolute left-2 top-full z-30 mt-1 grid w-max min-w-[12rem] rounded-xl border border-[var(--line-soft)] bg-white py-1 shadow-lg"
+          className="absolute left-0 top-full z-30 mt-1 grid w-max min-w-[12rem] rounded-xl border border-[var(--line-soft)] bg-white py-1 shadow-lg"
           role="menu"
         >
           {officeMenuChoices(locations).map((c) => (
             <button
-              className={`whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-[rgba(13,121,191,0.06)] ${
+              className={`whitespace-nowrap px-3 py-1.5 text-left text-sm hover:bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)] ${
                 (locationId ?? "") === c.id || (!c.id && !assigned) ? "font-semibold text-[var(--brand-primary)]" : "text-[var(--text-main)]"
               }`}
               key={c.id || "none"}

@@ -1,5 +1,7 @@
 "use client";
 
+import { joinCaseNumberPrefix } from "@/lib/file-naming";
+import { caseNamePrefixFor } from "@/lib/file-storage";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
@@ -24,6 +26,7 @@ import { loadCaseStatuses } from "@/lib/case-statuses";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { patients as patientRecords } from "@/lib/mock-data";
 import { ScrollLock } from "@/components/scroll-lock";
+import { appConfirm } from "@/components/app-dialog";
 
 // ---------------------------------------------------------------------------
 // View mode
@@ -323,14 +326,17 @@ export default function MyFilesPage() {
 
   const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [renamePrefix, setRenamePrefix] = useState<string | null>(null);
 
   const startRenameFile = (file: FileRecord) => {
     setRenamingFileId(file.id);
-    setRenameDraft(file.name);
+    const split = caseNamePrefixFor(file.folderId, file.name);
+    setRenamePrefix(split ? split.prefix : null);
+    setRenameDraft(split ? split.label : file.name);
   };
 
   const commitRenameFile = () => {
-    const trimmed = renameDraft.trim();
+    const trimmed = renamePrefix ? joinCaseNumberPrefix(renamePrefix, renameDraft) : renameDraft.trim();
     if (!renamingFileId || !trimmed) {
       setRenamingFileId(null);
       return;
@@ -575,7 +581,7 @@ export default function MyFilesPage() {
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {currentFolderId && (
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-medium hover:bg-[var(--bg-soft)]"
+            className="btn btn-secondary btn-sm"
             onClick={() => {
               const parent = currentFolder?.parentId ?? null;
               navigateToFolder(parent);
@@ -588,7 +594,7 @@ export default function MyFilesPage() {
 
         {!isSystemFolder && (
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-medium hover:bg-[var(--bg-soft)]"
+            className="btn btn-secondary btn-sm"
             onClick={() => {
               setShowNewFolderInput(true);
               setNewFolderName("");
@@ -693,7 +699,7 @@ export default function MyFilesPage() {
             Create
           </button>
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-medium hover:bg-[var(--bg-soft)]"
+            className="btn btn-secondary btn-sm"
             onClick={() => setShowNewFolderInput(false)}
             type="button"
           >
@@ -959,7 +965,7 @@ export default function MyFilesPage() {
                     {selectedFileIds.size} selected
                   </span>
                   <button
-                    className="rounded-md bg-[var(--brand-primary)] px-3 py-1 font-semibold text-white"
+                    className="btn btn-primary btn-sm"
                     onClick={() => {
                       const ids = Array.from(selectedFileIds);
                       // Capture currentFolderId now so even if the
@@ -976,7 +982,7 @@ export default function MyFilesPage() {
                     Move {selectedFileIds.size}
                   </button>
                   <button
-                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 font-semibold"
+                    className="btn btn-secondary btn-sm"
                     onClick={() => setSelectedFileIds(new Set())}
                     type="button"
                   >
@@ -1062,9 +1068,18 @@ export default function MyFilesPage() {
                           <span>{getFileIcon(file.mimeType)}</span>
                           <div className="min-w-0">
                             {renamingFileId === file.id ? (
-                              <input
+                              <span className="flex items-center gap-1.5">
+                                {renamePrefix ? (
+                                  <span
+                                    className="shrink-0 select-none whitespace-nowrap rounded bg-[var(--bg-soft)] px-1.5 py-0.5 text-sm text-[var(--text-muted)]"
+                                    title="Added automatically — not editable"
+                                  >
+                                    {renamePrefix}
+                                  </span>
+                                ) : null}
+                                <input
                                 autoFocus
-                                className="w-full rounded border border-[var(--brand-primary)] px-1.5 py-0.5 text-sm font-medium focus:outline-none"
+                                className="min-w-0 flex-1 w-full rounded border border-[var(--brand-primary)] px-1.5 py-0.5 text-sm font-medium focus:outline-none"
                                 value={renameDraft}
                                 onChange={(e) => setRenameDraft(e.target.value)}
                                 onBlur={commitRenameFile}
@@ -1073,6 +1088,7 @@ export default function MyFilesPage() {
                                   if (e.key === "Escape") setRenamingFileId(null);
                                 }}
                               />
+</span>
                             ) : (
                               <span className="block break-words line-clamp-2 font-medium text-[var(--text-heading)] max-w-[200px] sm:max-w-[300px]" title={file.name}>
                                 {file.name}
@@ -1285,12 +1301,10 @@ export default function MyFilesPage() {
                               Restore
                             </button>
                             <button
-                              className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
-                              onClick={() => {
+                              className="btn btn-danger btn-sm"
+                              onClick={async () => {
                                 if (
-                                  window.confirm(
-                                    `Permanently delete folder "${folder.name}" and EVERY file inside it (across nested subfolders)?\n\nThis removes the file metadata AND deletes the actual files from cloud storage. There's no undo.`,
-                                  )
+                                  (await appConfirm(`Permanently delete folder "${folder.name}" and EVERY file inside it (across nested subfolders)?\n\nThis removes the file metadata AND deletes the actual files from cloud storage. There's no undo.`))
                                 ) {
                                   void permanentlyDeleteFolder(folder.id).then(() => {
                                     setMessage(`Folder "${folder.name}" permanently deleted.`);
@@ -1358,12 +1372,10 @@ export default function MyFilesPage() {
                               Restore
                             </button>
                             <button
-                              className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
-                              onClick={() => {
+                              className="btn btn-danger btn-sm"
+                              onClick={async () => {
                                 if (
-                                  window.confirm(
-                                    `Permanently delete "${file.name}"?\n\nThis removes the file metadata AND deletes the underlying file from cloud storage. There's no undo.`,
-                                  )
+                                  (await appConfirm(`Permanently delete "${file.name}"?\n\nThis removes the file metadata AND deletes the underlying file from cloud storage. There's no undo.`))
                                 ) {
                                   void permanentlyDeleteFile(file.id).then(() => {
                                     setMessage(`File "${file.name}" permanently deleted.`);
@@ -1651,7 +1663,7 @@ export default function MyFilesPage() {
               </div>
               <div className="mt-3 flex justify-end">
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-4 py-2 text-sm font-semibold"
+                  className="btn btn-secondary"
                   onClick={() => setMoveTarget(null)}
                   type="button"
                 >

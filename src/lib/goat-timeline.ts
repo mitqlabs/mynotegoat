@@ -35,6 +35,7 @@ export function buildTimeline(ctx: GoatContext, facts: FileFacts[]): TimelineEve
     if (n && !ev.some((e) => e.day === n.day && e.what === what)) ev.push({ ...n, what, source, fileId });
   };
   add(ctx.doi, "Injury / accident (DOI)", "Case");
+  for (const d of ctx.additionalDois ?? []) add(d, "Additional injury / accident (same case)", "Case");
   add(ctx.initialExam, "Initial exam", "Case");
   for (const a of ctx.appointments ?? []) add(a.date, `Appointment: ${a.type} (${a.status})`, "Appointments");
   for (const e of ctx.encounters ?? []) add(e.date, `Encounter note: ${e.type}${e.signed ? "" : " (unsigned)"}`, "Encounters");

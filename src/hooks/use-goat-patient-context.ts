@@ -7,7 +7,7 @@ import { buildDischargeIndex } from "@/lib/discharge-date";
 import { useGoatTerms } from "@/hooks/use-goat-terms";
 import { useGoatFiles, type GoatFilesController } from "@/hooks/use-goat-files";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
-import { useCaseNotes } from "@/hooks/use-case-notes";
+import { useCaseNotesText } from "@/hooks/use-case-note-entries";
 import { usePatientDiagnoses } from "@/hooks/use-patient-diagnoses";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
@@ -29,7 +29,7 @@ export function useGoatPatientContext(patient: PatientRecord): { context: GoatCo
   const { encounters: allEncounters } = useEncounterNotes();
   const { getPlansForPatient } = useTreatmentPlans();
   const { getRecord } = usePatientBilling();
-  const { notes } = useCaseNotes(patient.id, patient.matrix?.notes ?? "");
+  const notes = useCaseNotesText(patient.id, patient.matrix?.notes ?? "");
   const { entries: diagnoses } = usePatientDiagnoses(patient.id);
   const { macroLibrary } = useMacroTemplates();
   const { sectionHidden, canView } = useWorkspaceAccess();
@@ -46,7 +46,7 @@ export function useGoatPatientContext(patient: PatientRecord): { context: GoatCo
   const billingRecord = getRecord(patient.id);
 
   const context = useMemo(() => {
-    const chargesTotal = encounters.reduce((sum, e) => sum + e.charges.reduce((s, c) => s + c.unitPrice * c.units, 0), 0);
+    const chargesTotal = encounters.reduce((sum, e) => sum + (e.charges ?? []).reduce((s, c) => s + (Number(c.unitPrice) || 0) * (Number(c.units) || 0), 0), 0);
     const matrix = (patient.matrix ?? {}) as Record<string, string | undefined>;
     const fromMatrix = (v: string | undefined) => Number.parseFloat(String(v ?? "").replace(/[^0-9.]/g, "")) || 0;
     const storedBilled = billingRecord ? billingRecord.billedAmount : fromMatrix(matrix.billed);

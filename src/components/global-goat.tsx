@@ -12,6 +12,7 @@ import {
   findPatientsInQuestion,
   loadChat,
   saveChat,
+  withoutAutoApptCheck,
   stripPatientName,
   type ChatMessage,
   type ChatChoice,
@@ -35,6 +36,8 @@ import { PRACTICE_HELP, isPatientSpecific, isPracticeWide, yearOfDate, type Prac
 import { buildInitialExamIndex, patientInitialExamIso } from "@/lib/initial-exam-date";
 import { answerOffice, type OfficeMemory } from "@/lib/goat-office";
 import { bookingRecord, draftSummary, finishDraft, planBooking, retime } from "@/lib/goat-booking";
+import { closedDateHit } from "@/lib/closed-date-booking";
+import { loadKeyDates } from "@/lib/key-dates";
 import { loadScheduleSettings } from "@/lib/schedule-settings";
 import { createAppointmentId, parseTimeFlexible } from "@/lib/schedule-appointments";
 import { continueNewPatientBooking, startNewPatientBooking, type NewPatientCtx, type NewPatientStep } from "@/lib/goat-new-patient-booking";
@@ -42,7 +45,7 @@ import { loadAppointmentTypes } from "@/lib/schedule-appointment-types";
 import { createPatientRecord } from "@/lib/mock-data";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { to12hLabel } from "@/lib/time-12h";
-import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor, signerFromLogin, stripNameTokens, type NoteSigner } from "@/lib/goat-notes";
+import { LAST_SIGNER_KEY, appendNote, defaultSigner, formatNote, tidyNoteText, isAddNoteRequest, loadSigners, matchPatientsByName, parseAddNote, signatureFor, signerFromLogin, stripNameTokens, type NoteSigner } from "@/lib/goat-notes";
 import { expandFollowUp } from "@/lib/goat-followup";
 import { buildTeam, isTellRequest, matchRecipient, parseTell, audienceLabel, privateToFor, type TeamPerson } from "@/lib/goat-message";
 import { filterMentionPeople, mentionInsert, mentionQueryAt, parseMentions } from "@/lib/goat-mentions";
@@ -52,18 +55,30 @@ import { detectCorrection, findDate, findTime, normalizeForIntent, GOAT_ACTIONS,
 import { planQuick, type QuickPlan } from "@/lib/goat-quick";
 import { learnedMap, loadLearned, safeTemplate, saveLearned, withMiss, withPhrase } from "@/lib/goat-learned";
 import { updatePatientRecordById } from "@/lib/mock-data";
-import { cardDate, carryPatient, dailyBrief, normalizeCasual, nudges, splitSteps } from "@/lib/goat-assistant";
+import { cardDate, carryPatient, normalizeCasual, nudges, splitSteps } from "@/lib/goat-assistant";
 import { categoryPlural, clarifyFor, correctionReply, editNoteLine, followUpFor, importUndoText, recatAsk, recatConfirmText, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
 import { isClearFileQuestion } from "@/lib/goat-dialog";
 import { canonicalBooking, canonicalTell, clarifyForPatient, isAddNote, isBooking, isTell } from "@/lib/goat-commands";
 import { emptyDialog, goatTurn, type DialogState } from "@/lib/goat-dialog";
 import { activeFirst, isActiveCase } from "@/lib/patient-name-match";
+import { resolveSlashTodo } from "@/lib/goat-todo-resolve";
 import { useWorkspacePeople, type WorkspacePerson } from "@/hooks/use-workspace-people";
 import { useWorkspaceMessages } from "@/hooks/use-workspace-messages";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
-import { buildCaseNumber } from "@/lib/follow-up-queue";
+import { caseNumberOf } from "@/lib/follow-up-queue";
 import { getCaseNote, setCaseNote, STORAGE_KEY_CASE_NOTES } from "@/lib/case-notes";
 import { notifyChange } from "@/lib/local-sync";
+import { CASE_NOTE_ENTRIES_KEY, addEntry, entriesForPatient, entryFromGoatNote, formatEntryDate, loadCaseNoteEntries, saveCaseNoteEntries, todayIso } from "@/lib/case-note-entries";
+import { currentAuthor as currentNoteAuthor } from "@/hooks/use-case-note-entries";
+import { logActivity } from "@/lib/activity-log";
+import { BulkCancelCard, ClosedDayCard, TextCard } from "@/components/goat-text-cards";
+import { clock12, describeBulkCancel, minutesOf, selectBulkCancel, type BulkCancelQuery } from "@/lib/goat-bulk-cancel";
+import { loadTextRecipients, queueBroadcast, readMacSeen } from "@/lib/broadcast-queue";
+import { dayLabel as textDayLabel, dayPhrase as textDayPhrase, parseTextRequest, suggestedCancelText, tidyTextMessage } from "@/lib/goat-text";
+import { queuedStatusText } from "@/lib/reminder-format";
+import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
+import type { TextAudience } from "@/lib/goat-text";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import { loadTasks } from "@/lib/tasks";
 import { clearedIdSet, taskClearId } from "@/lib/cleared-tasks";
@@ -71,7 +86,15 @@ import { caseReviewAnswer, detectPipeline, detectReview, pipelineAnswer, type Pi
 import { buildFollowUpItems } from "@/lib/follow-up-queue";
 import { caseFlowOptions } from "@/lib/case-flow-options";
 import { loadDashboardWorkspaceSettings } from "@/lib/dashboard-workspace-settings";
-import { loadCaseStatuses } from "@/lib/case-statuses";
+import { loadCaseStatuses, loadCaseStatusSettings } from "@/lib/case-statuses";
+import { understandCompliance } from "@/lib/goat-compliance";
+import { birthdayTextsHelp, macSetupHelp, reminderPageHelp, remindersHelp } from "@/lib/goat-reminders-help";
+import { normalizeSmsReminderSettings, SMS_REMINDER_SETTINGS_KEY } from "@/lib/sms-reminders";
+import { broadcastHelp } from "@/lib/goat-broadcast-help";
+import { keyDatesHelp } from "@/lib/goat-keydates-help";
+import { closedDayLabel, closedDayMessage, closedDayRequest } from "@/lib/goat-closed-day";
+import { addClosedDayIfMissing } from "@/hooks/use-cloud-key-dates";
+import { complianceLabel, loadComplianceOptions, normalizeCompliance } from "@/lib/compliance";
 import { loadPatientFollowUpOverridesMap } from "@/lib/patient-follow-up-overrides";
 import { loadScheduleAppointments } from "@/lib/schedule-appointments";
 import { loadContactDirectory } from "@/lib/contact-directory";
@@ -81,75 +104,29 @@ import { isNoPatientName, pickTodoPatient, todoTitleForPagePatient, detectNewPat
 import { parseIntakeText, stashNewPatientPrefill, type IntakeDraft } from "@/lib/new-patient-intake";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { batchCategory, buildImportRows, categoryFromRequest, looksLikeContactPaste, parseContactPaste } from "@/lib/goat-contacts-import";
-import { breaksFlow, continueFlow, isFlowToken, startFlow, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
+import { breaksFlow, naturalCancelTurn, naturalTextTurn, continueFlow, isFlowToken, searchPatients, startFlow, TOKEN as FLOW_TOKEN, type FlowCtx, type FlowTurn, type Pending } from "@/lib/goat-slash-flow";
+import { goatGreetingDate } from "@/lib/goat-greeting";
 import { GOAT_HANDBOOK_ANCHOR, goatHelpText, isGoatHelpQuestion } from "@/lib/handbook-goat";
 import { CONTACT_CATEGORIES, type ContactCategory } from "@/lib/mock-data";
 import { omTurn, planChanges, emptyOmMemory, isoToUs, usToIso, money, type OmMemory, type OmPlan, type OmData } from "@/lib/goat-om";
 import { applyOmChanges, buildOmData, restoreOmSnapshot, snapshotFor } from "@/lib/goat-om-apply";
 import { loadEncounterNoteRecords } from "@/lib/encounter-notes";
 import { parseViewTarget, viewMatches, viewMessages, viewQuery, viewSchedule, viewTargetsFor, viewTodos, type ViewTarget, briefName, splitLinks } from "@/lib/goat-briefs";
+import { parseLocationQuestion } from "@/lib/patient-locations";
+import { isOfficeStatsQuestion, parseTimeframeReply } from "@/lib/goat-appt-stats";
 import { adminStatsGate, isStatsOfficeKind } from "@/lib/goat-briefs";
-import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, morningRundown, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
+import { ADMIN_ONLY_REPLY, CHIPS, appointmentCheck, briefAllowed, chipsFor, detectBrief, greetingFor, quickBiz, noteWording, parseSlash, parseTodo, slashMatches, takeDueDate, slashQuery, type BriefData } from "@/lib/goat-briefs";
 import { useTasks } from "@/hooks/use-tasks";
 import { useUnreadMessages } from "@/hooks/use-unread-messages";
-import { useFormRequests } from "@/hooks/use-form-requests";
 import { loadOfficeSettings } from "@/lib/office-settings";
 import { loadPatientBillingMap } from "@/lib/patient-billing";
 
-// ---------------------------------------------------------------------------
-// Open/closed, shared by the nav button and the popup.
-// ---------------------------------------------------------------------------
+// Open/closed store + nav button live in a tiny module so the shell can
+// render the button without downloading all of G.O.A.T. up front.
+import { setGlobalGoatOpen, takePendingAsk, useGlobalGoatOpen } from "@/components/global-goat-button";
+import { appConfirm } from "@/components/app-dialog";
 
-let popupOpen = false;
-const openListeners = new Set<() => void>();
-export function setGlobalGoatOpen(open: boolean) {
-  popupOpen = open;
-  openListeners.forEach((l) => l());
-}
-/** Text waiting to be sent once the popup is open (from the patient-page box). */
-let pendingAsk: string | null = null;
-/** Open the global G.O.A.T. chat and send `text` there, as if typed. On a
- *  patient page its "him / her / this patient" is that page's patient. */
-export function askGlobalGoat(text: string) {
-  pendingAsk = text;
-  setGlobalGoatOpen(true);
-}
-function takePendingAsk(): string | null {
-  const t = pendingAsk;
-  pendingAsk = null;
-  return t;
-}
-function useGlobalGoatOpen(): boolean {
-  return useSyncExternalStore(
-    (l) => {
-      openListeners.add(l);
-      return () => {
-        openListeners.delete(l);
-      };
-    },
-    () => popupOpen,
-    () => false,
-  );
-}
-
-/** Sidebar / mobile-nav button. `compact` = icon only (collapsed sidebar). */
-export function GlobalGoatButton({ compact = false, className = "" }: { compact?: boolean; className?: string }) {
-  const open = useGlobalGoatOpen();
-  const { canView } = useWorkspaceAccess();
-  if (!canView("patients")) return null;
-  return (
-    <button
-      aria-expanded={open}
-      className={className}
-      onClick={() => setGlobalGoatOpen(!open)}
-      title="Ask G.O.A.T."
-      type="button"
-    >
-      <GoatAvatar size={compact ? 30 : 28} />
-      {!compact && <span>G.O.A.T.</span>}
-    </button>
-  );
-}
+export { askGlobalGoat, GlobalGoatButton, setGlobalGoatOpen } from "@/components/global-goat-button";
 
 // ---------------------------------------------------------------------------
 // Answers as chat text
@@ -215,7 +192,7 @@ interface AnswererProps {
   patient: PatientRecord;
   job: Job;
   onPartial: (text: string) => void;
-  onDone: (msg: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy" | "originals">) => void;
+  onDone: (jobId: string, msg: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy" | "originals">) => void;
 }
 
 function PatientAnswerer(props: AnswererProps) {
@@ -247,51 +224,54 @@ function Answerer({ job, onDone, context, files }: AnswererProps & { context: Go
     if (started.current === job.id) return;
     started.current = job.id;
     void (async () => {
-      // Give the Patient Files reader a moment to pull already-extracted text (cache) before answering.
-      const t0 = Date.now();
-      await new Promise((r) => setTimeout(r, 400));
-      while (filesRef.current.reader.running && Date.now() - t0 < 20000) await new Promise((r) => setTimeout(r, 300));
-      const ctx = { ...ctxRef.current, recFormat: recFormatFromPrefs(prefs) };
-      // "when was his XR and what were the findings?": answer each part, then one reply with every part.
-      const parts = splitPatientQuestion(job.question);
-      const answerPart = async (question: string): Promise<Omit<ChatMessage, "id" | "at" | "role"> & { ms?: number }> => {
-        // "when was his PM appt" / "XR date": only that kind's dates, not every visit.
-        const typed = typedDateAnswer(ctx, question);
-        if (typed) return { text: typed, ms: 0 };
-        const t1 = performance.now();
-        return { ...ruleAnswerToMessage(askGoat(ctx, question)), ms: performance.now() - t1 };
-      };
-      if (parts.length < 2) {
-        onDone(await answerPart(job.question));
-        return;
+      try {
+        // Answer from text already read. A file still downloading or waiting on OCR is named in the
+        // answer; it does not hold Send.
+        const ctx = { ...ctxRef.current, recFormat: recFormatFromPrefs(prefs) };
+        // "when was his XR and what were the findings?": answer each part, then one reply with every part.
+        const parts = splitPatientQuestion(job.question);
+        const answerPart = async (question: string): Promise<Omit<ChatMessage, "id" | "at" | "role"> & { ms?: number }> => {
+          // "when was his PM appt" / "XR date": only that kind's dates, not every visit.
+          const typed = typedDateAnswer(ctx, question);
+          if (typed) return { text: typed, ms: 0 };
+          const t1 = performance.now();
+          return { ...ruleAnswerToMessage(askGoat(ctx, question)), ms: performance.now() - t1 };
+        };
+        if (parts.length < 2) {
+          onDone(job.id, await answerPart(job.question));
+          return;
+        }
+        const answers = [];
+        for (const part of parts) {
+          answers.push(await answerPart(part));
+        }
+        const label = (q: string) => q.replace(/\s*\((x-ray|MRI|pain management|orthopedic|neurology|CT)\)$/, "").replace(/^\w/, (c) => c.toUpperCase());
+        onDone(job.id, {
+          // The same block (e.g. "Specialist referrals") is shown once, under the first part that has it.
+          text: (() => {
+            const seen = new Set<string>();
+            return answers
+              .map((a, i) => {
+                const blocks = a.text.split(/\n\n+/).filter((b) => {
+                  const k = b.trim();
+                  if (seen.has(k)) return false;
+                  seen.add(k);
+                  return true;
+                });
+                return `${label(parts[i])}?\n${blocks.join("\n\n") || "(see above)"}`;
+              })
+              .join("\n\n");
+          })(),
+          quotes: answers.flatMap((a) => a.quotes ?? []).slice(0, 6),
+          warnings: answers.some((a) => a.warnings?.length) ? [...new Set(answers.flatMap((a) => a.warnings ?? []))].slice(0, 3) : undefined,
+          copy: answers.map((a) => a.copy).filter(Boolean).join("\n\n") || undefined,
+          originals: answers.some((a) => a.originals?.length) ? answers.flatMap((a) => a.originals ?? []) : undefined,
+          ms: answers.reduce((n, a) => n + (a.ms ?? 0), 0),
+        });
+      } catch (err) {
+        console.error(err);
+        onDone(job.id, { text: "I couldn't finish that lookup. Try sending it again." });
       }
-      const answers = [];
-      for (const part of parts) {
-        answers.push(await answerPart(part));
-      }
-      const label = (q: string) => q.replace(/\s*\((x-ray|MRI|pain management|orthopedic|neurology|CT)\)$/, "").replace(/^\w/, (c) => c.toUpperCase());
-      onDone({
-        // The same block (e.g. "Specialist referrals") is shown once, under the first part that has it.
-        text: (() => {
-          const seen = new Set<string>();
-          return answers
-            .map((a, i) => {
-              const blocks = a.text.split(/\n\n+/).filter((b) => {
-                const k = b.trim();
-                if (seen.has(k)) return false;
-                seen.add(k);
-                return true;
-              });
-              return `${label(parts[i])}?\n${blocks.join("\n\n") || "(see above)"}`;
-            })
-            .join("\n\n");
-        })(),
-        quotes: answers.flatMap((a) => a.quotes ?? []).slice(0, 6),
-        warnings: answers.some((a) => a.warnings?.length) ? [...new Set(answers.flatMap((a) => a.warnings ?? []))].slice(0, 3) : undefined,
-        copy: answers.map((a) => a.copy).filter(Boolean).join("\n\n") || undefined,
-        originals: answers.some((a) => a.originals?.length) ? answers.flatMap((a) => a.originals ?? []) : undefined,
-        ms: answers.reduce((n, a) => n + (a.ms ?? 0), 0),
-      });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per job; callbacks only touch refs / functional updates
   }, [job]);
@@ -333,7 +313,7 @@ const AddBoxIcon = () => (
 /** Small, dismissible "put G.O.A.T. on your Home Screen" hint at the top of the chat. */
 function InstallTip({ kind, onDismiss, onInstall, onGoatPage }: { kind: "ios" | "android"; onDismiss: () => void; onInstall: () => void; onGoatPage: boolean }) {
   return (
-    <div className="flex items-start gap-2 border-b border-[var(--line-soft)] bg-[#eef8fb] px-3 py-2 text-xs text-[var(--text-main)]" data-goat-install={kind} role="note">
+    <div className="flex items-start gap-2 border-b border-[var(--line-soft)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-3 py-2 text-xs text-[var(--text-main)]" data-goat-install={kind} role="note">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img alt="" className="h-8 w-8 shrink-0 rounded-lg" height={32} src="/goat-app/icon-192.png" width={32} />
       <div className="min-w-0 flex-1 leading-snug">
@@ -360,6 +340,21 @@ function InstallTip({ kind, onDismiss, onInstall, onGoatPage }: { kind: "ios" | 
         ×
       </button>
     </div>
+  );
+}
+
+/** Under a reply: marks it missed and lets the person say what they meant. */
+export function GoatMeantLink({ onMiss }: { onMiss: () => void }) {
+  return (
+    <button
+      aria-label="That's not what I meant"
+      className="mt-1 text-[11px] text-[var(--text-muted)] underline decoration-[var(--text-muted)] underline-offset-2 hover:opacity-80"
+      data-goat-thumbsdown
+      onClick={onMiss}
+      type="button"
+    >
+      Not what I meant?
+    </button>
   );
 }
 
@@ -425,9 +420,9 @@ export function GlobalGoatPopup({
   }, []);
   const [partial, setPartial] = useState("");
   const practiceBusy = false;
-  const { addAppointments, removeAppointment, updateAppointment } = useScheduleAppointments();
+  const { addAppointments, removeAppointment, updateAppointment, updateManyAppointments, scheduleAppointments } = useScheduleAppointments();
   const { addTask, tasks: openTaskRows } = useTasks();
-  const { roleTier, roleKnown } = useWorkspaceAccess();
+  const { roleTier, roleKnown, canEdit: canEditFeature } = useWorkspaceAccess();
   /** Owner/admin: sees Appointment Check + Quick Biz. Fail closed: unknown/loading role = not admin. */
   const isGoatAdmin = roleKnown && isAdminTier(roleTier);
   /** Null when office stats are allowed, else the reply to give. */
@@ -441,26 +436,16 @@ export function GlobalGoatPopup({
   const askRef = useRef<{ raw: string } | null>(null);
   /** Contact imports being saved (message ids). */
   const importingRef = useRef(new Set<string>());
+  /** Text cards already mid-confirm, so a second tap cannot queue twice. */
+  const textBusyRef = useRef(new Set<string>());
   const unreadMessages = useUnreadMessages();
-  // Questionnaires received, not reviewed yet (Morning Rundown line).
-  const { rows: receivedForms } = useFormRequests({ awaitingReview: true }, !practiceOverride);
-  // Shown under the greeting until the first message; computed when the popup opens.
-  const [greeting] = useState(() => greetingFor(new Date().getHours()));
+  const [openedAt] = useState(() => new Date());
+  const greeting = greetingFor(openedAt.getHours());
+  const greetingDate = goatGreetingDate(openedAt);
   // Dismissed nudges: this chat session only (nothing saved, so nothing is browser-only).
   // Hidden heads-ups are a cloud-backed user pref (casemate.goat-nudges-dismissed.v1).
   const [dismissedNudges, setDismissedNudges] = useState<string[]>(() => Object.keys(readDismissed()));
   const [showNudges, setShowNudges] = useState(false);
-  // "Hide brief": a per-person setting backed up to the user's cloud prefs.
-  const [briefHidden, setBriefHidden] = useState(() => typeof window !== "undefined" && window.localStorage.getItem("casemate.goat-brief-hidden.v1") === "1");
-  const toggleBrief = () => {
-    const next = !briefHidden;
-    setBriefHidden(next);
-    try {
-      window.localStorage.setItem("casemate.goat-brief-hidden.v1", next ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  };
   /** What the user actually typed, when send() rewrites it ("/note …" → "add a note for …"). */
   const shownAsRef = useRef<string | null>(null);
   const [teamLogins, setTeamLogins] = useState<WorkspacePerson[]>([]);
@@ -613,6 +598,10 @@ export function GlobalGoatPopup({
     const data = practiceData();
     const settings = scheduleSettings() ?? loadScheduleSettings();
     const step = planBooking({ question, patient: { id: patient.id, fullName: patient.fullName }, todayIso: data.today, appointments: data.appointments, settings, types: [...new Set(data.appointments.map((a) => a.appointmentType).filter(Boolean))] });
+    if (step.kind === "draft") {
+      const hit = closedDateHit(loadKeyDates(), step.draft.date);
+      if (hit) step.draft.closedReason = hit.reason;
+    }
     const name = displayName(patient.fullName);
     if (step.kind === "needDay") {
       push({ role: "goat", text: `What day should I book ${name}? (e.g. "Thursday at 3" or "10/20 9:30am")`, patientName: name, bookingAsk: { patientId: patient.id, question }, formLaunch: { kind: "newAppointment", label: "Or open New Appointment", patientId: patient.id } });
@@ -631,7 +620,10 @@ export function GlobalGoatPopup({
   /** Confirm: recheck the slot, then save through the Schedule's own save path. */
   const confirmBooking = (msg: ChatMessage, override = false) => {
     const b = msg.booking;
-    if (!b || b.state !== "open") return;
+    if (!b || (b.state !== "open" && b.state !== "error")) return;
+    updateBooking(msg.id, { ...b, state: "saving", saveError: undefined });
+    window.setTimeout(() => {
+      try {
     const data = practiceData();
     const settings = scheduleSettings() ?? loadScheduleSettings();
     const fresh = finishDraft({ ...b, override }, data.appointments, settings);
@@ -648,7 +640,7 @@ export function GlobalGoatPopup({
       if (!pid) {
         const created = createPatientRecord({ firstName: np.firstName, lastName: np.lastName, phone: np.phone || undefined, dateOfLoss: "" });
         if (!created) {
-          push({ role: "goat", text: "I couldn't add the new patient. Nothing was saved. Try Edit in New Appointment.", practice: true });
+          updateBooking(msg.id, { ...b, state: "error", saveError: "I couldn't add the new patient. Nothing was saved." });
           return;
         }
         pid = created.id;
@@ -662,18 +654,41 @@ export function GlobalGoatPopup({
     // "make it 2pm instead" after it was booked: the new time replaces the old appointment.
     if (b.replacesId) removeAppointment(b.replacesId);
     updateBooking(msg.id, { ...draftForRecord, override, state: "booked", appointmentId: record.id, replacesId: b.replacesId, newPatient: np ? { ...np, patientId: record.patientId } : undefined });
-    push({ role: "goat", text: `Booked ${b.patientName}: ${b.type}, ${dayLabel(b.date)} at ${to12hLabel(b.time)}.`, practice: true, links: [{ label: `Open Schedule (${dayLabel(b.date)})`, href: `/appointments?date=${b.date}` }] });
+    const closedLine = record.status === "Canceled"
+      ? `Scheduled ${b.patientName}: ${b.type}, ${dayLabel(b.date)} at ${to12hLabel(b.time)}, and marked it Canceled — that day is closed.`
+      : `Booked ${b.patientName}: ${b.type}, ${dayLabel(b.date)} at ${to12hLabel(b.time)}.`;
+    push({ role: "goat", text: closedLine, practice: true, links: [{ label: `Open Schedule (${dayLabel(b.date)})`, href: `/appointments?date=${b.date}` }] });
+      } catch (err) {
+        updateBooking(msg.id, { ...b, state: "error", saveError: err instanceof Error && err.message ? err.message : "Could not save." });
+      }
+    }, 0);
   };
 
-  /** Confirm: append the signed line to the patient's Notes (the same store the Notes box uses). */
-  const saveNote = (msg: ChatMessage, line: string) => {
+  /** Confirm: save the note as one quick-note entry (date + author stamped) in the patient's Notes log. */
+  const saveNote = (msg: ChatMessage, _line: string) => {
     const d = msg.noteDraft;
-    if (!d || d.state !== "open") return;
-    const p = patientById(d.patientId);
-    const existing = getCaseNote(d.patientId) ?? p?.matrix?.notes ?? "";
-    setCaseNote(d.patientId, appendNote(existing, line));
-    notifyChange(STORAGE_KEY_CASE_NOTES);
-    setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, noteDraft: { ...d, state: "saved", saved: line } } : x)) }));
+    if (!d || (d.state !== "open" && d.state !== "error")) return;
+    setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, noteDraft: { ...d, state: "saving", saveError: undefined } } : x)) }));
+    window.setTimeout(() => {
+      try {
+        const { author, userId } = currentNoteAuthor();
+        const entry = entryFromGoatNote({ patientId: d.patientId, text: d.text, author, authorUserId: userId });
+        if (!entry) {
+          setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, noteDraft: { ...d, state: "error", saveError: "Could not save the note." } } : x)) }));
+          return;
+        }
+        const next = addEntry(loadCaseNoteEntries(), entry);
+        // Local cache first (the Notes box reads it), then merge + write to the cloud (queued and retried if it fails).
+        void saveCaseNoteEntries(next).then(() => notifyChange(CASE_NOTE_ENTRIES_KEY));
+        notifyChange(CASE_NOTE_ENTRIES_KEY);
+        logActivity({ category: "notes", action: "case_note.added", summary: "Added a note to Notes (G.O.A.T.)", patientId: d.patientId, patientName: d.patientName, details: { text: entry.text } });
+        const saved = `${formatEntryDate(entry.date)}${author ? ` ${author}` : ""}\n${entry.text}`;
+        setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, noteDraft: { ...d, state: "saved", saved } } : x)) }));
+      } catch (err) {
+        const saveError = err instanceof Error && err.message ? err.message : "Could not save the note.";
+        setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === msg.id ? { ...x, noteDraft: { ...d, state: "error", saveError } } : x)) }));
+      }
+    }, 0);
   };
 
   const pickTime = (msg: ChatMessage, time: string) => {
@@ -697,7 +712,10 @@ export function GlobalGoatPopup({
       if (m.noteDraft) return m.noteDraft.state === "saved" && m.noteDraft.saved ? { kind: "note", msgId: m.id, patientId: m.noteDraft.patientId, patientName: m.noteDraft.patientName, line: m.noteDraft.saved } : null;
       if (m.msgAsk) return { kind: "msgAsk", msgId: m.id, ...m.msgAsk };
       if (m.msgDraft) return { kind: "message", msgId: m.id, toLabel: m.msgDraft.toLabel, toUserId: m.msgDraft.toUserId, text: m.msgDraft.text, patientId: m.msgDraft.patientId, patientName: m.msgDraft.patientName, caseLabel: m.msgDraft.caseLabel, state: m.msgDraft.state };
-      if (m.booking) return { kind: "booking", msgId: m.id, state: m.booking.state };
+      if (m.booking) {
+        const state = m.booking.state === "saving" || m.booking.state === "error" ? "open" : m.booking.state;
+        return { kind: "booking", msgId: m.id, state };
+      }
       if (m.contactRecat) {
         if (m.contactRecat.state === "done" && m.contactRecat.mode === "recat") return { kind: "contactImport", msgId: m.contactRecat.importMsgId, ids: m.contactRecat.ids, category: m.contactRecat.to };
         if (m.contactRecat.state === "done") return null;
@@ -824,7 +842,7 @@ export function GlobalGoatPopup({
         mem = { ...mem, listed: m.omListed };
         sawListed = true;
       }
-      const action = Boolean(m.contactEdit || m.contactImport || m.todoDraft || m.om || m.omUndo || m.noteDraft || m.noteEdit || m.booking || m.msgDraft || m.msgAsk);
+      const action = Boolean(m.contactEdit || m.contactImport || m.todoDraft || m.om || m.omUndo || m.noteDraft || m.noteEdit || m.booking || m.msgDraft || m.msgAsk || m.textDraft || m.closedDay || m.bulkCancel);
       if (action && !sawAction) {
         sawAction = true;
         followUps = Boolean(m.om || m.omUndo);
@@ -894,13 +912,6 @@ export function GlobalGoatPopup({
       appointments: d.appointments,
       tasks: d.tasks,
       unreadMessages,
-      questionnaires: practiceOverride
-        ? []
-        : receivedForms.map((r) => ({
-            patientId: r.patient_id,
-            patientName: allPatients().find((p) => p.id === r.patient_id)?.fullName ?? "a patient",
-            formName: r.form_name,
-          })),
       locations: locations.map((l) => ({ id: l.id, name: l.name, nickname: l.nickname })),
       patients: allPatients().map((p) => ({
         id: p.id,
@@ -932,7 +943,7 @@ export function GlobalGoatPopup({
   const runPipeline = (kind: PipelineKind, question: string | null) => {
     if (question !== null) push({ role: "user", text: question, practice: true });
     if (!isGoatAdmin) {
-      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Morning Rundown", question: "Morning Rundown" }] });
+      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Today's Schedule", question: "Today's Schedule" }] });
       return;
     }
     const a = pipelineAnswer(kind, pipelineData());
@@ -941,7 +952,7 @@ export function GlobalGoatPopup({
   const runReview = (ask: ReviewAsk, question: string | null) => {
     if (question !== null) push({ role: "user", text: question, practice: true });
     if (!isGoatAdmin) {
-      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Morning Rundown", question: "Morning Rundown" }] });
+      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Today's Schedule", question: "Today's Schedule" }] });
       return;
     }
     const d = pipelineData();
@@ -985,7 +996,7 @@ export function GlobalGoatPopup({
       runPipeline(target.slice("pipeline:".length) as PipelineKind, null);
       return;
     }
-    const kind: Record<string, "rundown" | "apptCheck" | "business"> = { todo: "rundown", schedule: "rundown", messages: "rundown", apptCheck: "apptCheck", business: "business" };
+    const kind: Record<string, "schedule" | "apptCheck" | "business"> = { todo: "schedule", schedule: "schedule", messages: "schedule", apptCheck: "apptCheck", business: "business" };
     if (!briefAllowed(kind[target], isGoatAdmin)) {
       push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true });
       return;
@@ -997,6 +1008,10 @@ export function GlobalGoatPopup({
   /** Greeting chip tap: drop any waiting step and run the brief directly. */
   const runChip = (chip: string) => {
     flowRef.current = null;
+    if (chip === "G.O.A.T. Mail") {
+      formRouter.push("/goat-mail");
+      return;
+    }
     if (job || practiceBusy) return;
     if (!tryBrief(chip)) tryPipeline(chip);
   };
@@ -1005,11 +1020,11 @@ export function GlobalGoatPopup({
     if (!kind) return false;
     if (!briefAllowed(kind, isGoatAdmin)) {
       push({ role: "user", text: question, practice: true });
-      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Morning Rundown", question: "Morning Rundown" }] });
+      push({ role: "goat", text: statsGate() ?? ADMIN_ONLY_REPLY, practice: true, choices: [{ label: "Today's Schedule", question: "Today's Schedule" }] });
       return true;
     }
     const data = briefData();
-    const a = kind === "rundown" ? morningRundown(data) : kind === "apptCheck" ? appointmentCheck(data) : quickBiz(data);
+    const a = kind === "schedule" ? viewSchedule(data) : kind === "apptCheck" ? appointmentCheck(data) : quickBiz(data);
     push({ role: "user", text: question, practice: true });
     push({ role: "goat", text: a.text, practice: true, links: a.links, todoRows: a.todoRows, textAfter: a.textAfter });
     return true;
@@ -1083,7 +1098,7 @@ export function GlobalGoatPopup({
     }
     tellRef.current = null;
     const pt = st.patientId ? allPatients().map(toChatPatient).find((p) => p.id === st.patientId) ?? null : null;
-    const caseNo = pt ? buildCaseNumber(pt.dateOfLoss, pt.fullName) : "";
+    const caseNo = pt ? caseNumberOf(pt) : "";
     push({
       role: "goat",
       text: "Send this message?",
@@ -1133,7 +1148,7 @@ export function GlobalGoatPopup({
       return true;
     }
     // A new request ("/", "@", a chip, or another team message) drops the waiting step.
-    if (question.startsWith("/") || question.startsWith("@") || (CHIPS as readonly string[]).includes(question) || parseTeamMessage(question) || detectPlainTodo(question)) {
+    if (question.startsWith("/") || question.startsWith("@") || (CHIPS as readonly string[]).includes(question) || detectBrief(question) || parseTeamMessage(question) || detectPlainTodo(question)) {
       tellRef.current = null;
       return false;
     }
@@ -1399,6 +1414,11 @@ export function GlobalGoatPopup({
       send(scheduleSlashToBooking(sl.rest));
       return true;
     }
+    if (sl.cmd === "text" && !isGoatAdmin) {
+      push({ role: "user", text: question, practice: true });
+      push({ role: "goat", text: TEXT_ADMIN_ONLY, practice: true });
+      return true;
+    }
     const started = startFlow(sl.cmd, sl.rest, flowCtx());
     if (started) {
       push({ role: "user", text: sl.cmd === "contact" && sl.rest.includes("\n") ? `/contact … (pasted list)` : question, practice: true });
@@ -1412,60 +1432,55 @@ export function GlobalGoatPopup({
       return true;
     }
     push({ role: "user", text: question, practice: true });
-    const t = parseTodo(sl.rest, practiceData().today);
-    if (!t.title) {
+    const plan = resolveSlashTodo(sl.rest, practiceData().today, allPatients().map(toChatPatient));
+    if (plan.kind === "needText") {
       push({ role: "goat", text: 'What\'s the to-do? e.g. "/todo call Nazaryan for John Smith tomorrow" or "/todo John Smith: request records"', practice: true });
       return true;
     }
-    const people = allPatients();
-    let patient: PatientRecord | null = null;
-    let title = t.title;
-    if (t.name && !isNoPatientName(t.name)) {
-      const all = matchPatientsByName(t.name, people);
-      const split = activeFirst(all, (p) => isActiveCase(p.caseStatus));
-      if (!all.length) {
-        push({ role: "goat", text: `I couldn't find a patient named "${t.name}". Check the name, or leave it off for a to-do with no patient.`, practice: true });
-        return true;
-      }
-      if (all.length > 1) {
-        const ch = (p: PatientRecord) => ({ label: choiceLabel(toChatPatient(p)), question: `/todo ${p.fullName.replace(/,/g, "")}: ${sl.rest.replace(/^[^:]*:\s*/, "")}` });
-        push({ role: "goat", text: `Which ${t.name}?`, practice: true, ...withInactive(split.shown.map(ch), split.hidden.map(ch)) });
-        return true;
-      }
-      patient = all[0];
-    } else {
-      const found = findPatientsInQuestion(title, people.map(toChatPatient));
-      if (found.confident) {
-        patient = patientById(found.confident.patient.id);
-        if (patient) title = (stripPatientName(title, patient.fullName) || title).replace(/\s+(for|re|about|on)\s*$/i, "").trim();
-      } else if (found.candidates.length) {
-        // A first-name hit ("call Vahe …") never forces a question: the card goes up as a general to-do, linking is optional.
-        const ch = (c: ChatPatient) => ({ label: `Attach to ${choiceLabel(c)}`, question: `/todo ${c.fullName.replace(/,/g, "")}: ${sl.rest}` });
-        push({ role: "goat", text: "Add this to-do? (Not attached to a case — tap one below to attach it.)", practice: true, todoDraft: { title, dueDate: t.due, state: "open" }, choices: found.candidates.slice(0, 4).map((m) => ch(m.patient)) });
-        return true;
-      }
+    if (plan.kind === "notFound") {
+      push({ role: "goat", text: `I couldn't find a patient named "${plan.name}". Check the name, or leave it off for a to-do with no patient.`, practice: true });
+      return true;
     }
-    if (isNoPatientName(t.name)) patient = null;
-    push({ role: "goat", text: "Add to To-Do?", practice: true, patientName: patient ? displayName(patient.fullName) : undefined, todoDraft: { title, dueDate: t.due, patientId: patient?.id, patientName: patient?.fullName, state: "open" } });
+    if (plan.kind === "ask") {
+      const ch = (p: ChatPatient) => ({ label: choiceLabel(p), question: `/todo ${p.fullName.replace(/,/g, "")}: ${plan.chipText}` });
+      const none = { label: "No patient", question: `/todo none: ${plan.chipText}` };
+      const w = withInactive(plan.shown.map(ch), plan.hidden.map(ch));
+      push({ role: "goat", text: `Which ${plan.name}?`, practice: true, ...w, choices: [...(w.choices ?? []), none] });
+      return true;
+    }
+    const patient = plan.patient ? patientById(plan.patient.id) : null;
+    if (plan.attach?.length) {
+      const ch = (c: ChatPatient) => ({ label: `Attach to ${choiceLabel(c)}`, question: `/todo ${c.fullName.replace(/,/g, "")}: ${plan.attachText ?? sl.rest}` });
+      push({ role: "goat", text: "Add this to-do? (Not attached to a case — tap one below to attach it.)", practice: true, todoDraft: { title: plan.title, dueDate: plan.due, state: "open" }, choices: plan.attach.map(ch) });
+      return true;
+    }
+    push({ role: "goat", text: "Add to To-Do?", practice: true, patientName: patient ? displayName(patient.fullName) : undefined, todoDraft: { title: plan.title, dueDate: plan.due, patientId: patient?.id, patientName: patient?.fullName, state: "open" } });
     return true;
   };
   const confirmTodo = (msg: ChatMessage) => {
     const d = msg.todoDraft;
-    if (!d || d.state !== "open") return;
-    const r = addTask({ title: d.title, priority: "Medium", dueDate: d.dueDate, patientId: d.patientId, patientName: d.patientName });
-    setMsg(msg.id, { todoDraft: { ...d, state: r.added ? "saved" : "canceled" } });
+    if (!d || (d.state !== "open" && d.state !== "error")) return;
+    setMsg(msg.id, { todoDraft: { ...d, state: "saving", saveError: undefined } });
+    window.setTimeout(() => {
+      try {
+        const r = addTask({ title: d.title, priority: "Medium", dueDate: d.dueDate, patientId: d.patientId, patientName: d.patientName });
+        setMsg(msg.id, { todoDraft: r.added ? { ...d, state: "saved" } : { ...d, state: "error", saveError: "Could not add that to-do." } });
+      } catch (err) {
+        setMsg(msg.id, { todoDraft: { ...d, state: "error", saveError: err instanceof Error && err.message ? err.message : "Could not add that to-do." } });
+      }
+    }, 0);
   };
 
   // ---- "/" command flows (step by step) ----
   const flowCtx = (): FlowCtx => ({
     today: practiceData().today,
-    patients: allPatients().map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus })),
+    patients: allPatients().filter((p) => !(p as { deleted?: boolean }).deleted).map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus, caseNumber: caseNumberOf(p), phone: p.phone })),
     contacts: practiceOverride ? [] : loadContactDirectory().map((c) => ({ id: c.id, name: c.name, category: c.category, phone: c.phone })),
     openPatientId: openPatientId ?? null,
   });
   const runFlowTurn = (turn: FlowTurn) => {
     flowRef.current = turn.pending;
-    if (turn.say) push({ role: "goat", text: turn.say, practice: true, choices: turn.choices?.map((c) => ({ label: c.label, question: c.token })) });
+    if (turn.say) push({ role: "goat", text: turn.say, practice: true, choices: turn.choices?.map((c) => ({ label: c.label, question: c.token })), flowPicker: turn.picker });
     const a = turn.action;
     if (!a) return;
     if (a.type === "noteConfirm") {
@@ -1477,6 +1492,10 @@ export function GlobalGoatPopup({
     } else if (a.type === "contactPaste") {
       if (!showContactImport(a.text, true)) push({ role: "goat", text: "I couldn't find a phone number in that. Each contact needs a name and a phone — try again, or type cancel.", practice: true });
       if (!looksLikeContactPaste(a.text) && parseContactPaste(a.text).every((d) => !d.phone)) flowRef.current = { k: "contactAdd" };
+    } else if (a.type === "textConfirm") {
+      void showTextCard(a.audience, a.message);
+    } else if (a.type === "bulkCancel") {
+      showBulkCancel(a.query);
     } else if (a.type === "contactEdit") {
       const c = loadContactDirectory().find((x) => x.id === a.contactId);
       if (c) push({ role: "goat", text: `Edit ${c.name}:`, practice: true, contactEdit: { contactId: c.id, name: c.name, category: c.category, phone: c.phone, fax: c.fax ?? "", email: c.email ?? "", address: c.address ?? "", state: "open" } });
@@ -1495,6 +1514,250 @@ export function GlobalGoatPopup({
     if (!isFlowToken(question)) push({ role: "user", text: question.includes("\n") ? `${question.split("\n")[0].slice(0, 80)} … (pasted list)` : question, practice: true });
     runFlowTurn(turn);
     return true;
+  };
+
+  // ---- /text and bulk cancel ----
+  const TEXT_ADMIN_ONLY = "Texting patients is for owners and admins. Ask an owner or admin to send it.";
+  const smsSettings = () => {
+    try {
+      return normalizeSmsReminderSettings(JSON.parse(window.localStorage.getItem(SMS_REMINDER_SETTINGS_KEY) ?? "null"));
+    } catch {
+      return normalizeSmsReminderSettings(null);
+    }
+  };
+  /** Who gets it + the message → the Send card. Reads recipients from the cloud; queues nothing. */
+  const showTextCard = async (audience: TextAudience, message: string) => {
+    if (practiceOverride) {
+      push({ role: "goat", text: "This is practice mode, so I can't text anyone here.", practice: true });
+      return;
+    }
+    if (!isGoatAdmin) {
+      push({ role: "goat", text: TEXT_ADMIN_ONLY, practice: true });
+      return;
+    }
+    const client = getSupabaseBrowserClient();
+    const ws = getActiveWorkspaceIdSync();
+    const found = client && ws ? await loadTextRecipients(client, ws, audience, smsSettings()).catch(() => null) : null;
+    if (!found) {
+      push({ role: "goat", text: "I couldn't load your patients just now, so I haven't set anything up. Check your connection and try again.", practice: true });
+      return;
+    }
+    const n = found.recipients.length;
+    push({
+      role: "goat",
+      practice: true,
+      text: n ? "Here's the text. Look it over, then tap Send." : "There's nobody with a phone number for that, so there's nothing to send.",
+      textDraft: {
+        audience,
+        message: tidyTextMessage(message).slice(0, 840),
+        state: "open",
+        recipients: found.recipients.map((r) => ({ id: r.patientId, name: r.patientName })),
+        skipped: found.skipped,
+        deferred: found.deferred,
+      },
+    });
+  };
+  const showClosedDay = async (req: { iso: string; broadcast: boolean }) => {
+    try {
+    const label = closedDayLabel(req.iso);
+    const closedDay: NonNullable<ChatMessage["closedDay"]> = { iso: req.iso, label, reason: "Office closed", state: "open" };
+    const dayLine = `${label} will be Closed on Key Dates.`;
+    if (!req.broadcast) {
+      push({ role: "goat", text: dayLine, practice: true, closedDay });
+      return;
+    }
+    if (!isGoatAdmin) {
+      push({ role: "goat", text: `${dayLine} ${TEXT_ADMIN_ONLY}`, practice: true, closedDay });
+      return;
+    }
+    const message = closedDayMessage(practiceOverride ? "" : loadOfficeSettings().officeName, req.iso);
+    const client = getSupabaseBrowserClient();
+    const ws = getActiveWorkspaceIdSync();
+    const found = client && ws ? await loadTextRecipients(client, ws, { kind: "active" }, smsSettings()).catch(() => null) : null;
+    if (!found) {
+      push({ role: "goat", text: `${dayLine} I couldn't load patients just now, so I haven't prepared a text.`, practice: true, closedDay });
+      return;
+    }
+    const n = found.recipients.length;
+    if (!n) {
+      push({ role: "goat", text: `${dayLine} There's nobody with a phone number to text.`, practice: true, closedDay });
+      return;
+    }
+    push({
+      role: "goat",
+      practice: true,
+      text: n ? `${dayLine} Here's the text for active patients. Nothing is marked or queued until you tap Send.` : `${dayLine} There's nobody with a phone number to text.`,
+      closedDay,
+      textDraft: {
+        audience: { kind: "active" },
+        message: message.slice(0, 840),
+        state: "open",
+        recipients: found.recipients.map((r) => ({ id: r.patientId, name: r.patientName })),
+        skipped: found.skipped,
+        deferred: found.deferred,
+      },
+    });
+    } catch (err) {
+      console.error(err);
+      push({ role: "goat", text: "Something went wrong preparing that. Try sending it again.", practice: true });
+    }
+  };
+  /** Writes the closed day the same way Key Dates does. Does not queue a text. */
+  const saveClosedDay = async (msg: ChatMessage): Promise<boolean> => {
+    const d = msg.closedDay;
+    if (!d || d.state === "done") return true;
+    if (d.state === "canceled") return false;
+    if (practiceOverride || !roleKnown || !canEditFeature("keyDates")) {
+      setMsg(msg.id, { closedDay: { ...d, state: "error", result: "Marking a closed day needs permission to edit Key Dates. Ask an owner or admin." } });
+      return false;
+    }
+    setMsg(msg.id, { closedDay: { ...d, state: "saving", result: undefined } });
+    try {
+      const outcome = await addClosedDayIfMissing(d.iso, d.reason);
+      setMsg(msg.id, { closedDay: { ...d, state: "done", result: outcome === "already" ? `${d.label} is already Closed on Key Dates.` : `${d.label} is Closed on Key Dates.` } });
+      return true;
+    } catch (err) {
+      setMsg(msg.id, { closedDay: { ...d, state: "error", result: err instanceof Error ? err.message : "Couldn't save the closed day." } });
+      return false;
+    }
+  };
+  /** The Send tap: re-read who gets it (never queue a stale list), then queue exactly like Message patients. */
+  const sendTextDraft = async (msg: ChatMessage) => {
+    const d = msg.textDraft;
+    if (!d || d.state !== "open" || textBusyRef.current.has(msg.id)) return;
+    if (!isGoatAdmin || practiceOverride) return setMsg(msg.id, { textDraft: { ...d, result: TEXT_ADMIN_ONLY } });
+    textBusyRef.current.add(msg.id);
+    let queued = false;
+    try {
+      if (msg.closedDay && msg.closedDay.state !== "done") {
+        setMsg(msg.id, { textDraft: { ...d, state: "queuing" } });
+        const marked = await saveClosedDay(msg);
+        if (!marked) {
+          setMsg(msg.id, { textDraft: { ...d, state: "open" } });
+          return;
+        }
+      }
+      const client = getSupabaseBrowserClient();
+      const ws = getActiveWorkspaceIdSync();
+      if (!client || !ws) return setMsg(msg.id, { textDraft: { ...d, state: "error", result: "Sign in to message patients." } });
+      setMsg(msg.id, { textDraft: { ...d, state: "queuing", result: undefined } });
+      const settings = smsSettings();
+      const fresh = await loadTextRecipients(client, ws, d.audience, settings).catch(() => null);
+      if (!fresh) return setMsg(msg.id, { textDraft: { ...d, state: "error", result: "I couldn't load your patients, so nothing was sent. Try again." } });
+      const shown = new Set((d.recipients ?? []).map((r) => r.id));
+      const same = fresh.recipients.length === shown.size && fresh.recipients.every((r) => shown.has(r.patientId));
+      if (!same) {
+        setMsg(msg.id, {
+          textDraft: {
+            ...d, state: "open", recipients: fresh.recipients.map((r) => ({ id: r.patientId, name: r.patientName })), skipped: fresh.skipped, deferred: fresh.deferred,
+            result: `The list changed while you were looking (it was ${shown.size}, now ${fresh.recipients.length}). Check it, then tap Send again.`,
+          },
+        });
+        return;
+      }
+      const r = await queueBroadcast(client, ws, { message: d.message, date: fresh.date, recipients: fresh.recipients, booked: d.audience.kind === "booked" }).catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : "Couldn't queue the message." }));
+      if (!r.ok) return setMsg(msg.id, { textDraft: { ...d, state: "open", result: r.error } });
+      const mac = await readMacSeen(client, ws).catch(() => false);
+      logActivity({ category: "messages", action: "broadcast.queued", summary: `Queued a text to ${r.count} patient${r.count === 1 ? "" : "s"} (G.O.A.T.)`, details: { count: r.count, audience: d.audience.kind, targetDate: fresh.date } });
+      setMsg(msg.id, { textDraft: { ...d, state: "queued", result: queuedStatusText(r.count, settings.dryRun, mac) } });
+      queued = true;
+    } finally {
+      if (!queued) textBusyRef.current.delete(msg.id);
+    }
+  };
+
+  const BULK_NEEDS_EDIT = "Canceling appointments needs permission to edit the schedule. Ask an owner or admin.";
+  /** The checklist of visits a bulk cancel would touch. Cancels nothing. */
+  const showBulkCancel = (q: BulkCancelQuery) => {
+    if (practiceOverride) {
+      push({ role: "goat", text: "This is practice mode, so I can't cancel real appointments here.", practice: true });
+      return;
+    }
+    if (!roleKnown || !canEditFeature("appointments")) {
+      push({ role: "goat", text: BULK_NEEDS_EDIT, practice: true });
+      return;
+    }
+    const today = practiceData().today;
+    const day = textDayLabel(q.date, today);
+    const rows = selectBulkCancel(scheduleAppointments, q);
+    const win = q.windowLabel ? ` (${q.windowLabel})` : "";
+    if (!rows.length) {
+      const onDay = scheduleAppointments.filter((a) => a.date === q.date && (a.status === "Scheduled" || a.status === "Reschedule"));
+      const providerMissing = q.provider && onDay.length > 0 && !onDay.some((a) => a.provider.toLowerCase().includes(q.provider!.toLowerCase()));
+      push({
+        role: "goat",
+        practice: true,
+        text: providerMissing
+          ? `I don't see any appointments for Dr. ${q.provider} ${textDayPhrase(q.date, today)}. Nothing was canceled.`
+          : `I don't see any Scheduled appointments ${textDayPhrase(q.date, today)}${win}. Nothing to cancel.`,
+      });
+      return;
+    }
+    push({
+      role: "goat",
+      practice: true,
+      text: `I found ${rows.length} appointment${rows.length === 1 ? "" : "s"} ${textDayPhrase(q.date, today)}${win}. Untick any you want to keep.`,
+      bulkCancel: {
+        heading: describeBulkCancel(q, textDayPhrase(q.date, today)),
+        dayWord: day,
+        state: "open",
+        rows: rows.map((a) => ({ id: a.id, patientId: a.patientId, patientName: a.patientName, time: clock12(minutesOf(a.startTime)), type: a.appointmentType, provider: a.provider, prevStatus: a.status, checked: true })),
+      },
+    });
+  };
+  const confirmBulkCancel = (msg: ChatMessage) => {
+    const d = msg.bulkCancel;
+    if (!d || d.state !== "open") return;
+    if (practiceOverride || !roleKnown || !canEditFeature("appointments")) return setMsg(msg.id, { bulkCancel: { ...d, state: "open" }, text: BULK_NEEDS_EDIT });
+    const picked = new Set(d.rows.filter((r) => r.checked).map((r) => r.id));
+    // Only visits that are STILL Scheduled / Reschedule (someone may have checked a patient in since the list was shown).
+    const live = new Set(scheduleAppointments.filter((a) => picked.has(a.id) && (a.status === "Scheduled" || a.status === "Reschedule")).map((a) => a.id));
+    if (!live.size) return setMsg(msg.id, { bulkCancel: { ...d, state: "canceled" }, text: "Those visits have already changed, so I canceled nothing." });
+    updateManyAppointments((a) => live.has(a.id), (a) => ({ ...a, status: "Canceled" }));
+    const rows = d.rows.filter((r) => live.has(r.id));
+    logActivity({ category: "appointments", action: "appointment.bulk_canceled", summary: `Canceled ${rows.length} appointment${rows.length === 1 ? "" : "s"} for ${d.dayWord} (G.O.A.T.)`, details: { count: rows.length, ids: rows.map((r) => r.id) } });
+    const left = picked.size - live.size;
+    setMsg(msg.id, { bulkCancel: { ...d, rows, state: "done", offerText: isGoatAdmin, result: `Canceled ${rows.length} appointment${rows.length === 1 ? "" : "s"} for ${d.dayWord}.${left ? ` (${left} had already changed, so I left ${left === 1 ? "it" : "them"} alone.)` : ""} Undo puts everyone back.` } });
+  };
+  const undoBulkCancel = (msg: ChatMessage) => {
+    const d = msg.bulkCancel;
+    if (!d || d.state !== "done" || !roleKnown || !canEditFeature("appointments")) return;
+    const prev = new Map(d.rows.map((r) => [r.id, r.prevStatus]));
+    // Only put back visits that are still Canceled (never overwrite a newer change).
+    const back = scheduleAppointments.filter((a) => prev.has(a.id) && a.status === "Canceled");
+    updateManyAppointments((a) => prev.has(a.id) && a.status === "Canceled", (a) => ({ ...a, status: (prev.get(a.id) ?? "Scheduled") as typeof a.status }));
+    logActivity({ category: "appointments", action: "appointment.bulk_cancel_undone", summary: `Undid the bulk cancel for ${d.dayWord}: restored ${back.length} appointment${back.length === 1 ? "" : "s"} (G.O.A.T.)`, details: { count: back.length } });
+    setMsg(msg.id, { bulkCancel: { ...d, state: "undone", result: `Undone. ${back.length} appointment${back.length === 1 ? " is" : "s are"} back on the schedule.` } });
+  };
+  /** "Also text these patients": the normal /text Send card, prefilled with the canceled patients. */
+  const textCanceled = (msg: ChatMessage) => {
+    const d = msg.bulkCancel;
+    if (!d) return;
+    const ids = Array.from(new Set(d.rows.map((r) => r.patientId).filter(Boolean)));
+    const date = scheduleAppointments.find((a) => a.id === d.rows[0]?.id)?.date ?? practiceData().today;
+    if (!isGoatAdmin) return push({ role: "goat", text: TEXT_ADMIN_ONLY, practice: true });
+    setMsg(msg.id, { bulkCancel: { ...d, offerText: false } });
+    void showTextCard({ kind: "patients", ids, label: `${ids.length} canceled ${ids.length === 1 ? "patient" : "patients"}` }, suggestedCancelText(date, practiceData().today));
+  };
+  /** "text everyone …" / "cancel all appointments tomorrow" typed without a "/". True if it was one of those. */
+  const tryNaturalAction = (raw: string): boolean => {
+    const text = raw.trim();
+    const ctx = flowCtx();
+    const t = naturalTextTurn(text, ctx);
+    if (t) {
+      push({ role: "user", text, practice: true });
+      if (!isGoatAdmin) push({ role: "goat", text: TEXT_ADMIN_ONLY, practice: true });
+      else runFlowTurn(t);
+      return true;
+    }
+    const c = naturalCancelTurn(text, ctx);
+    if (c) {
+      push({ role: "user", text, practice: true });
+      if (!roleKnown || !canEditFeature("appointments")) push({ role: "goat", text: BULK_NEEDS_EDIT, practice: true });
+      else runFlowTurn(c);
+      return true;
+    }
+    return false;
   };
   const confirmContactEdit = (msg: ChatMessage, d: NonNullable<ChatMessage["contactEdit"]>) => {
     const r = updateContact(d.contactId, { name: d.name, category: d.category as ContactCategory, phone: d.phone, fax: d.fax, email: d.email, address: d.address });
@@ -1662,7 +1925,15 @@ export function GlobalGoatPopup({
       // Right after one of G.O.A.T.'s own actions, a vague follow-up ("make it 3") belongs to that action.
       if (!u.patient && lastAct()) return false;
       push({ role: "user", text: typed, practice: true });
-      push({ role: "goat", text: u.ask, practice: true, replyTo: typed });
+      push({
+        role: "goat",
+        text: u.ask,
+        practice: true,
+        replyTo: typed,
+        choices: u.ask === "Which patient?"
+          ? u.ambiguous.slice(0, 6).map((p) => ({ label: p.fullName, question: `${p.fullName} ${typed}` }))
+          : undefined,
+      });
       askRef.current = { raw: typed };
       return true;
     }
@@ -1671,7 +1942,7 @@ export function GlobalGoatPopup({
       case "open": {
         if (!who) return false;
         push({ role: "user", text: typed, practice: true });
-        push({ role: "goat", text: `Opening ${displayName(who.fullName)}'s case.`, practice: true, patientName: displayName(who.fullName), links: [{ label: `Open ${displayName(who.fullName)}`, href: `/patients/${who.id}` }], replyTo: typed }, who.id);
+        push({ role: "goat", text: `${u.typo ? `Using ${who.fullName}. ` : ""}Opening ${displayName(who.fullName)}'s case.`, practice: true, patientName: displayName(who.fullName), links: [{ label: `Open ${displayName(who.fullName)}`, href: `/patients/${who.id}` }], replyTo: typed }, who.id);
         saveRecall({ patientId: who.id, patientName: who.fullName, action: "file" });
         formRouter.push(`/patients/${who.id}`);
         return true;
@@ -1687,7 +1958,7 @@ export function GlobalGoatPopup({
         const plan = planQuick(u, { today: data.today, appointments: data.appointments, settings: scheduleSettings() ?? loadScheduleSettings(), currentDoi: who.dateOfLoss });
         push({ role: "user", text: typed, practice: true });
         if ("say" in plan) push({ role: "goat", text: plan.say, practice: true, replyTo: typed, links: [{ label: "Open Schedule", href: "/appointments" }] });
-        else push({ role: "goat", text: plan.summary, practice: true, patientName: displayName(who.fullName), quick: { ...plan, state: "open" }, replyTo: typed }, who.id);
+        else push({ role: "goat", text: `${u.typo ? `Using ${who.fullName}. ` : ""}${plan.summary}`, practice: true, patientName: displayName(who.fullName), quick: { ...plan, state: "open" }, replyTo: typed }, who.id);
         return true;
       }
       case "book":
@@ -1713,7 +1984,11 @@ export function GlobalGoatPopup({
     if (!q || q.state !== "open") return;
     const plan: QuickPlan = time ? { ...q, time } : q;
     let result = "";
-    if (plan.kind === "doi" && plan.doi) {
+    if (plan.kind === "compliance" && plan.compliance !== undefined) {
+      updatePatientRecordById(plan.patientId, { compliance: normalizeCompliance(plan.compliance) ?? "" });
+      const label = plan.compliance ? complianceLabel(plan.compliance, loadComplianceOptions()) || plan.compliance : "";
+      result = label ? `✓ Compliance set to ${label}.` : "✓ Compliance cleared.";
+    } else if (plan.kind === "doi" && plan.doi) {
       updatePatientRecordById(plan.patientId, { dateOfLoss: plan.doi });
       result = `✓ Date of injury set to ${cardDate(plan.doi)}.`;
     } else if (plan.appointmentId) {
@@ -1747,13 +2022,41 @@ export function GlobalGoatPopup({
     if (typed) window.setTimeout(() => sendRef.current(typed), 50);
   };
   const send = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
+    try {
+      sendCore(raw, opts);
+    } catch (err) {
+      console.error(err);
+      const text = raw.trim();
+      setInput("");
+      setMention(null);
+      if (jobRef.current) {
+        jobRef.current = null;
+        setJob(null);
+      }
+      setChat((c) => {
+        const last = c.messages[c.messages.length - 1];
+        const already = Boolean(text) && last?.role === "user" && last.text === text;
+        const extra: ChatMessage[] = [];
+        if (text && !already) extra.push({ role: "user", text, practice: true, id: newId(), at: nowIso() });
+        extra.push({ role: "goat", text: "Something went wrong with that. Try sending it again.", practice: true, id: newId(), at: nowIso() });
+        return { ...c, messages: [...c.messages, ...extra] };
+      });
+    }
+  };
+  const sendCore = (raw: string, opts?: { to?: TeamPerson[]; display?: string; prefix?: string }) => {
     // Typos and texting shorthand ("tmrw", "pls", "remind me 2", "lawer") → plain words first.
     const casual = !opts && !raw.includes("\n") && !isFlowToken(raw.trim()) && !raw.trim().startsWith("/") && !raw.trim().startsWith("@");
     const question = casual ? normalizeCasual(raw) : raw.trim();
-    if (!question || job || practiceBusy) return;
+    if (!question || practiceBusy) return;
+    // A lookup that never finished used to leave the button disabled, so Enter and
+    // Send both did nothing while the typed text stayed in the box. A new message wins.
+    if (jobRef.current) {
+      jobRef.current = null;
+      setJob(null);
+    }
     // Two requests in one message: "book John Wed 2pm and remind me to call his lawyer".
     // Each step runs on its own (each still gets its own confirm card); "his/him" carries the patient.
-    if (casual) {
+    if (casual && !parseTextRequest(raw.trim(), practiceData().today) && flowRef.current?.k !== "textMsg") {
       const steps = splitSteps(question);
       if (steps.length > 1) {
         const hit = findPatientsInQuestion(steps[0], allPatients().map(toChatPatient)).confident?.patient;
@@ -1787,9 +2090,76 @@ export function GlobalGoatPopup({
         return send(`tell ${mc.recipients[0].firstName} ${mc.text}`, { to: mc.recipients, display: question, prefix });
       }
     }
+    // A waiting /text or bulk-cancel step takes the typed reply as-is (a text message is free text: never re-read it as a to-do).
+    const stepK = flowRef.current?.k;
+    if (!opts && stepK && (stepK === "textMsg" || stepK === "textWho" || stepK === "textDay" || stepK === "textPick" || stepK === "cancelDay") && tryFlow(stepK === "textMsg" ? raw.trim() : question)) return;
+    // "we will be closed Thursday the 19th" → confirm a Key Dates closed day.
+    // "…send all active patients a message" → that day plus a broadcast draft. Nothing is saved or queued here.
+    if (!opts && casual && !flowRef.current && !replyPending() && !askRef.current) {
+      const closed = closedDayRequest(question, practiceData().today);
+      if (closed) {
+        push({ role: "user", text: question, practice: true });
+        void showClosedDay(closed);
+        return;
+      }
+    }
+    // "text everyone "we're closed tomorrow"", "text all active patients that we're closed Friday", "cancel all appointments tomorrow":
+    // the action wins over the Handbook answer below; a "how do I…" question still gets the answer. Nothing happens before a tap.
+    if (!opts && casual && !flowRef.current && !replyPending() && !askRef.current && tryNaturalAction(raw)) return;
+    // "who does broadcast send to", "how do I text all active patients": the Handbook answer (never sends anything).
+    if (!opts && casual && !flowRef.current && !replyPending() && !askRef.current) {
+      const bh = broadcastHelp(question, { canSeeSettings: isGoatAdmin });
+      if (bh) {
+        push({ role: "user", text: question, practice: true });
+        push({ role: "goat", text: bh.text, practice: true, links: bh.links });
+        return;
+      }
+    }
+    // "what does Closed do to reminders", "I marked a day closed but they still got texts": the Handbook answer.
+    if (!opts && casual && !flowRef.current && !replyPending() && !askRef.current) {
+      const kh = keyDatesHelp(question);
+      if (kh) {
+        push({ role: "user", text: question, practice: true });
+        push({ role: "goat", text: kh.text, practice: true, links: kh.links });
+        return;
+      }
+    }
     // Understand first, then act: straight to one confirm card (or one short question).
     const skipUnderstand = understoodRef.current;
     understoodRef.current = false;
+    // "reminders didn't send" / "how do I set up 8 AM reminders": the Handbook steps, including the required iPhone automation.
+    if (!opts && casual && !skipUnderstand && !flowRef.current && !replyPending() && !askRef.current) {
+      let sendHour: number | undefined;
+      try {
+        sendHour = normalizeSmsReminderSettings(JSON.parse(window.localStorage.getItem(SMS_REMINDER_SETTINGS_KEY) ?? "null")).sendHour;
+      } catch {
+        sendHour = undefined;
+      }
+      const rh = macSetupHelp(question, { canSeeSettings: isGoatAdmin }) ?? birthdayTextsHelp(question, { canSeeSettings: isGoatAdmin, sendHour }) ?? remindersHelp(question, { sendHour, canSeeSettings: isGoatAdmin }) ?? reminderPageHelp(question, { canSeeSettings: isGoatAdmin });
+      if (rh) {
+        push({ role: "user", text: question, practice: true });
+        push({ role: "goat", text: rh.text, practice: true, links: rh.links });
+        return;
+      }
+    }
+    // Compliance ("set compliance for X to Yes", "how many are non-compliant") and "what notes does X have":
+    // answered from the office's own settings and data, before the general understanding step can misroute them.
+    if (!opts && casual && !skipUnderstand && !flowRef.current && !replyPending() && !askRef.current) {
+      const cs = understandCompliance(question, {
+        patients: allPatients().map((p) => ({ ...toChatPatient(p), compliance: p.compliance })),
+        options: loadComplianceOptions(),
+        enabled: loadCaseStatusSettings().complianceEnabled === true,
+        canEdit: canEditFeature("patients"),
+        canViewPatients: canView("patients"),
+        notesFor: (id) => ({ entries: entriesForPatient(loadCaseNoteEntries(), id), legacy: getCaseNote(id) ?? allPatients().find((x) => x.id === id)?.matrix?.notes ?? "" }),
+      });
+      if (cs) {
+        push({ role: "user", text: question, practice: true });
+        if (cs.kind === "say") push({ role: "goat", text: cs.text, practice: true, ...(cs.links ? { links: cs.links } : {}) });
+        else push({ role: "goat", text: cs.plan.summary, practice: true, patientName: displayName(cs.plan.patientName), quick: { ...cs.plan, state: "open" }, replyTo: question }, cs.plan.patientId);
+        return;
+      }
+    }
     if (casual && !skipUnderstand && !flowRef.current && handleCorrection(question)) return;
     if (casual && !skipUnderstand && !flowRef.current && !replyPending()) {
       if (askRef.current) {
@@ -1801,10 +2171,17 @@ export function GlobalGoatPopup({
       const u = runUnderstand(question);
       if (u && actOn(u, question)) return;
     }
+    // Office-wide count/list by status ("how many canceled appts do we have") is a schedule
+    // question: answer it from the schedule before any patient-name guessing.
+    // "how many patients from Glendale" / "top zip codes": a location count, never a patient named Glendale.
+    if (casual && !flowRef.current && !replyPending() && parseLocationQuestion(question) && tryPractice(question, false)) return;
+    if (casual && !flowRef.current && !replyPending() && isOfficeStatsQuestion(question, practiceData().today, allPatients().map((p) => p.fullName)) && tryPractice(question, false)) return;
+    // "For which time frame?" is waiting: a typed "this week" / "today" answers it.
+    if (casual && !flowRef.current && !replyPending() && lastOffice()?.kind === "apptStatsAsk" && parseTimeframeReply(question, practiceData().today) && tryPractice(question, false)) return;
     const people = allPatients().map(toChatPatient);
     const found = findPatientsInQuestion(question, people);
     const waitingForName = waitingQuestion();
-    // "/note", "/todo" and the greeting chips (Morning Rundown, Appointment Check, Quick Biz).
+    // "/note", "/todo" and the greeting chips (Today's Schedule, Appointment Check, Quick Biz).
     if (!opts && isGoatHelpQuestion(question)) {
       push({ role: "user", text: question, practice: true });
       push({ role: "goat", text: goatHelpText(), practice: true, links: [{ label: "Handbook → G.O.A.T.", href: GOAT_HANDBOOK_ANCHOR }] });
@@ -2001,7 +2378,7 @@ export function GlobalGoatPopup({
           return;
         }
         const pt = lookup.confident?.patient ?? null;
-        const caseNo = pt ? buildCaseNumber(pt.dateOfLoss, pt.fullName) : "";
+        const caseNo = pt ? caseNumberOf(pt) : "";
         push({
           role: "goat",
           text: "Send this message?",
@@ -2138,7 +2515,7 @@ export function GlobalGoatPopup({
         .map((p) => ({ id: p.id, fullName: p.fullName, caseStatus: p.caseStatus, attorney: p.attorney, cash: p.isCashPatient, firstVisit: data.patients.find((x) => x.id === p.id)?.firstVisit }));
       const rc = readRecall();
       const recall = rc && patientById(rc.patientId) ? recallLine(rc) : null;
-      return { brief: dailyBrief(data, new Date().getHours(), isGoatAdmin), nudges: nudges(data, people), recall };
+      return { nudges: nudges(data, people), recall };
     } catch {
       return null;
     }
@@ -2151,6 +2528,10 @@ export function GlobalGoatPopup({
     sendRef.current = send;
   });
   const isOpenNow = useGlobalGoatOpen();
+  useEffect(() => {
+    if (!(isOpenNow || fullScreen)) return;
+    setChat((current) => withoutAutoApptCheck(current));
+  }, [isOpenNow, fullScreen]);
   useEffect(() => {
     if (!(isOpenNow || fullScreen)) return;
     const text = takePendingAsk();
@@ -2181,12 +2562,12 @@ export function GlobalGoatPopup({
 
   // Plain functions: they only touch refs and functional state updates, so a stale copy is fine.
   const onPartial = (t: string) => setPartial(t);
-  const onDone = (m: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy" | "originals">) => {
+  const onDone = (jobId: string, m: Pick<ChatMessage, "text" | "quotes" | "warnings" | "ms" | "copy" | "originals">) => {
     const j = jobRef.current;
-    if (j) {
-      const p = findPatient(patientsOverride, j.patientId);
-      push({ role: "goat", ...m, patientId: j.patientId, patientName: p ? displayName(p.fullName) : undefined }, j.patientId);
-    }
+    // A newer message already took over, or the lookup was canceled. Drop this reply.
+    if (!j || j.id !== jobId) return;
+    const p = findPatient(patientsOverride, j.patientId);
+    push({ role: "goat", ...m, patientId: j.patientId, patientName: p ? displayName(p.fullName) : undefined }, j.patientId);
     jobRef.current = null;
     setJob(null);
     setPartial("");
@@ -2233,7 +2614,7 @@ export function GlobalGoatPopup({
           data-goat-panel
           data-goat-section="global-goat"
         >
-          <header className={`flex items-center gap-2.5 bg-[#72bdcf] px-3 py-2 text-white ${fullScreen ? "pt-[max(0.5rem,env(safe-area-inset-top))]" : ""}`}>
+          <header className={`flex items-center gap-2.5 section-bar px-3 py-2 text-white ${fullScreen ? "pt-[max(0.5rem,env(safe-area-inset-top))]" : ""}`}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img alt="G.O.A.T." className={`shrink-0 rounded-full bg-white/80 object-cover ${fullScreen ? "h-[46px] w-[46px] ring-2 ring-white/55" : "h-11 w-11"}`} height={44} src="/goat-avatar/tablet-128.png" srcSet="/goat-avatar/tablet-128.png 1x, /goat-avatar/tablet-256.png 2x" width={44} />
             <div className="min-w-0 flex-1">
@@ -2253,11 +2634,14 @@ export function GlobalGoatPopup({
                 )}
               </div>
             </div>
+            <Link className="rounded-lg px-2 py-1 text-xs font-semibold hover:bg-white/20" href="/goat-page">
+              G.O.A.T. Page
+            </Link>
             <button style={{ fontSize: 12 }}
               className={`rounded-lg px-2 py-1 text-xs font-semibold hover:bg-white/20 disabled:opacity-40 ${fullScreen ? "bg-white/15" : ""}`}
               disabled={!chat.messages.length || Boolean(job)}
-              onClick={() => {
-                if (window.confirm("Clear this G.O.A.T. chat? It's only saved on this computer and can't be brought back.")) {
+              onClick={async () => {
+                if ((await appConfirm("Clear this G.O.A.T. chat? It's only saved on this computer and can't be brought back."))) {
                   clearChat();
                   setChat({ messages: [], patientId: null });
                   // Waiting steps belong to the old chat.
@@ -2295,26 +2679,21 @@ export function GlobalGoatPopup({
             />
           )}
 
-          <div ref={listRef} className={`flex-1 space-y-2.5 overflow-y-auto px-3 py-3 ${fullScreen ? "bg-[#e4f0f7]" : "bg-[var(--bg-soft,#f6f9fa)]"}`}>
+          <div ref={listRef} className={`min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 py-3 ${fullScreen ? "bg-[var(--bg-soft)]" : "bg-[var(--bg-soft,#f6f9fa)]"}`}>
             {!chat.messages.length && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
-                <div className="rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm" data-goat-greeting>
+                <div className="rounded-2xl rounded-tl-sm bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-main)] shadow-sm" data-goat-greeting>
                   {/* Plain words first; "/" shortcuts still work when typed but aren't advertised. */}
                   <p data-goat-brief>
-                    {opening && !briefHidden ? opening.brief : <><span className="font-semibold">{greeting}</span> What can I do for you?</>}
-                    {opening && !briefHidden && liveNudges.length > 0 && (
+                    <span className="font-semibold">{greeting}</span>{` — ${greetingDate}.`} What can I do for you?
+                    {opening && liveNudges.length > 0 && (
                       <button className="ml-1 text-xs font-semibold text-[var(--brand-primary)]" data-goat-headsups onClick={() => setShowNudges((v) => !v)} type="button">
                         {showNudges ? "Hide heads-ups" : `${liveNudges.length} heads-up${liveNudges.length === 1 ? "" : "s"} ›`}
                       </button>
                     )}
-                    {opening && (
-                      <button className="ml-2 text-[11px] text-[var(--text-muted)] hover:underline" data-goat-brief-toggle onClick={toggleBrief} type="button">
-                        {briefHidden ? "Show brief" : "Hide brief"}
-                      </button>
-                    )}
                   </p>
-                  {opening && !briefHidden && showNudges && liveNudges.length > 0 && (
+                  {opening && showNudges && liveNudges.length > 0 && (
                     <ul className="mt-1.5 space-y-1" data-goat-nudges>
                       {opening.nudges.filter((x) => !dismissedNudges.includes(x.id)).map((x) => (
                         <li className="flex items-start gap-1.5 rounded-lg bg-[#fff8e6] px-2 py-1 text-xs" key={x.id}>
@@ -2326,14 +2705,14 @@ export function GlobalGoatPopup({
                       ))}
                     </ul>
                   )}
-                  {opening?.recall && !briefHidden && showNudges && <p className="mt-1 text-xs" data-goat-recall>{opening.recall}</p>}
+                  {opening?.recall && showNudges && <p className="mt-1 text-xs" data-goat-recall>{opening.recall}</p>}
                   <div className={fullScreen ? "mt-2.5 flex flex-col gap-2" : "mt-2 flex flex-wrap gap-1.5"}>
                     {chipsFor(isGoatAdmin).map((c) => (
                       <button
                         className={
                           fullScreen
-                            ? "flex items-center gap-2 rounded-xl border border-[#72bdcf] bg-[#eef8fb] px-3 py-2 text-left text-[13px] font-semibold text-[var(--text-main)] active:bg-[#dff1f6]"
-                            : "rounded-full border border-[var(--brand-primary)]/40 bg-[#eef8fb] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--brand-primary)] hover:text-white"
+                            ? "flex items-center gap-2 rounded-xl border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-3 py-2 text-left text-[13px] font-semibold text-[var(--text-main)] active:bg-[#dff1f6]"
+                            : "rounded-full border border-[var(--brand-primary)]/40 bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-3 py-1 text-xs font-semibold text-[var(--brand-primary)] transition hover:bg-[var(--brand-primary)] hover:text-white"
                         }
                         data-goat-chip
                         key={c}
@@ -2356,7 +2735,7 @@ export function GlobalGoatPopup({
               ) : (
                 <div key={m.id} className="flex gap-2">
                   <GoatAvatar size={28} />
-                  <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
+                  <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-main)] shadow-sm">
                     {m.todoDraft?.state === "open" && <div className="mb-0.5 text-[11px] font-bold tracking-wide text-[#2f7f93]">NEW TO-DO</div>}
                     {m.patientName && <div className="mb-0.5 text-[11px] font-semibold text-[#2f7f93]">{m.patientName}</div>}
                     <LinkedText text={m.text} links={m.links} />
@@ -2369,7 +2748,7 @@ export function GlobalGoatPopup({
                     ))}
                     {m.formLaunch && (
                       <button
-                        className="mt-2 rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white"
+                        className="btn btn-primary btn-sm mt-2"
                         data-goat-form={m.formLaunch.kind}
                         onClick={() => openForm(m.formLaunch!)}
                         type="button"
@@ -2386,6 +2765,35 @@ export function GlobalGoatPopup({
                     {m.todoDraft && <TodoCard draft={m.todoDraft} onCancel={() => setMsg(m.id, { todoDraft: { ...m.todoDraft!, state: "canceled" } })} onConfirm={() => confirmTodo(m)} />}
                     {m.om && <OmCard data={omData()} om={m.om} onCancel={() => setMsg(m.id, { om: { ...m.om!, state: "canceled" } })} onConfirm={(plan, sign) => confirmOm(m, plan, sign)} />}
                     {m.omUndo && <OmUndoCard undo={m.omUndo} onCancel={() => setMsg(m.id, { omUndo: { ...m.omUndo!, state: "canceled" } })} onConfirm={() => confirmOmUndo(m)} />}
+                    {m.flowPicker && (
+                      <FlowPatientPicker
+                        picker={m.flowPicker}
+                        patients={flowCtx().patients}
+                        disabled={Boolean(job) || practiceBusy}
+                        onPick={(p) => { setMsg(m.id, { flowPicker: { ...m.flowPicker!, picked: p.fullName } }); tryFlow(`${FLOW_TOKEN}${m.flowPicker!.next}-case ${p.id}`); }}
+                      />
+                    )}
+                    {m.closedDay && (
+                      <ClosedDayCard
+                        d={m.closedDay}
+                        withText={Boolean(m.textDraft && m.textDraft.state !== "canceled")}
+                        onCancel={() => setMsg(m.id, { closedDay: { ...m.closedDay!, state: "canceled" } })}
+                        onConfirm={() => void saveClosedDay(m)}
+                      />
+                    )}
+                    {m.textDraft && <TextCard d={m.textDraft} today={practiceData().today} onCancel={() => setMsg(m.id, { textDraft: { ...m.textDraft!, state: "canceled" }, ...(m.closedDay && m.closedDay.state !== "done" ? { closedDay: { ...m.closedDay, state: "canceled" as const } } : {}) })} onChange={(message) => setMsg(m.id, { textDraft: { ...m.textDraft!, message, result: undefined } })} onSend={() => void sendTextDraft(m)} />}
+                    {m.bulkCancel && (
+                      <BulkCancelCard
+                        d={m.bulkCancel}
+                        busy={Boolean(job) || practiceBusy}
+                        onCancelVisits={() => confirmBulkCancel(m)}
+                        onNever={() => setMsg(m.id, { bulkCancel: { ...m.bulkCancel!, state: "canceled" } })}
+                        onTextThem={() => textCanceled(m)}
+                        onToggle={(id) => setMsg(m.id, { bulkCancel: { ...m.bulkCancel!, rows: m.bulkCancel!.rows.map((r) => (r.id === id ? { ...r, checked: !r.checked } : r)) } })}
+                        onToggleAll={(checked) => setMsg(m.id, { bulkCancel: { ...m.bulkCancel!, rows: m.bulkCancel!.rows.map((r) => ({ ...r, checked })) } })}
+                        onUndo={() => undoBulkCancel(m)}
+                      />
+                    )}
                     {m.noteDraft && <NoteCard draft={m.noteDraft} busy={Boolean(job)} onCancel={() => setChat((c) => ({ ...c, messages: c.messages.map((x) => (x.id === m.id ? { ...x, noteDraft: { ...x.noteDraft!, state: "canceled" } } : x)) }))} onSave={(line) => saveNote(m, line)} />}
                     {m.booking && <BookingCard booking={m.booking} busy={Boolean(job) || practiceBusy} onCancel={() => updateBooking(m.id, { ...m.booking!, state: "canceled" })} onConfirm={(o) => confirmBooking(m, o)} onTime={(t) => pickTime(m, t)} />}
                     {m.choices && m.choices.length > 0 && (
@@ -2399,7 +2807,7 @@ export function GlobalGoatPopup({
                                 ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
                                 : m.picked
                                   ? "border-[var(--line-soft)] bg-white text-[var(--text-muted)] opacity-60"
-                                  : "border-[#72bdcf] bg-[#eef8fb] hover:bg-[#dff1f6] disabled:opacity-50"
+                                  : "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] hover:bg-[#dff1f6] disabled:opacity-50"
                             }`}
                             disabled={Boolean(job) || practiceBusy || Boolean(m.picked)}
                             onClick={() => pick(m, c.patientId, c.question, c.showMore)}
@@ -2416,7 +2824,7 @@ export function GlobalGoatPopup({
                         <p className="font-semibold">Sorry — what did you mean?</p>
                         <div className="mt-1 flex flex-wrap gap-1">
                           {GOAT_ACTIONS.filter((a) => a.id !== "message").map((a) => (
-                            <button className="rounded-full border border-[#72bdcf] bg-white px-2 py-0.5 text-[11px] font-semibold hover:bg-[#eef8fb]" key={a.id} onClick={() => pickMeant(m, a.id)} type="button">{a.label}</button>
+                            <button className="rounded-full border border-[var(--brand-primary)] bg-white px-2 py-0.5 text-[11px] font-semibold hover:bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))]" key={a.id} onClick={() => pickMeant(m, a.id)} type="button">{a.label}</button>
                           ))}
                           <button className="rounded-full border border-[var(--line-soft)] bg-white px-2 py-0.5 text-[11px] text-[var(--text-muted)]" onClick={() => pickMeant(m, "none")} type="button">Something else</button>
                         </div>
@@ -2424,9 +2832,7 @@ export function GlobalGoatPopup({
                     )}
                     {m.missed?.state === "picked" && <p className="mt-1 text-[11px] text-[var(--text-muted)]">Got it — saved to the G.O.A.T. Library. I&apos;ll read it that way from now on.</p>}
                     {m.missed?.state === "noted" && <p className="mt-1 text-[11px] text-[var(--text-muted)]">Thanks — noted so it can be fixed.</p>}
-                    {!m.missed && m.text && (
-                      <button aria-label="That's not what I meant" className="mt-1 text-[11px] text-[var(--text-muted)] opacity-60 hover:opacity-100" data-goat-thumbsdown onClick={() => markMissed(m)} title="That's not what I meant" type="button">👎</button>
-                    )}
+                    {!m.missed && m.text && <GoatMeantLink onMiss={() => markMissed(m)} />}
                     {m.originals && m.originals.length > 0 && (
                       <details className="mt-1.5 text-xs">
                         <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">Show original</summary>
@@ -2460,7 +2866,7 @@ export function GlobalGoatPopup({
                           {m.copy && <CopyButton text={m.copy} />}
                         </span>
                         <Link className="font-semibold text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(m.patientId)}`} target="_blank">
-                          Open patient file ↗
+                          Open case file ↗
                         </Link>
                       </div>
                     )}
@@ -2471,7 +2877,7 @@ export function GlobalGoatPopup({
             {(job || practiceBusy) && (
               <div className="flex gap-2">
                 <GoatAvatar size={28} />
-                <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm shadow-sm">
+                <div className="min-w-0 max-w-[88%] rounded-2xl rounded-tl-sm bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-main)] shadow-sm">
                   {jobPatient && <div className="mb-0.5 text-[11px] font-semibold text-[#2f7f93]">{displayName(jobPatient.fullName)}</div>}
                   {partial ? (
                     <div className="whitespace-pre-line leading-snug">
@@ -2487,17 +2893,18 @@ export function GlobalGoatPopup({
             )}
           </div>
 
-          <div className={`border-t border-[var(--line-soft)] bg-white px-3 ${fullScreen ? "pb-2 pt-2.5" : "pb-2 pt-2"}`}>
+          <div className={`relative z-20 shrink-0 border-t border-[var(--line-soft)] bg-white px-3 ${fullScreen ? "pb-2 pt-2.5" : "pb-2 pt-2"}`}>
             <form
               className="flex gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                send(input);
+                const value = inputRef.current?.value ?? input;
+                if (value.trim()) send(value);
               }}
             >
               <div className="relative min-w-0 flex-1">
                 <input
-                  aria-label="Ask G.O.A.T."
+                  aria-label="Message G.O.A.T."
                   aria-autocomplete="list"
                   aria-expanded={mentionMatches.length > 0}
                   // 16px in the phone app: iOS zooms the page on focus for anything smaller.
@@ -2518,6 +2925,19 @@ export function GlobalGoatPopup({
                     syncMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
                   }}
                   onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      if (mention && mentionMatches.length) {
+                        e.preventDefault();
+                        pickMention(mentionMatches[mentionIndex] ?? mentionMatches[0]);
+                        return;
+                      }
+                      // Enter must send even when the button is disabled. A disabled
+                      // submit button swallows Enter and the form never fires.
+                      e.preventDefault();
+                      const value = (e.target as HTMLInputElement).value;
+                      if (value.trim()) send(value);
+                      return;
+                    }
                     const vq = !mention ? viewQuery(input) : null;
                     if (vq !== null && e.key === "Tab" && viewMatches(vq, isGoatAdmin).length) {
                       e.preventDefault();
@@ -2624,8 +3044,8 @@ export function GlobalGoatPopup({
                   </div>
                 )}
               </div>
-              <button style={{ fontSize: fullScreen ? 15 : 14 }} className={fullScreen ? "h-11 rounded-2xl bg-[var(--brand-primary)] px-4 font-semibold text-white disabled:opacity-40" : "rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"} disabled={!input.trim() || Boolean(job) || practiceBusy} type="submit">
-                Ask
+              <button style={{ fontSize: fullScreen ? 15 : 14 }} className={fullScreen ? "h-11 shrink-0 rounded-2xl bg-[var(--brand-primary)] px-4 font-semibold text-white disabled:opacity-40" : "shrink-0 rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"} disabled={!input.trim()} type="submit">
+                Send
               </button>
             </form>
           </div>
@@ -2638,8 +3058,17 @@ export function GlobalGoatPopup({
 function BookingCard({ booking, busy, onConfirm, onTime, onCancel }: { booking: NonNullable<ChatMessage["booking"]>; busy: boolean; onConfirm: (override: boolean) => void; onTime: (time: string) => void; onCancel: () => void }) {
   const [other, setOther] = useState("");
   const [otherOpen, setOtherOpen] = useState(false);
-  if (booking.state === "booked") return <p className="mt-1.5 text-xs font-semibold text-emerald-700">✓ Booked</p>;
+  if (booking.state === "saving") return <p className="mt-1.5 text-xs font-semibold text-[var(--text-muted)]">Saving…</p>;
+  if (booking.state === "booked") return <p className="mt-1.5 text-xs font-semibold text-emerald-700">✓ Saved</p>;
   if (booking.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not booked.</p>;
+  if (booking.state === "error") {
+    return (
+      <div className="mt-1.5 space-y-1.5">
+        <p className="text-xs text-red-700">{booking.saveError || "Could not save."}</p>
+        <button className="rounded-xl border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white" onClick={() => onConfirm(Boolean(booking.override))} type="button">Retry</button>
+      </div>
+    );
+  }
   const blocked = booking.taken || booking.outsideHours;
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
   return (
@@ -2647,7 +3076,7 @@ function BookingCard({ booking, busy, onConfirm, onTime, onCancel }: { booking: 
       {booking.suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {booking.suggestions.map((t) => (
-            <button key={t} className={`${btn} border-[#72bdcf] bg-[#eef8fb] hover:bg-[#dff1f6]`} disabled={busy} onClick={() => onTime(t)} style={{ fontSize: 12 }} type="button">
+            <button key={t} className={`${btn} border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] hover:bg-[#dff1f6]`} disabled={busy} onClick={() => onTime(t)} style={{ fontSize: 12 }} type="button">
               {to12hLabel(t)}
             </button>
           ))}
@@ -2946,7 +3375,7 @@ function todoTitleParts(title: string): { text: string; phone: string } {
   if (!m || title.trim().length - m[0].length < 3 || title.indexOf(m[0]) + m[0].length < title.trim().length - 1) return { text: title, phone: "" };
   return { text: title.slice(0, m.index).replace(/[\s,:-]+$/, ""), phone: m[0] };
 }
-const CHIP_ICONS: Record<string, string> = { "Morning Rundown": "☀️", "Appointment Check": "📅", "Quick Biz": "📊", "Case Review": "📋" };
+const CHIP_ICONS: Record<string, string> = { "G.O.A.T. Mail": "✉️", "Today's Schedule": "🗓️", "Appointment Check": "📅", "Quick Biz": "📊", "Case Review": "📋" };
 
 function QuickCard({ q, onConfirm, onCancel }: { q: NonNullable<ChatMessage["quick"]>; onConfirm: (time?: string) => void; onCancel: () => void }) {
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
@@ -2958,7 +3387,7 @@ function QuickCard({ q, onConfirm, onCancel }: { q: NonNullable<ChatMessage["qui
       {q.options && q.options.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {q.options.map((t) => (
-            <button className={`${btn} border-[#72bdcf] bg-[#eef8fb]`} key={t} onClick={() => onConfirm(t)} type="button">{to12hLabel(t)}</button>
+            <button className={`${btn} border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))]`} key={t} onClick={() => onConfirm(t)} type="button">{to12hLabel(t)}</button>
           ))}
         </div>
       )}
@@ -2972,15 +3401,24 @@ function QuickCard({ q, onConfirm, onCancel }: { q: NonNullable<ChatMessage["qui
 
 function TodoCard({ draft, onConfirm, onCancel }: { draft: NonNullable<ChatMessage["todoDraft"]>; onConfirm: () => void; onCancel: () => void }) {
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold";
-  if (draft.state === "saved") return <p className="mt-1.5 text-xs font-semibold text-emerald-700">✓ Added to To-Do · <Link className="text-[var(--brand-primary)] hover:underline" href="/patients?view=toDo">Open To-Do ↗</Link></p>;
+  if (draft.state === "saving") return <p className="mt-1.5 text-xs font-semibold text-[var(--text-muted)]">Saving…</p>;
+  if (draft.state === "saved") return <p className="mt-1.5 text-xs font-semibold text-emerald-700">✓ Saved · <Link className="text-[var(--brand-primary)] hover:underline" href="/patients?view=toDo">Open To-Do ↗</Link></p>;
   if (draft.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not added.</p>;
+  if (draft.state === "error") {
+    return (
+      <div className="mt-1.5 space-y-1.5">
+        <p className="text-xs text-red-700">{draft.saveError || "Could not add that to-do."}</p>
+        <button className="rounded-xl border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white" onClick={onConfirm} type="button">Retry</button>
+      </div>
+    );
+  }
   return (
     <div className="mt-2 space-y-1.5 text-xs" data-goat-todo>
-      <div className="rounded-lg bg-[#eef8fb] px-2.5 py-2 text-[13px] leading-snug">
+      <div className="rounded-lg bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2.5 py-2 text-[13px] leading-snug">
         <span className="block font-semibold">{todoTitleParts(draft.title).text}</span>
         {todoTitleParts(draft.title).phone && <span className="font-semibold text-[var(--brand-primary)]">{todoTitleParts(draft.title).phone}</span>}
       </div>
-      <p className="text-[11.5px] text-[var(--text-muted)]">{draft.dueDate ? `Due ${cardDate(draft.dueDate)}` : "No due date"}{draft.patientName ? ` · Patient: ${draft.patientName}` : ""}</p>
+      <p className="text-[11.5px] text-[var(--text-muted)]">{draft.dueDate ? `Due ${cardDate(draft.dueDate)}` : "No due date"}{draft.patientName ? ` · Patient: ${draft.patientName}` : " · No patient"}</p>
       <div className="flex flex-wrap gap-1.5">
         <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] px-3.5 text-white`} onClick={onConfirm} style={{ fontSize: 13 }} type="button">Confirm</button>
         <button className={`${btn} border-[var(--line-soft)] bg-white px-3.5 text-[var(--text-muted)]`} onClick={onCancel} style={{ fontSize: 13 }} type="button">Cancel</button>
@@ -3000,34 +3438,79 @@ function OmUndoCard({ undo, onConfirm, onCancel }: { undo: NonNullable<ChatMessa
   );
 }
 
+/** Patient type-ahead for /note and /todo: real patients, searched by name, case # or phone. */
+function FlowPatientPicker({ picker, patients, disabled, onPick }: { picker: NonNullable<ChatMessage["flowPicker"]>; patients: FlowCtx["patients"]; disabled: boolean; onPick: (p: FlowCtx["patients"][number]) => void }) {
+  const [q, setQ] = useState(picker.prefill ?? "");
+  if (picker.picked) return <div className="mt-2 text-xs font-semibold text-[var(--text-muted)]">✓ {picker.picked}</div>;
+  const hits = searchPatients(q, patients);
+  return (
+    <div className="mt-2 space-y-1.5" data-goat-patient-picker>
+      <input
+        autoFocus
+        aria-label="Search patients by name, case number or phone"
+        className="w-full rounded-xl border border-[var(--brand-primary)] bg-white px-2.5 py-1.5 text-xs"
+        disabled={disabled}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Name, case #, or phone"
+        style={{ fontSize: 12 }}
+        value={q}
+      />
+      {q.trim() && !hits.length && <div className="text-xs text-[var(--text-muted)]">No patient matches “{q.trim()}”.</div>}
+      {hits.map((p) => (
+        <button
+          className="block w-full rounded-xl border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2.5 py-1.5 text-left text-xs font-semibold hover:bg-[#dff1f6] disabled:opacity-50"
+          disabled={disabled}
+          key={p.id}
+          onClick={() => onPick(p)}
+          style={{ fontSize: 12 }}
+          type="button"
+        >
+          {p.fullName}
+          <span className="font-normal text-[var(--text-muted)]">{[p.caseNumber, p.caseStatus].filter(Boolean).map((x) => ` · ${x}`).join("")}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function NoteCard({ draft, busy, onSave, onCancel }: { draft: NonNullable<ChatMessage["noteDraft"]>; busy: boolean; onSave: (line: string) => void; onCancel: () => void }) {
   const signer = useLoginSigner();
   const [now] = useState(() => new Date());
-  const line = formatNote(draft.text, signer, now);
+  const line = `${formatEntryDate(todayIso(now))}${signer ? ` ${signatureFor(signer).slice(1)}` : ""}\n${tidyNoteText(draft.text)}`;
   if (draft.state === "saved") {
     return (
       <div className="mt-1.5 text-xs">
-        <p className="rounded-md bg-[#eef8fb] px-2 py-1">{draft.saved}</p>
+        <p className="rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1">{draft.saved}</p>
         <p className="mt-1 font-semibold text-emerald-700">
-          ✓ Saved to Case Notes ·{" "}
+          ✓ Saved ·{" "}
           <Link className="text-[var(--brand-primary)] hover:underline" href={`/patients/${encodeURIComponent(draft.patientId)}`} target="_blank">
-            Open patient file ↗
+            Open case file ↗
           </Link>
         </p>
       </div>
     );
   }
+  if (draft.state === "saving") return <p className="mt-1.5 text-xs font-semibold text-[var(--text-muted)]">Saving…</p>;
   if (draft.state === "canceled") return <p className="mt-1.5 text-xs text-[var(--text-muted)]">Not saved.</p>;
+  if (draft.state === "error") {
+    return (
+      <div className="mt-1.5 space-y-1.5">
+        <p className="whitespace-pre-line rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1 text-xs">{line}</p>
+        <p className="text-xs text-red-700">{draft.saveError || "Could not save the note."}</p>
+        <button className="rounded-xl border border-[var(--brand-primary)] bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white" disabled={busy} onClick={() => onSave(line)} type="button">Retry</button>
+      </div>
+    );
+  }
   const btn = "rounded-xl border px-2.5 py-1 text-xs font-semibold disabled:opacity-50";
   return (
     <div className="mt-2 space-y-1.5" data-goat-note>
-      <p className="whitespace-pre-line rounded-md bg-[#eef8fb] px-2 py-1 text-xs">{line}</p>
+      <p className="whitespace-pre-line rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1 text-xs">{line}</p>
       {signer && <p className="text-[11px] text-[var(--text-muted)]">Signed as {signatureFor(signer).slice(1)} (your login)</p>}
       <div className="flex flex-wrap gap-1.5">
         <button
           className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`}
           disabled={busy}
-          onClick={() => onSave(formatNote(draft.text, signer, new Date()))}
+          onClick={() => onSave(line)}
           style={{ fontSize: 12 }}
           type="button"
         >
@@ -3049,7 +3532,7 @@ function NoteEditCard({ edit, onConfirm, onCancel }: { edit: NonNullable<ChatMes
   return (
     <div className="mt-2 space-y-1.5 text-xs" data-goat-note-edit>
       <p className="rounded-md bg-[#f6f6f6] px-2 py-1 text-[var(--text-muted)] line-through">{edit.oldLine}</p>
-      {edit.newLine && <p className="rounded-md bg-[#eef8fb] px-2 py-1">{edit.newLine}</p>}
+      {edit.newLine && <p className="rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1">{edit.newLine}</p>}
       <div className="flex flex-wrap gap-1.5">
         <button className={`${btn} border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white`} onClick={onConfirm} style={{ fontSize: 12 }} type="button">
           Confirm
@@ -3086,7 +3569,7 @@ function MessageCard(props: { draft: NonNullable<ChatMessage["msgDraft"]>; onSen
   if (draft.state === "sent") {
     return (
       <div className="mt-1.5 text-xs">
-        <p className="rounded-md bg-[#eef8fb] px-2 py-1">{draft.sent}</p>
+        <p className="rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1">{draft.sent}</p>
         {draft.patientId && draft.caseLabel && (
           <p className="mt-1">
             Case:{" "}
@@ -3134,7 +3617,7 @@ function OpenMessageCard({ draft, onSent, onCancel }: { draft: NonNullable<ChatM
           draft.caseLabel ?? "None (general message)"
         )}
       </p>
-      <p className="whitespace-pre-line rounded-md bg-[#eef8fb] px-2 py-1">{body}</p>
+      <p className="whitespace-pre-line rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] px-2 py-1">{body}</p>
       <p className="text-[11px] text-[var(--text-muted)]">From: {sig ? sig.slice(1) : "you"}</p>
       {all.filter((p) => !p.userId).map((p) => <p className="rounded-md bg-amber-50 px-2 py-1 font-semibold text-amber-800" key={p.label}>{p.label} isn&apos;t linked to a login, so they won&apos;t get a notification. It still shows in Messages.</p>)}
       {error && <p className="rounded-md bg-red-50 px-2 py-1 font-semibold text-red-800">{error}</p>}
@@ -3192,7 +3675,7 @@ function TodoRows({ rows }: { rows: NonNullable<ChatMessage["todoRows"]> }) {
     <ul className="mt-0.5 grid gap-0.5">
       {rows.map((r) => (
         <li
-          className="cursor-pointer rounded-md px-1 leading-snug hover:bg-[rgba(13,121,191,0.08)]"
+          className="cursor-pointer rounded-md px-1 leading-snug hover:bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)]"
           key={r.id}
           onClick={() => router.push(r.href)}
           onKeyDown={(e) => { if (e.key === "Enter") router.push(r.href); }}

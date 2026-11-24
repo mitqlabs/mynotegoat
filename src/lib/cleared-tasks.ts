@@ -1,7 +1,7 @@
 /**
  * "Clear task" (ignore) — distinct from Done. A cleared Case Flow item (e.g. a
  * Lien task that stays "needed") or To-Do stops showing in Case Flow, the
- * dashboard counts, Morning Rundown and /view todo, and is not regenerated
+ * dashboard counts and /view todo, and is not regenerated
  * for that case. Nothing is deleted: each clear is a record with who/when,
  * and "Show cleared" can restore it (restore = cleared:false, newer stamp).
  *

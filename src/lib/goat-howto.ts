@@ -21,7 +21,7 @@ export interface HowToEntry {
 
 /** Labels verified in: patients/page.tsx ("New Patient"), appointments/page.tsx
  *  ("New Appointment", "New patient"), contacts/page.tsx ("Add Contact"),
- *  patient-case-file.tsx ("+ To Do", "Open Encounters For This Patient"),
+ *  patient-case-file.tsx ("+ To Do", "Open Encounters"),
  *  plan-access.ts (sidebar names). Update this list when a label changes. */
 export const APP_HOWTO: HowToEntry[] = [
   {
@@ -46,13 +46,13 @@ export const APP_HOWTO: HowToEntry[] = [
   {
     id: "todo",
     aliases: ["add todo", "add to do", "add task", "new task", "new todo", "create task", "add reminder for patient"],
-    steps: "Open the patient's file and click + To Do (next to Open Encounters For This Patient).",
+    steps: "Open the patient's file and click + To Do (next to Open Encounters).",
     link: { label: "Open Patient List", href: "/patients" },
   },
   {
     id: "encounters",
     aliases: ["open encounter", "find encounter", "write note", "open note", "soap note", "encounters", "notes page"],
-    steps: "Open Encounters in the sidebar. From a patient's file, click Open Encounters For This Patient.",
+    steps: "Open Encounters in the sidebar. From a patient's file, click Open Encounters.",
     link: { label: "Open Encounters", href: "/encounters" },
   },
 ];
@@ -60,7 +60,7 @@ export const APP_HOWTO: HowToEntry[] = [
 /** Sidebar pages (names from plan-access.ts). */
 const PAGES: Array<{ label: string; href: string; words: string[] }> = [
   { label: "Patient List", href: "/patients", words: ["patient list", "patients page"] },
-  { label: "Dashboard", href: "/dashboard", words: ["dashboard"] },
+  { label: "Statistics", href: "/dashboard", words: ["dashboard", "statistics"] },
   { label: "Contacts", href: "/contacts", words: ["contacts"] },
   { label: "Schedule", href: "/appointments", words: ["schedule", "calendar"] },
   { label: "Encounters", href: "/encounters", words: ["encounters"] },

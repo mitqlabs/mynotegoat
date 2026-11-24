@@ -8,6 +8,8 @@ import { useMemo, useState } from "react";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useMarketing } from "@/hooks/use-marketing";
 import { useMarketingSettings } from "@/hooks/use-marketing-settings";
+import { useMarketingReps } from "@/hooks/use-marketing-reps";
+import { defaultRepName, repChoices } from "@/lib/marketing-reps";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
 import { resolveCaseBucket } from "@/lib/marketing-settings";
 import {
@@ -18,6 +20,7 @@ import {
 import { UsDateInput, usDateToIso } from "@/components/us-date-input";
 import { patients } from "@/lib/mock-data";
 import type { ContactRecord } from "@/lib/mock-data";
+import { appConfirm } from "@/components/app-dialog";
 
 function getTodayUsDate(): string {
   const now = new Date();
@@ -380,7 +383,7 @@ export default function MarketingPage() {
                     </button>
                   )}
                   <button
-                    className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-xs font-semibold text-white transition-all active:scale-[0.97]"
+                    className="btn btn-primary btn-sm"
                     onClick={() => {
                       setEditing(null);
                       setLoggingId(isLogging ? null : row.contact.id);
@@ -454,9 +457,7 @@ export default function MarketingPage() {
                           onClick={() => {
                             void (async () => {
                               if (
-                                !window.confirm(
-                                  `Delete this activity — ${a.types.join(", ")} on ${a.date}? This cannot be undone.`,
-                                )
+                                !(await appConfirm(`Delete this activity — ${a.types.join(", ")} on ${a.date}? This cannot be undone.`))
                               ) {
                                 return;
                               }
@@ -586,6 +587,8 @@ function SummaryTile({
   );
 }
 
+const SAVED_TYPES = "__saved_types__";
+
 function LogActivityForm({
   visitTypes,
   initial,
@@ -600,16 +603,25 @@ function LogActivityForm({
   onCancel: () => void;
 }) {
   const [date, setDate] = useState(initial?.date ?? getTodayUsDate());
-  const [types, setTypes] = useState<string[]>(
-    initial?.types ?? (visitTypes[0] ? [visitTypes[0]] : []),
-  );
-  const toggleType = (t: string) =>
-    setTypes((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
-  const [repName, setRepName] = useState(initial?.repName ?? "");
+  // New entries start with nothing picked (the person must choose); an entry
+  // being edited keeps the types it was saved with.
+  const [types, setTypes] = useState<string[]>(initial?.types ?? []);
+  // One dropdown. An older entry saved with several types keeps them (shown as
+  // "... (as saved)") until a different type is picked.
+  const savedMulti = initial && initial.types.length > 1 ? initial.types : null;
+  const typeValue = types.length > 1 ? SAVED_TYPES : (types[0] ?? "");
+  const typeChoices =
+    types.length === 1 && !visitTypes.some((t) => t.toLowerCase() === types[0].toLowerCase())
+      ? [...visitTypes, types[0]]
+      : visitTypes;
+  const { reps } = useMarketingReps();
+  // New entries start on Dr. Mike; an entry being edited keeps what was saved
+  // (even blank, or an old typed name that isn't in the list any more).
+  const [repName, setRepName] = useState(initial ? (initial.repName ?? "") : defaultRepName(reps));
   const [notes, setNotes] = useState(initial?.notes ?? "");
 
   return (
-    <div className="mt-3 grid gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 sm:grid-cols-2">
+    <div className="mt-3 grid gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 sm:grid-cols-3">
       <label className="grid gap-1">
         <span className="text-xs font-semibold text-[var(--text-muted)]">Date</span>
         <UsDateInput
@@ -618,41 +630,40 @@ function LogActivityForm({
           value={date}
         />
       </label>
-      <div className="grid gap-1 sm:col-span-2">
-        <span className="text-xs font-semibold text-[var(--text-muted)]">
-          Type of Contact <span className="font-normal">(pick one or more)</span>
-        </span>
-        <div className="flex flex-wrap gap-1.5">
-          {visitTypes.map((t) => {
-            const on = types.includes(t);
-            return (
-              <button
-                key={t}
-                className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                  on
-                    ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.10)] text-[var(--brand-primary)]"
-                    : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
-                }`}
-                onClick={() => toggleType(t)}
-                type="button"
-              >
-                {on ? "✓ " : ""}
-                {emojiFor(t)} {t}
-              </button>
-            );
-          })}
-        </div>
-      </div>
       <label className="grid gap-1">
         <span className="text-xs font-semibold text-[var(--text-muted)]">Our Rep (Optional)</span>
-        <input
+        <select
           className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
           onChange={(e) => setRepName(e.target.value)}
-          placeholder="e.g. Dr. Rivera"
           value={repName}
-        />
+        >
+          <option value="">— None —</option>
+          {repChoices(reps, repName).map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
       </label>
       <label className="grid gap-1">
+        <span className="text-xs font-semibold text-[var(--text-muted)]">Type of Contact</span>
+        <select
+          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+          onChange={(e) =>
+            setTypes(e.target.value === SAVED_TYPES ? (initial?.types ?? []) : e.target.value ? [e.target.value] : [])
+          }
+          value={typeValue}
+        >
+          <option value="">Select type</option>
+          {savedMulti && <option value={SAVED_TYPES}>{savedMulti.join(", ")} (as saved)</option>}
+          {typeChoices.map((t) => (
+            <option key={t} value={t}>
+              {emojiFor(t)} {t}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="grid gap-1 sm:col-span-3">
         <span className="text-xs font-semibold text-[var(--text-muted)]">Notes (optional)</span>
         <input
           className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
@@ -661,9 +672,9 @@ function LogActivityForm({
           value={notes}
         />
       </label>
-      <div className="flex items-center gap-2 sm:col-span-2">
+      <div className="flex items-center gap-2 sm:col-span-3">
         <button
-          className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
+          className="btn btn-primary disabled:opacity-40"
           disabled={!date.trim() || types.length === 0}
           onClick={() => onSave({ date, types, repName, notes })}
           type="button"

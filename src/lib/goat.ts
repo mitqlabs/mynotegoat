@@ -17,7 +17,7 @@ import { isStructurable, parseSpineFindings, spineBlocks } from "@/lib/spine-fin
 import { factsForFiles } from "@/lib/goat-facts-store";
 import { imagingFactsAnswer, specialistVisitFactsAnswer, splitQuestion } from "@/lib/goat-facts-answer";
 import { findReferralFacts, referralSentence, SPECIALTIES } from "@/lib/goat-referrals";
-import { answerFromFiles, personNamedIn, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
+import { answerFromFiles, findingsCardFromFile, pendingFilesNote, personNamedIn, reportFromDoctor, recommendationsFromFiles, romFromFiles, type GoatFile, type GoatFilesResult, type GoatPerson } from "@/lib/goat-docs";
 import { groupsInQuestion, makeMatcher, type GoatTermGroup, type TermMatcher } from "@/lib/goat-terms";
 import type { DischargeInfo } from "@/lib/discharge-date";
 import { appointmentListAnswer, decompRegions, isDecompression, type DecompRegion } from "@/lib/goat-appointments";
@@ -126,6 +126,8 @@ export interface GoatContext {
   review: string;
   isCashPatient: boolean;
   doi: string;
+  /** Extra dates of injury on this same record (a second accident during care), mm/dd/yyyy. */
+  additionalDois?: string[];
   initialExam: string;
   priorCare: string;
   xrayFindings: string;
@@ -484,6 +486,10 @@ function datesAnswer(ctx: GoatContext, today: number): GoatAnswer {
   const ie = dayStamp(ctx.initialExam);
   const lines = [
     `Date of injury: ${doi === null ? "not entered" : `${fmtDay(doi)} (${relative(doi, today)})`}.`,
+    ...(ctx.additionalDois ?? []).flatMap((d) => {
+      const day = dayStamp(d);
+      return day === null ? [] : [`Additional date of injury (same case): ${fmtDay(day)} (${relative(day, today)}).`];
+    }),
     `Initial exam: ${ie === null ? "not entered" : `${fmtDay(ie)}${doi !== null ? ` — ${ie - doi} days after the injury` : ""}`}.`,
   ];
   if (ctx.details) {
@@ -663,10 +669,23 @@ function specialistAnswer(ctx: GoatContext, question = ""): GoatAnswer {
   const groups: GoatAnswerGroup[] = [];
   const flags: string[] = [];
   for (const s of ctx.specialists) {
-    const status = imagingStatus(s, s.completedDate);
+    let status = imagingStatus(s, s.completedDate);
+    // Box still says "referral sent" / "scheduled", but their report is in the files.
+    const pendingOnly = !s.refused && !dayStamp(s.completedDate) && !dayStamp(s.reportReceivedDate) && !dayStamp(s.reportReviewedDate);
+    if (pendingOnly && s.name && ctx.files?.length) {
+      const sentDay = dayStamp(s.sentDate);
+      const sent = sentDay === null ? "" : new Date(sentDay * 86_400_000).toISOString().replace(/^(\d{4})-(\d{2})-(\d{2}).*$/, "$2/$3/$1");
+      const rep = reportFromDoctor(ctx.files, s.name, sent);
+      if (rep) {
+        status = {
+          text: `seen — report ${rep.dateLabel} ${rep.date} (${rep.name})`,
+          flag: `${s.name}'s report is in Patient Files, but the referral isn't marked completed. You can mark it completed in the Specialist box.`,
+        };
+      }
+    }
     if (status.flag) flags.push(status.flag);
     groups.push({
-      lead: `${s.name || "Specialist"}: ${status.text.replace("done", "seen")}.`,
+      lead: `${s.name || "Specialist"}: ${status.text.replace(/^done/, "seen")}.`,
       blocks: s.recommendations.trim() ? recommendationBlocks(s.recommendations) : [],
     });
   }
@@ -1070,10 +1089,25 @@ function searchPage(ctx: GoatContext, terms: TermMatcher[]): GoatHit[] {
 
 // ---------------------------------------------------------------------------
 
+function attachPendingFiles(result: GoatResult, files: GoatFile[] | null | undefined): GoatResult {
+  const note = pendingFilesNote(files);
+  if (!note) return result;
+  const already = [...result.answers.flatMap((a) => a.lines), ...(result.files?.notes ?? [])].some((line) => /isn'?t read yet|aren'?t read yet/i.test(line));
+  if (already) return result;
+  if (!result.answers.length) {
+    return {
+      ...result,
+      answers: [{ title: "Patient files", lines: [note], source: "Patient Files", section: "info" }],
+    };
+  }
+  const [first, ...rest] = result.answers;
+  return { ...result, answers: [{ ...first, lines: [...first.lines, note] }, ...rest] };
+}
+
 export function askGoat(ctx: GoatContext, question: string): GoatResult {
   // Two questions in one ("when was the xray and when is the next visit"): answer each, in order.
   const parts = findReferralFacts(ctx, question) ? [question] : splitQuestion(question);
-  if (parts.length < 2) return askGoatOne(ctx, question);
+  if (parts.length < 2) return attachPendingFiles(askGoatOne(ctx, question), ctx.files);
   const results = parts.map((p) => askGoatOne(ctx, p));
   const answers: GoatAnswer[] = [];
   results.forEach((r, i) => {
@@ -1081,7 +1115,7 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     for (const a of r.answers) if (!answers.some((x) => x.title === a.title)) answers.push(a);
   });
   const withFiles = results.find((r) => r.files && r.files.matches.length) ?? results[0];
-  return {
+  return attachPendingFiles({
     answers,
     hits: results.flatMap((r) => r.hits).slice(0, 5),
     terms: [...new Set(results.flatMap((r) => r.terms))],
@@ -1089,7 +1123,7 @@ export function askGoat(ctx: GoatContext, question: string): GoatResult {
     filesFirst: false,
     highlight: [...new Set(results.flatMap((r) => r.highlight))],
     sourcesCollapsed: true,
-  };
+  }, ctx.files);
 }
 
 function askGoatOne(ctx: GoatContext, question: string): GoatResult {
@@ -1292,12 +1326,34 @@ function askGoatOne(ctx: GoatContext, question: string): GoatResult {
   const matchers = [...searchGroups.map((g) => makeMatcher(g.terms)), ...leftovers.map((w) => makeMatcher([w]))];
   const terms = [...new Set([...searchGroups.flatMap((g) => g.terms), ...leftovers])];
 
-  const files =
+  let files =
     ctx.files && ctx.files.length
       ? answerFromFiles(ctx.files, { question, words, asked, allGroups: groups, people, region: rq })
       : null;
   // Recommendations were found, so a word-search "X doesn't mention recs" would be wrong.
   if (files && recsShown) files.notes = files.notes.filter((n) => !/\b(?:doesn't|don't) mention\b/.test(n));
+  // "pm findings": the report as a Findings card (recommendations, ROM, exam findings, diagnoses),
+  // not the raw line dump. A ROM or recommendations question already has its own card above.
+  if (files?.clinical && !asksRom && !asksRecs && files.matches.length && ctx.files) {
+    const top = files.matches[0];
+    const topFile = ctx.files.find((f) => f.id === top.fileId);
+    const card = topFile ? findingsCardFromFile(topFile) : null;
+    if (card && card.blocks.length) {
+      const others = files.matches.slice(1).map((m) => m.name);
+      const note = [...files.notes, others.length ? `Also matched: ${others.join(", ")}.` : ""].filter(Boolean).join(" ");
+      answers.unshift({
+        title: "Findings",
+        lines: [],
+        groups: [{ lead: `${top.who.length ? `${top.who.join(" / ")} — ` : ""}${top.name}`, blocks: card.blocks.map((b) => ({ ...b, plain: true })), note: note || undefined }],
+        source: `Patient Files — ${top.name} (${top.dateLabel} ${top.date || "—"})`,
+        section: "specialist",
+        copyText: card.text,
+        fileId: top.fileId,
+      });
+      romShown = true; // structured answer first
+      files = null;
+    }
+  }
   // "Also mentioned": skip what an answer card above already shows in full.
   const shownSections = new Set(answers.filter((a) => a.groups?.length).map((a) => a.section));
   // A region question only wants mentions of that region ("knee MRI" → not a lumbar note about the MRI).

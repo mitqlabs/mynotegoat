@@ -16,6 +16,7 @@ import type { GoatContext, GoatEncounter, GoatImaging, GoatPlan } from "@/lib/go
 import type { GoatPerson } from "@/lib/goat-docs";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
+import { extraDoisFor, isoToLongUs } from "@/lib/additional-dois";
 import type { EncounterNoteRecord } from "@/lib/encounter-notes";
 import type { TreatmentPlan } from "@/lib/treatment-plans";
 import type { PatientDiagnosisEntry } from "@/lib/patient-diagnoses";
@@ -169,6 +170,7 @@ export function goatContextFromRecords(input: {
     review: normalizeReviewStatus(m.review),
     isCashPatient: Boolean(p.isCashPatient),
     doi: usDate(p.dateOfLoss),
+    additionalDois: extraDoisFor(p.dateOfLoss, m.additionalDois).map(isoToLongUs),
     // The date in the Initial Exam box: saved, else the earliest attended New Patient visit.
     initialExam: usDate(resolveInitialExamDate(m.initialExam ?? "", input.appointments, input.encounters).date),
     priorCare: m.priorCare ?? "",

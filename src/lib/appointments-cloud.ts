@@ -7,7 +7,7 @@
 
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getActiveWorkspaceIdSync } from "@/lib/workspace-storage";
-import { reportCloudWriteError } from "@/lib/storage-sync-interceptor";
+import { reportCloudWriteError, reportCloudWriteStart, reportCloudWriteSuccess } from "@/lib/storage-sync-interceptor";
 import {
   resolveValidatedWorkspaceId as resolveValidatedWorkspaceIdShared,
   withLockStealRetry,
@@ -228,6 +228,7 @@ export async function bulkUpsertAppointmentsToTable(
  * silent-error behavior was the same shape as the encounter-notes bug.
  */
 export async function upsertAppointmentToTable(appt: ScheduleAppointmentRecord): Promise<void> {
+  reportCloudWriteStart("appointments upsert");
   try {
     await withLockStealRetry(async () => {
       const workspaceId = await resolveValidatedWorkspaceId(`upsert(${appt.id})`);
@@ -245,6 +246,7 @@ export async function upsertAppointmentToTable(appt: ScheduleAppointmentRecord):
         );
       }
     });
+    reportCloudWriteSuccess("appointments upsert");
   } catch (err) {
     const wrapped =
       err instanceof Error
@@ -256,6 +258,7 @@ export async function upsertAppointmentToTable(appt: ScheduleAppointmentRecord):
 }
 
 export async function deleteAppointmentFromTable(appointmentId: string): Promise<void> {
+  reportCloudWriteStart("appointments delete");
   try {
     await withLockStealRetry(async () => {
       const workspaceId = await resolveValidatedWorkspaceId(`delete(${appointmentId})`);
@@ -274,6 +277,7 @@ export async function deleteAppointmentFromTable(appointmentId: string): Promise
         );
       }
     });
+    reportCloudWriteSuccess("appointments delete");
   } catch (err) {
     const wrapped =
       err instanceof Error

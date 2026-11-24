@@ -28,6 +28,7 @@ import type { TreatmentPackage } from "@/lib/billing-macros";
 import type { PatientPackage } from "@/lib/patient-packages";
 import { sumPackagePayments } from "@/lib/patient-packages";
 import { formatUsDateInput } from "@/components/us-date-input";
+import { appConfirm } from "@/components/app-dialog";
 
 function formatMoney(amount: number): string {
   return `$${amount.toLocaleString(undefined, {
@@ -149,7 +150,7 @@ export function PatientPackagesSection({ patientId }: { patientId: string }) {
             ))}
           </select>
           <button
-            className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-xs font-semibold text-white"
+            className="btn btn-primary btn-sm"
             onClick={handleAssign}
             type="button"
           >
@@ -223,10 +224,8 @@ export function PatientPackagesSection({ patientId }: { patientId: string }) {
                     )}
                     <button
                       className="rounded-md p-1.5 text-[#b43b34] hover:bg-red-50"
-                      onClick={() => {
-                        const ok = window.confirm(
-                          `Remove "${pkg.snapshot.name}" from this patient?\n\nThis does not refund anything automatically — it just deletes the package assignment from the patient's record.`,
-                        );
+                      onClick={async () => {
+                        const ok = (await appConfirm(`Remove "${pkg.snapshot.name}" from this patient?\n\nThis does not refund anything automatically — it just deletes the package assignment from the patient's record.`));
                         if (!ok) return;
                         removePackage(patientId, pkg.id);
                       }}
@@ -346,7 +345,7 @@ export function PatientPackagesSection({ patientId }: { patientId: string }) {
                           value={draft.date}
                         />
                         <button
-                          className="rounded-md bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                          className="btn btn-primary btn-sm disabled:cursor-not-allowed disabled:opacity-40"
                           disabled={!(Number(draft.amount) > 0)}
                           onClick={() => {
                             addPayment(patientId, pkg.id, {

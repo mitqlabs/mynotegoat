@@ -74,6 +74,8 @@ export const narrativeReportAutoFields: NarrativeReportAutoField[] = [
   { token: "HE_SHE", label: "He/She" },
   { token: "HIS_HER", label: "His/Her" },
   { token: "DATE_OF_INJURY", label: "Date Of Injury" },
+  { token: "ADDITIONAL_DATES_OF_INJURY", label: "Additional Dates Of Injury" },
+  { token: "ALL_DATES_OF_INJURY", label: "All Dates Of Injury" },
   { token: "INITIAL_EXAM", label: "Initial Exam" },
   { token: "CASE_NUMBER", label: "Case #" },
   { token: "CASE_STATUS", label: "Case Status" },

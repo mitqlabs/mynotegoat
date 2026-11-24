@@ -7,10 +7,9 @@ import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
-import {
-  findClosedKeyDateForDate,
-  formatUsDateFromIso,
-} from "@/lib/key-dates";
+import { appAlert } from "@/components/app-dialog";
+import { closedDateHit, closedDateNote, closedDateNotice } from "@/lib/closed-date-booking";
+import { formatUsDateFromIso } from "@/lib/key-dates";
 import {
   createAppointmentId,
   formatTimeLabel,
@@ -164,18 +163,11 @@ export function RescheduleAppointmentModal({
       return;
     }
 
-    // Block CLOSED key dates
-    const closedEntry = findClosedKeyDateForDate(keyDates, newDate);
-    if (closedEntry) {
-      const reasonSuffix = closedEntry.reason ? ` (${closedEntry.reason})` : "";
-      setError(
-        `Cannot reschedule onto CLOSED key date ${formatUsDateFromIso(newDate)}${reasonSuffix}.`,
-      );
-      return;
-    }
+    const landedOnClosed = closedDateHit(keyDates, newDate);
 
-    // Office-hours enforcement
+    // Office-hours enforcement. A closed day is still booked (as Canceled).
     if (
+      !landedOnClosed &&
       scheduleSettings.enforceOfficeHours &&
       !isAppointmentWithinOfficeHours(scheduleSettings, newDate, newTime, newDurationMin) &&
       (!scheduleSettings.allowOverride || !overrideOfficeHours)
@@ -198,7 +190,7 @@ export function RescheduleAppointmentModal({
         entry.date === newDate &&
         entry.startTime === newTime,
     ).length;
-    if (!overrideActive && occupants >= slotCapacity) {
+    if (!landedOnClosed && !overrideActive && occupants >= slotCapacity) {
       setError(
         `Time slot ${formatTimeLabel(newTime)} on ${formatUsDateFromIso(newDate)} is full (max ${slotCapacity}). Tick Override Office Hours to add anyway.`,
       );
@@ -219,8 +211,8 @@ export function RescheduleAppointmentModal({
       startTime: newTime,
       durationMin: newDurationMin,
       room: newRoom.trim(),
-      note: newNote.trim(),
-      status: "Scheduled",
+      note: landedOnClosed ? closedDateNote(landedOnClosed.reason, newNote.trim()) : newNote.trim(),
+      status: landedOnClosed ? "Canceled" : "Scheduled",
       overrideOfficeHours: Boolean(overrideOfficeHours),
     };
     addAppointments([newRecord]);
@@ -238,21 +230,36 @@ export function RescheduleAppointmentModal({
         (current) => {
           const shiftedDate = addDaysIso(current.date, dayDelta);
           const shiftedTime = addMinutesToTime(current.startTime, timeDelta);
+          const shiftedClosed = closedDateHit(keyDates, shiftedDate);
           return {
             ...current,
             date: shiftedDate,
             startTime: shiftedTime,
+            ...(shiftedClosed
+              ? { status: "Canceled" as const, note: closedDateNote(shiftedClosed.reason, current.note) }
+              : {}),
           };
         },
       );
     }
 
     onRescheduled?.(appointment, newRecord);
+    const shiftedHits =
+      applyScope === "future"
+        ? futureSiblings.flatMap((entry) => {
+            const hit = closedDateHit(keyDates, addDaysIso(entry.date, daysBetweenIso(appointment.date, newDate)));
+            return hit ? [hit] : [];
+          })
+        : [];
+    const closedHits = [...(landedOnClosed ? [landedOnClosed] : []), ...shiftedHits];
+    if (closedHits.length > 0) {
+      void appAlert(closedDateNotice(closedHits), { title: "Scheduled on a closed day" });
+    }
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+    <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
       <ScrollLock />
       <section className="w-full max-w-xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
         <div className="flex items-start justify-between gap-3">
@@ -267,7 +274,7 @@ export function RescheduleAppointmentModal({
             </p>
           </div>
           <button
-            className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+            className="btn btn-secondary btn-sm"
             onClick={onClose}
             type="button"
           >
@@ -397,14 +404,14 @@ export function RescheduleAppointmentModal({
 
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+            className="btn btn-secondary"
             onClick={onClose}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+            className="btn btn-primary"
             onClick={handleSubmit}
             type="button"
           >

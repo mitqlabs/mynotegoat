@@ -20,6 +20,8 @@ export interface CaseStatusSettings {
    *  that the patient page renders as a dropdown. Used so the office
    *  can later filter "patients I haven't asked for review yet". */
   reviewOptions: string[];
+  /** Office-wide switch for the optional Compliance column/field (off by default). */
+  complianceEnabled: boolean;
 }
 
 const STORAGE_KEY = "casemate.case-statuses.v1";
@@ -147,6 +149,7 @@ export function getDefaultCaseStatusSettings(): CaseStatusSettings {
     lienLabel: defaultLienLabel,
     lienOptions: getDefaultLienOptions(),
     reviewOptions: getDefaultReviewOptions(),
+    complianceEnabled: false,
   };
 }
 
@@ -216,6 +219,7 @@ export function normalizeCaseStatusSettings(value: unknown): CaseStatusSettings 
     lienOptions?: unknown;
     lien?: unknown;
     reviewOptions?: unknown;
+    complianceEnabled?: unknown;
   };
 
   const nestedLien = payload.lien && typeof payload.lien === "object"
@@ -232,6 +236,7 @@ export function normalizeCaseStatusSettings(value: unknown): CaseStatusSettings 
     lienLabel: normalizeLienLabel(payload.lienLabel ?? nestedLien?.label),
     lienOptions: normalizeLienOptions(payload.lienOptions ?? nestedLien?.options),
     reviewOptions: normalizeReviewOptions(payload.reviewOptions),
+    complianceEnabled: payload.complianceEnabled === true,
   };
 }
 

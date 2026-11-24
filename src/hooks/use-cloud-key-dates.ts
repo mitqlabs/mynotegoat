@@ -41,6 +41,8 @@ import { buildWorkspaceIdForUser } from "@/lib/cloud-state";
 import { notifyChange } from "@/lib/local-sync";
 import {
   createKeyDateId,
+  findClosedKeyDateForDate,
+  normalizeKeyDateTime,
   normalizeKeyDates,
   type KeyDateOfficeStatus,
   type KeyDateRecord,
@@ -54,7 +56,16 @@ type KeyDateDraft = {
   endDate?: string;
   officeStatus: KeyDateOfficeStatus;
   reason: string;
+  openStart?: string;
+  openEnd?: string;
 };
+
+/** Special hours from a draft ("" / invalid → omitted = whole day). */
+function draftHours(draft: KeyDateDraft): Pick<KeyDateRecord, "openStart" | "openEnd"> {
+  const openStart = normalizeKeyDateTime(draft.openStart);
+  const openEnd = normalizeKeyDateTime(draft.openEnd);
+  return { ...(openStart ? { openStart } : {}), ...(openEnd ? { openEnd } : {}) };
+}
 
 type AddKeyDateResult =
   | { added: true; keyDate: KeyDateRecord }
@@ -78,7 +89,7 @@ async function getActiveWorkspaceId(): Promise<string | null> {
   // `${userId}:${officeId}` (e.g. "…:main-office"). Returning the BARE
   // user id read/wrote a DIFFERENT workspace_kv row, so every key date
   // saved through the legacy (correct-id) path was invisible here.
-  return buildWorkspaceIdForUser(userId);
+  return buildWorkspaceIdForUser(userId, data.user);
 }
 
 async function fetchKeyDatesFromCloud(): Promise<KeyDateRecord[]> {
@@ -164,6 +175,17 @@ export function addClosedKeyDatesToCloud(entries: { date: string; reason: string
   return addKeyDatesToCloud(entries.map((entry) => ({ ...entry, officeStatus: "Closed" as const })));
 }
 
+/**
+ * One full closed day, the same row the Key Dates page writes.
+ * Already closed (a full-day Closed row, not a partial-hours day) → no second row.
+ */
+export async function addClosedDayIfMissing(date: string, reason: string): Promise<"added" | "already"> {
+  const current = await fetchKeyDatesFromCloud();
+  if (findClosedKeyDateForDate(current, date)) return "already";
+  await addClosedKeyDatesToCloud([{ date, reason }]);
+  return "added";
+}
+
 export const cloudKeyDatesQueryKey = QUERY_KEY;
 
 export function useCloudKeyDates() {
@@ -235,7 +257,11 @@ export function useCloudKeyDates() {
         endDate,
         officeStatus: draft.officeStatus,
         reason,
+        ...draftHours(draft),
       };
+      if (newRecord.openStart && newRecord.openEnd && newRecord.openEnd <= newRecord.openStart) {
+        return { added: false, reason: "The closing time must be after the opening time." };
+      }
       const next = [...current, newRecord];
       await writeKeyDatesToCloud(next);
       logActivity({ category: "keyDates", action: "keydate.added", summary: `Added key date ${keyDateLabel(newRecord)}` });
@@ -267,10 +293,17 @@ export function useCloudKeyDates() {
       let updated: KeyDateRecord | null = null;
       const next = current.map((entry) => {
         if (entry.id !== id) return entry;
-        updated = { ...entry, startDate, endDate, officeStatus: draft.officeStatus, reason };
+        const { openStart: _s, openEnd: _e, ...rest } = entry;
+        void _s;
+        void _e;
+        updated = { ...rest, startDate, endDate, officeStatus: draft.officeStatus, reason, ...draftHours(draft) };
         return updated;
       });
       if (!updated) return { updated: false, reason: "Key date not found." };
+      const u = updated as KeyDateRecord;
+      if (u.openStart && u.openEnd && u.openEnd <= u.openStart) {
+        return { updated: false, reason: "The closing time must be after the opening time." };
+      }
       await writeKeyDatesToCloud(next);
       if (before) {
         logActivity({

@@ -2,7 +2,8 @@
 
 import { NumberInput } from "@/components/number-input";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { mayShowSetupWizard, probeCloudOffice, type CloudOfficeProbe } from "@/lib/onboarding-gate";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useMacroTemplates } from "@/hooks/use-macro-templates";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
@@ -33,6 +34,10 @@ export function OnboardingModal() {
 
   const [step, setStep] = useState<StepId>(1);
   const [dismissed, setDismissed] = useState(false);
+  // Cloud check: never show the wizard to an office that already has data.
+  // null = not checked yet (wizard stays hidden until the cloud answers).
+  const [probe, setProbe] = useState<CloudOfficeProbe | null>(null);
+  const localCompleted = Boolean(onboardingState.completedAt);
 
   const shouldShow = useMemo(() => {
     if (onboardingState.completedAt) return false;
@@ -52,7 +57,24 @@ export function OnboardingModal() {
     billingMacros.treatments.length,
   ]);
 
-  if (!shouldShow || dismissed) return null;
+  useEffect(() => {
+    if (!shouldShow || localCompleted || probe) return;
+    let cancelled = false;
+    // Wait for cloud boot to settle, then ask the cloud (read-only).
+    const t = window.setTimeout(() => {
+      void probeCloudOffice().then((p) => {
+        if (!cancelled) setProbe(p ?? { ok: false, patients: 0, appointments: 0, kvKeys: [] });
+      });
+    }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [shouldShow, localCompleted, probe]);
+
+  const cloudAllows = mayShowSetupWizard({ isTeamMember: false, localCompleted, probe });
+
+  if (!shouldShow || dismissed || !cloudAllows) return null;
 
   const finish = () => {
     markComplete();
@@ -119,7 +141,7 @@ export function OnboardingModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/55 px-4 py-8">
+    <div className="modal-overlay fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/55 px-4 py-8">
       <ScrollLock />
       <div className="panel-card w-full max-w-3xl p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -133,7 +155,7 @@ export function OnboardingModal() {
           </div>
           {step > 1 && step <= 5 && (
             <button
-              className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold"
+              className="btn btn-secondary btn-sm"
               onClick={() => setStep((step - 1) as StepId)}
               type="button"
             >
@@ -172,7 +194,7 @@ function Welcome({ onContinue }: { onContinue: () => void }) {
       </p>
       <div className="mt-6 flex justify-end">
         <button
-          className="rounded-xl bg-[var(--brand-primary)] px-5 py-2.5 font-semibold text-white"
+          className="btn btn-primary"
           onClick={onContinue}
           type="button"
         >
@@ -248,7 +270,7 @@ function OfficeIdentity({
       </div>
       <div className="mt-5 flex justify-end">
         <button
-          className="rounded-xl bg-[var(--brand-primary)] px-5 py-2.5 font-semibold text-white disabled:opacity-50"
+          className="btn btn-primary disabled:opacity-50"
           disabled={!canContinue}
           onClick={() => onContinue(form)}
           type="button"
@@ -317,7 +339,7 @@ function AppointmentTypesStep({
           value={color}
         />
         <button
-          className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white"
+          className="btn btn-primary btn-sm"
           onClick={submit}
           type="button"
         >
@@ -350,7 +372,7 @@ function AppointmentTypesStep({
       </p>
       <div className="mt-5 flex justify-end">
         <button
-          className="rounded-xl bg-[var(--brand-primary)] px-5 py-2.5 font-semibold text-white disabled:opacity-50"
+          className="btn btn-primary disabled:opacity-50"
           disabled={existingCount === 0}
           onClick={onContinue}
           type="button"
@@ -402,7 +424,7 @@ function MacrosAndChargesStep({
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white"
+            className="btn btn-primary btn-sm"
             onClick={onImportStarterPack}
             type="button"
           >
@@ -452,7 +474,7 @@ function MacrosAndChargesStep({
             value={cptPrice || ""}
           />
           <button
-            className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white"
+            className="btn btn-primary btn-sm"
             onClick={() => {
               if (!cptCode.trim() || !cptName.trim() || cptPrice <= 0) return;
               onAddCharge(cptCode.trim(), cptName.trim(), cptPrice);
@@ -477,7 +499,7 @@ function MacrosAndChargesStep({
             : "Need at least one macro per S/O/A/P section and one CPT charge."}
         </p>
         <button
-          className="rounded-xl bg-[var(--brand-primary)] px-5 py-2.5 font-semibold text-white disabled:opacity-50"
+          className="btn btn-primary disabled:opacity-50"
           disabled={!canContinue}
           onClick={onContinue}
           type="button"
@@ -543,14 +565,14 @@ function TemplatesStep({ onContinue }: { onContinue: () => void }) {
       </ul>
       <div className="flex items-center justify-between gap-3">
         <button
-          className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold"
+          className="btn btn-secondary"
           onClick={onContinue}
           type="button"
         >
           Skip for now →
         </button>
         <button
-          className="rounded-xl bg-[var(--brand-primary)] px-5 py-2.5 font-semibold text-white"
+          className="btn btn-primary"
           onClick={onContinue}
           type="button"
         >

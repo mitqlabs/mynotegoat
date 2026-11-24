@@ -1,4 +1,13 @@
 "use client";
+import { appendInlineToLastBlock } from "@/lib/macro-inline";
+import {
+  collapseMirroredHtml,
+  MACRO_RUN_PRUNE_GRACE_MS,
+  macroRunIdInHtml,
+  markMacroRunSeen,
+  reconcileMacroRuns,
+  type MacroRunPresence,
+} from "@/lib/macro-run-list";
 import { getSessionUser } from "@/lib/supabase-browser";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,6 +39,13 @@ import {
   type MacroTemplate,
 } from "@/lib/macro-templates";
 import { notifyChange, onLocalChange } from "@/lib/local-sync";
+import { findNoteForTypeChange } from "@/lib/encounter-link";
+import {
+  isEncounterDeleted,
+  markEncounterDeleted,
+  mergeNewerById,
+  unmarkEncounterDeleted,
+} from "@/lib/encounter-merge";
 import { logActivity } from "@/lib/activity-log";
 
 const SYNC_KEY = "casemate.encounter-notes.v1";
@@ -59,18 +75,15 @@ function nowIso() {
 }
 
 /**
- * MacroRun prune grace — see the long comment inside setSoapSection.
- * Keyed by "${encounterId}:${runId}" → timestamp (ms) when the run's
- * data-macro-run-id span first went missing from the HTML.
- *
- * Module-level on purpose: survives individual setSoapSection
- * invocations, resets on full reload, and doesn't require plumbing
- * extra state through React. Kept small by deleting entries whenever
- * the id reappears or when the grace expires and the run is actually
- * pruned.
+ * Which macro-run ids have actually appeared in note HTML, and when a
+ * previously-seen id went missing (cut/paste grace). Module-level so it
+ * survives individual setSoapSection calls. A run that was never in the
+ * HTML is not given grace — see src/lib/macro-run-list.ts.
  */
-const macroRunPruneGrace = new Map<string, number>();
-const MACRO_RUN_PRUNE_GRACE_MS = 5000;
+const macroRunPresence: MacroRunPresence = {
+  seen: new Set<string>(),
+  missingSince: new Map<string, number>(),
+};
 
 /**
  * Per-encounter recheck timer. setSoapSection's grace logic only
@@ -125,6 +138,9 @@ function replacePromptSpan(
   return html.replace(pattern, renderMacroPromptSpan(runId, promptId, newValue));
 }
 
+// Pure merge helpers live in lib/encounter-merge (testable without React).
+export { mergeNewerById };
+
 export function useEncounterNotes() {
   const [encounters, setEncounters] = useState<EncounterNoteRecord[]>(() =>
     loadEncounterNoteRecords(),
@@ -151,6 +167,8 @@ export function useEncounterNotes() {
         const byId = new Map(local.map((n) => [n.id, n]));
         let changed = false;
         for (const c of cloud) {
+          // Deleted on this page while the download was in flight: don't bring it back.
+          if (isEncounterDeleted(c.id)) continue;
           const existing = byId.get(c.id);
           if (!existing) {
             byId.set(c.id, c);
@@ -184,7 +202,12 @@ export function useEncounterNotes() {
         selfWriteCountRef.current--;
         return;
       }
-      setEncounters(loadEncounterNoteRecords());
+      // Merge instead of replace: another hook instance may have written
+      // an older snapshot that doesn't include edits this instance hasn't
+      // flushed yet. Replacing wholesale wiped in-progress typing until
+      // our own debounced commit put it back ("text vanishes, reappears").
+      const stored = loadEncounterNoteRecords();
+      setEncounters((local) => mergeNewerById(local, stored));
     });
   }, []);
 
@@ -239,6 +262,7 @@ export function useEncounterNotes() {
             if (payload.eventType === "DELETE") {
               const oldId = (payload.old as { id?: string } | undefined)?.id;
               if (!oldId) return;
+              markEncounterDeleted(oldId);
               setEncounters((local) => {
                 const idx = local.findIndex((n) => n.id === oldId);
                 if (idx < 0) return local;
@@ -494,6 +518,55 @@ export function useEncounterNotes() {
   );
 
   /**
+   * An appointment's type was just changed: make its note follow, so the
+   * note never keeps the old type ("Office Visit" note under a "New Patient"
+   * appointment). Finds the note by saved appointmentId, else same patient +
+   * date + the OLD type, never guessing between several. A note that isn't in
+   * this page's (pruned) list is fetched from the cloud first, then saved
+   * with the new type like any other edit. Returns true if a note was updated.
+   */
+  const syncEncounterTypeForAppointment = useCallback(
+    async (
+      appointment: { id: string; patientId: string; date: string },
+      beforeType: string,
+      afterType: string,
+    ): Promise<boolean> => {
+      const nextType = afterType.trim();
+      if (!nextType || nextType.toLowerCase() === beforeType.trim().toLowerCase()) return false;
+      const inMemory = findNoteForTypeChange(
+        encountersForLogRef.current.filter((n) => n.patientId === appointment.patientId),
+        appointment,
+        beforeType,
+      );
+      if (inMemory) {
+        upsertEncounter(inMemory.id, (current) => ({ ...current, appointmentType: nextType }));
+        return true;
+      }
+      try {
+        const { fetchEncounterNotesForPatient } = await import("@/lib/encounter-notes-cloud");
+        const rows = await fetchEncounterNotesForPatient(appointment.patientId);
+        if (!rows) return false;
+        const found = findNoteForTypeChange(
+          rows.filter((n) => !isEncounterDeleted(n.id)),
+          appointment,
+          beforeType,
+        );
+        if (!found) return false;
+        const stamped = { ...found, appointmentType: nextType, updatedAt: nowIso() };
+        updateRecords((current) =>
+          current.some((e) => e.id === found.id)
+            ? current.map((e) => (e.id === found.id ? { ...e, appointmentType: nextType, updatedAt: stamped.updatedAt } : e))
+            : [...current, stamped],
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [updateRecords, upsertEncounter],
+  );
+
+  /**
    * Apply the macro-prune grace check to a given encounter state for
    * a specific section and the HTML value of that section. Pure-ish
    * helper: returns the next encounter state with runs/charges
@@ -507,43 +580,29 @@ export function useEncounterNotes() {
    */
   const applyMacroPruneCheck = useCallback(
     (current: EncounterNoteRecord, section: EncounterSection, sectionHtml: string) => {
-      const nowMs = Date.now();
-      let anyMissing = false;
-      const nextRuns = current.macroRuns.filter((run) => {
-        if (run.section !== section) return true;
-        const key = `${current.id}:${run.id}`;
-        const present = sectionHtml.includes(`data-macro-run-id="${run.id}"`);
-        if (present) {
-          macroRunPruneGrace.delete(key);
-          return true;
-        }
-        const firstMissingAt = macroRunPruneGrace.get(key);
-        if (firstMissingAt === undefined) {
-          macroRunPruneGrace.set(key, nowMs);
-          anyMissing = true;
-          return true;
-        }
-        if (nowMs - firstMissingAt < MACRO_RUN_PRUNE_GRACE_MS) {
-          anyMissing = true;
-          return true;
-        }
-        macroRunPruneGrace.delete(key);
-        return false;
+      const reconciled = reconcileMacroRuns({
+        runs: current.macroRuns,
+        encounterId: current.id,
+        section,
+        sectionHtml,
+        presence: macroRunPresence,
+        now: Date.now(),
       });
       let nextCharges = current.charges;
-      if (nextRuns.length !== current.macroRuns.length) {
-        const liveRunIds = new Set(nextRuns.map((r) => r.id));
+      if (reconciled.runs.length !== current.macroRuns.length) {
+        const liveRunIds = new Set(reconciled.runs.map((run) => run.id));
         nextCharges = current.charges.filter((charge) =>
           charge.linkedMacroRunId ? liveRunIds.has(charge.linkedMacroRunId) : true,
         );
       }
-      return { nextRuns, nextCharges, anyMissing };
+      return { nextRuns: reconciled.runs, nextCharges, anyMissing: reconciled.anyMissing };
     },
     [],
   );
 
   const setSoapSection = useCallback(
     (encounterId: string, section: EncounterSection, value: string) => {
+      const sectionValue = collapseMirroredHtml(value);
       upsertEncounter(encounterId, (current) => {
         // MacroRun pruning with grace period.
         //
@@ -566,7 +625,7 @@ export function useEncounterNotes() {
         const { nextRuns, nextCharges, anyMissing } = applyMacroPruneCheck(
           current,
           section,
-          value,
+          sectionValue,
         );
 
         // Schedule a delayed recheck when any run is currently inside
@@ -606,7 +665,7 @@ export function useEncounterNotes() {
           ...current,
           soap: {
             ...current.soap,
-            [section]: value,
+            [section]: sectionValue,
           },
           macroRuns: nextRuns,
           charges: nextCharges,
@@ -625,6 +684,13 @@ export function useEncounterNotes() {
       upsertEncounter(encounterId, (current) => {
         const timestamp = nowIso();
         createdId = input.id ?? createEncounterMacroRunId();
+        if (!createdId) return current;
+        if (current.macroRuns.some((run) => run.id === createdId)) return current;
+        // The section HTML is updated in the same turn, before this add.
+        // An extra call whose id never landed in the note must not become a chip.
+        const sectionHtml = current.soap[input.section] ?? "";
+        if (!macroRunIdInHtml(sectionHtml, createdId)) return current;
+        markMacroRunSeen(macroRunPresence, current.id, createdId);
         return {
           ...current,
           macroRuns: [
@@ -683,7 +749,7 @@ export function useEncounterNotes() {
   );
 
   const appendSoapSection = useCallback(
-    (encounterId: string, section: EncounterSection, snippet: string) => {
+    (encounterId: string, section: EncounterSection, snippet: string, options?: { inlineWithPrevious?: boolean }) => {
       const trimmedSnippet = normalizeEditorBlocks(snippet);
       if (!trimmedSnippet) {
         return;
@@ -695,8 +761,11 @@ export function useEncounterNotes() {
         // elements, so the block boundary already gives a single clean
         // line break; adding <p><br></p> was inserting an unwanted empty
         // "enter" paragraph before every stacked macro.
-        const composed = existing ? `${existing}${trimmedSnippet}` : trimmedSnippet;
-        const nextText = normalizeEditorBlocks(composed);
+        // `inlineWithPrevious` (chained decompression regions) continues the last
+        // paragraph one space after its text instead of starting a new line.
+        const chained = existing && options?.inlineWithPrevious ? appendInlineToLastBlock(existing, trimmedSnippet) : null;
+        const composed = chained ?? (existing ? `${existing}${trimmedSnippet}` : trimmedSnippet);
+        const nextText = collapseMirroredHtml(normalizeEditorBlocks(composed));
         return {
           ...current,
           soap: {
@@ -1320,6 +1389,8 @@ export function useEncounterNotes() {
       const at = nowIso();
       const stamped = records.map((r) => ({ ...r, updatedAt: at }));
       const ids = new Set(stamped.map((r) => r.id));
+      // A restore intentionally brings back ids that were deleted earlier.
+      for (const id of ids) unmarkEncounterDeleted(id);
       updateRecords((current) => [...current.map((e) => stamped.find((r) => r.id === e.id) ?? e), ...stamped.filter((r) => !current.some((e) => e.id === r.id))]);
       for (const r of stamped) {
         forgetCloudCopy(r.id);
@@ -1345,6 +1416,10 @@ export function useEncounterNotes() {
           details: { encounterId },
         });
       }
+      // Record the delete BEFORE removing it, so other hook instances on this
+      // page drop it too (they now keep notes that merely aren't in the
+      // local cache) and a stale cloud snapshot can't bring it back.
+      markEncounterDeleted(encounterId);
       updateRecords((current) => current.filter((entry) => entry.id !== encounterId));
       // The auto-delete diff inside dualWriteEncounterNotesToCloud was
       // removed because it was wiping rows that were merely missing from
@@ -1404,6 +1479,7 @@ export function useEncounterNotes() {
     resaveEncountersToCloud,
     deleteEncounter,
     putEncounterRecords,
+    syncEncounterTypeForAppointment,
     forceSaveAll,
   };
 }

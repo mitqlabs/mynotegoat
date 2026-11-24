@@ -1,4 +1,5 @@
 import { formatUsPhoneInput } from "@/lib/phone-format";
+import { DEFAULT_CASE_NUMBER_FORMAT, normalizeCaseNumberFormat } from "@/lib/case-number";
 import {
   getDefaultScheduleSettings,
   type DailyOfficeHours,
@@ -95,6 +96,11 @@ export interface OfficeSettings {
   locations: OfficeLocation[];
   /** All providers the office schedules under (name-only + team-member doctors). */
   doctors: OfficeDoctor[];
+  /** Case number format for NEW patients (tokens, see case-number.ts). Default = the original
+   *  MMDDYY + last 2 + first 2. Existing patients keep their number regardless. */
+  caseNumberFormat: string;
+  /** The office's word for the claim document. GOAT Mail uses this label. */
+  claimDocument: "lien" | "lop";
   /** When this copy was last edited (ms). Used to pick the newer of the
    *  local and cloud copies; absent on copies saved before it existed. */
   savedAt?: number;
@@ -123,6 +129,8 @@ const defaultOfficeSettings: OfficeSettings = {
   multiLocation: false,
   locations: [],
   doctors: [],
+  caseNumberFormat: DEFAULT_CASE_NUMBER_FORMAT,
+  claimDocument: "lien",
 };
 
 function normalizeDoctors(value: unknown): OfficeDoctor[] {
@@ -219,6 +227,8 @@ export function normalizeOfficeSettings(value: unknown): OfficeSettings {
     multiLocation: row.multiLocation === true,
     locations: normalizeLocations(row.locations),
     doctors: normalizeDoctors(row.doctors),
+    caseNumberFormat: normalizeCaseNumberFormat(row.caseNumberFormat),
+    claimDocument: row.claimDocument === "lop" ? "lop" : "lien",
     ...(typeof row.savedAt === "number" && Number.isFinite(row.savedAt) ? { savedAt: row.savedAt } : {}),
   };
 }

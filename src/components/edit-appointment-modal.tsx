@@ -9,10 +9,9 @@ import { useScheduleRooms } from "@/hooks/use-schedule-rooms";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { useKeyDates } from "@/hooks/use-key-dates";
-import {
-  findClosedKeyDateForDate,
-  formatUsDateFromIso,
-} from "@/lib/key-dates";
+import { appAlert } from "@/components/app-dialog";
+import { closedDateHit, closedDateNote, closedDateNotice } from "@/lib/closed-date-booking";
+import { formatUsDateFromIso } from "@/lib/key-dates";
 import {
   appointmentStatusOptions,
   formatAppointmentStatusLabel,
@@ -162,16 +161,10 @@ export function EditAppointmentModal({
       return;
     }
 
-    const closedEntry = findClosedKeyDateForDate(keyDates, date);
-    if (closedEntry) {
-      const reasonSuffix = closedEntry.reason ? ` (${closedEntry.reason})` : "";
-      setError(
-        `Cannot move onto CLOSED key date ${formatUsDateFromIso(date)}${reasonSuffix}.`,
-      );
-      return;
-    }
+    const movedOntoClosed = date !== appointment.date ? closedDateHit(keyDates, date) : null;
 
     if (
+      !movedOntoClosed &&
       scheduleSettings.enforceOfficeHours &&
       !isAppointmentWithinOfficeHours(scheduleSettings, date, startTime, durationMin) &&
       (!scheduleSettings.allowOverride || !overrideOfficeHours)
@@ -193,7 +186,7 @@ export function EditAppointmentModal({
       (entry) =>
         entry.id !== appointment.id && entry.date === date && entry.startTime === startTime,
     ).length;
-    if (!overrideActive && occupants >= slotCapacity) {
+    if (!movedOntoClosed && !overrideActive && occupants >= slotCapacity) {
       setError(
         `Time slot ${formatTimeLabel(startTime)} on ${formatUsDateFromIso(date)} is full (max ${slotCapacity}). Tick Override Office Hours to add anyway.`,
       );
@@ -208,12 +201,12 @@ export function EditAppointmentModal({
         startTime,
         durationMin,
         appointmentType: appointmentType.trim(),
-        status,
+        status: movedOntoClosed ? "Canceled" : status,
         provider: provider.trim(),
         location: location.trim(),
         room: room.trim(),
         caseLabel: caseLabel.trim(),
-        note: note.trim(),
+        note: movedOntoClosed ? closedDateNote(movedOntoClosed.reason, note.trim()) : note.trim(),
         overrideOfficeHours: Boolean(overrideOfficeHours),
       };
       updatedRecord = next;
@@ -223,11 +216,14 @@ export function EditAppointmentModal({
     if (updatedRecord) {
       onSaved?.(updatedRecord);
     }
+    if (movedOntoClosed) {
+      void appAlert(closedDateNotice([movedOntoClosed]), { title: "Scheduled on a closed day" });
+    }
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+    <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
       <ScrollLock />
       <section className="w-full max-w-3xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
         <div className="flex items-start justify-between gap-3">
@@ -240,7 +236,7 @@ export function EditAppointmentModal({
             </p>
           </div>
           <button
-            className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+            className="btn btn-secondary btn-sm"
             onClick={onClose}
             type="button"
           >
@@ -326,9 +322,9 @@ export function EditAppointmentModal({
             <span className="text-sm font-semibold text-[var(--text-muted)]">Status</span>
             <select
               className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-              onChange={(event) => {
+              onChange={async (event) => {
                 const next = event.target.value as AppointmentStatus;
-                if (!confirmStatusChangeIfNeeded(appointment.status, next)) return;
+                if (!(await confirmStatusChangeIfNeeded(appointment.status, next))) return;
                 setStatus(next);
               }}
               value={status}
@@ -425,14 +421,14 @@ export function EditAppointmentModal({
 
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+            className="btn btn-secondary"
             onClick={onClose}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+            className="btn btn-primary"
             onClick={handleSubmit}
             type="button"
           >

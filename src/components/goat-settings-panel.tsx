@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useGoatTerms } from "@/hooks/use-goat-terms";
 import { groupsInQuestion, parseTermList, type GoatTermGroup } from "@/lib/goat-terms";
+import { appConfirm } from "@/components/app-dialog";
 
 const inputClass = "w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm";
 const buttonClass =
@@ -17,7 +18,7 @@ function TermChips({ terms }: { terms: string[] }) {
         <span
           key={t}
           className={`rounded-full border px-2 py-0.5 text-sm ${
-            i === 0 ? "border-[#72bdcf] bg-[#eef8fb] font-semibold" : "border-[var(--line-soft)] bg-white"
+            i === 0 ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,var(--bg-panel))] font-semibold" : "border-[var(--line-soft)] bg-white"
           }`}
         >
           {t}
@@ -40,7 +41,7 @@ function GroupRow({
   const [draft, setDraft] = useState("");
   if (editing) {
     return (
-      <li className="rounded-xl border border-[#72bdcf] bg-white p-3">
+      <li className="rounded-xl border border-[var(--brand-primary)] bg-white p-3">
         <label className="text-xs font-semibold text-[var(--text-muted)]" htmlFor={`goat-edit-${group.id}`}>
           Words that mean the same thing (comma separated; the first one is the group&apos;s name)
         </label>
@@ -85,8 +86,8 @@ function GroupRow({
         </button>
         <button
           className={`${buttonClass} text-red-700`}
-          onClick={() => {
-            if (window.confirm(`Delete the "${group.terms[0]}" group?`)) onDelete();
+          onClick={async () => {
+            if ((await appConfirm(`Delete the "${group.terms[0]}" group?`))) onDelete();
           }}
           type="button"
         >
@@ -200,8 +201,8 @@ export function GoatSettingsPanel() {
           </span>
           <button
             className={buttonClass}
-            onClick={() => {
-              if (window.confirm("Reset to the starting list? Your own groups will be removed and edited starting groups restored.")) {
+            onClick={async () => {
+              if ((await appConfirm("Reset to the starting list? Your own groups will be removed and edited starting groups restored."))) {
                 resetToDefaults();
               }
             }}

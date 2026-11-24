@@ -12,7 +12,7 @@ import type { ScheduleSettingsConfig } from "@/lib/schedule-settings";
 import { to12hLabel } from "@/lib/time-12h";
 import { nameParts, type Understood } from "@/lib/goat-understand";
 
-export type QuickKind = "reschedule" | "cancel" | "checkIn" | "checkOut" | "noShow" | "doi";
+export type QuickKind = "reschedule" | "cancel" | "checkIn" | "checkOut" | "noShow" | "doi" | "compliance";
 
 export interface QuickPlan {
   kind: QuickKind;
@@ -24,6 +24,8 @@ export interface QuickPlan {
   time?: string;
   /** Date of injury (YYYY-MM-DD). */
   doi?: string;
+  /** Compliance option id to save ("" clears it). */
+  compliance?: string;
   summary: string;
   /** Extra line under the summary ("4:00 PM was taken, so 4:15"). */
   note?: string;

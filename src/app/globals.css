@@ -30,7 +30,14 @@
   --row-tint-checked-in: rgba(13, 121, 191, 0.1);
   --row-edge-checked-in: #0d79bf;
   --text-main: #172a3a;
+  --text: var(--text-main);
   --text-muted: #57758b;
+  --link: var(--brand-ink, #0d79bf);
+  --heading: var(--btn-bg, var(--brand-primary));
+  --heading-ink: var(--on-brand, #ffffff);
+  --badge-bg: color-mix(in srgb, var(--brand-primary) 18%, var(--bg-panel));
+  --badge-ink: var(--text-main);
+  --danger: var(--status-alert);
   --font-body:
     "Avenir Next",
     "Avenir",
@@ -56,6 +63,22 @@
   --field-focus: rgba(13, 121, 191, 0.16);
   --field-shadow: 0 1px 2px rgba(14, 51, 78, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
   --field-shadow-focus: 0 0 0 4px var(--field-focus), 0 1px 2px rgba(14, 51, 78, 0.1);
+  /* Same colors as above, named so a theme can retint them. NoteGoat Blue
+     Light keeps these exact values. */
+  --text-primary: #172a3a;
+  --brand-ink: #0d79bf;
+  --on-brand: #ffffff;
+  --shell-bg: #ffffff;
+  --shell-border: rgba(255, 255, 255, 0.7);
+  --header-bg: rgba(255, 255, 255, 0.7);
+  --sidebar-text: #e4f4ff;
+  --sidebar-muted: #aad0e4;
+  --sidebar-link: #d5ebf8;
+  --sidebar-active: linear-gradient(90deg, #157bbf, #1a9ba9);
+  --sidebar-hover: rgba(255, 255, 255, 0.1);
+  --placeholder: #7f91a4;
+  --field-focus-border: #7cb0d3;
+  --btn-secondary-bg: #fff;
 }
 
 @theme inline {
@@ -71,11 +94,11 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 15% 20%, rgba(26, 160, 162, 0.16), transparent 34%),
-    radial-gradient(circle at 88% 3%, rgba(240, 141, 63, 0.12), transparent 27%),
-    linear-gradient(140deg, #edf7fb, #ebf2fa 52%, #f5f7fb);
-  color: var(--text-main);
+  /* --shell-bg is a real background (a color or a sky). NoteGoat Blue Light
+     is solid white, which is the page you see today. Tailwind's bg-[] helper
+     can only set background-color, so the sky lives here. */
+  background: var(--shell-bg);
+  color: var(--text);
   font-family: var(--font-body);
   line-height: 1.45;
   text-rendering: optimizeLegibility;
@@ -122,16 +145,16 @@ textarea {
 
 input:not([type="checkbox"]):not([type="radio"]):not([type="color"])::placeholder,
 textarea::placeholder {
-  color: #7f91a4;
+  color: var(--placeholder, #7f91a4);
   opacity: 1;
 }
 
 input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):focus,
 select:focus,
 textarea:focus {
-  border-color: #7cb0d3;
+  border-color: var(--field-focus-border, #7cb0d3);
   box-shadow: var(--field-shadow-focus);
-  background: #ffffff;
+  background: var(--field-bg);
   outline: none;
 }
 
@@ -161,12 +184,12 @@ textarea.resize-x {
 
 select {
   color: var(--text-main);
-  background-color: #fff;
+  background-color: var(--field-bg);
 }
 
 select option {
   color: var(--text-main);
-  background-color: #fff;
+  background-color: var(--bg-panel);
 }
 
 select option:checked {
@@ -182,12 +205,21 @@ a {
   border: 1px solid var(--line-soft);
   background: var(--bg-panel);
   border-radius: 18px;
-  box-shadow: 0 14px 28px rgba(14, 51, 78, 0.05);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brand-primary) 22%, transparent),
+    0 14px 28px color-mix(in srgb, var(--brand-primary) 8%, transparent);
+}
+
+/* Imaging / case boxes that used a fixed light-blue wash. */
+.tint-panel {
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 42%, var(--line-soft));
+  background: color-mix(in srgb, var(--brand-primary) 14%, var(--bg-panel));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-primary) 28%, transparent);
 }
 
 .rich-text-editor:empty::before {
   content: attr(data-placeholder);
-  color: #7f91a4;
+  color: var(--placeholder, #7f91a4);
   pointer-events: none;
 }
 
@@ -395,9 +427,9 @@ a {
     background-color 160ms ease;
 }
 .time12-field:focus-within {
-  border-color: #7cb0d3;
+  border-color: var(--field-focus-border, #7cb0d3);
   box-shadow: var(--field-shadow-focus);
-  background: #ffffff;
+  background: var(--field-bg);
 }
 .time12-field.time12-field input.time12-text.time12-text,
 .time12-field.time12-field select.time12-ampm.time12-ampm,
@@ -422,4 +454,785 @@ a {
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
+}
+
+/* ── Pop-ups: always centered on screen ───────────────────────────────
+   Overlays are flex + items-start; auto margins center the dialog when it
+   fits, and fall back to top-aligned + scrollable when it's taller than
+   the screen (so its header/buttons are never cut off). */
+.modal-overlay > * {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+/* In the components layer so per-button Tailwind utilities still win. */
+@layer components {
+/* ── Shared button style (src/components/ui/button.tsx) ─────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+  cursor: pointer;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-sm {
+  border-radius: 10px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+.btn-lg {
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+.btn-primary {
+  background: var(--btn-bg, var(--brand-primary));
+  color: var(--on-brand, #fff);
+}
+.btn-primary:not(:disabled):hover {
+  filter: brightness(0.93);
+}
+.btn-secondary {
+  background: var(--btn-secondary-bg, #fff);
+  border-color: var(--line-soft);
+  color: var(--text-main);
+}
+.btn-secondary:not(:disabled):hover {
+  background: var(--bg-soft);
+}
+.btn-danger {
+  background: #dc2626;
+  color: #fff;
+}
+.btn-danger:not(:disabled):hover {
+  background: #b91c1c;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text-main);
+}
+.btn-ghost:not(:disabled):hover {
+  background: var(--bg-soft);
+}
+}
+
+/* ── Loading outlines (skeletons) ──────────────────────────────────── */
+.skeleton {
+  border-radius: 8px;
+  background: linear-gradient(90deg, #e8eef4 0%, #f4f7fa 50%, #e8eef4 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}
+
+/* ── Themes ──────────────────────────────────────────────────────────
+   Each ready-made theme sets the same variables :root already uses, in
+   Light and in Dark. NoteGoat Blue Light repeats today's colors so the
+   default look does not move. My Theme reads --my-* (set on <html>).
+   Selectors are not limited to html, so a theme card can preview itself. */
+
+.nav-link {
+  color: var(--sidebar-link);
+}
+.nav-link:hover {
+  background: var(--sidebar-hover);
+}
+.nav-link-active {
+  background: var(--sidebar-active);
+  color: var(--on-brand);
+}
+
+/* Link text follows --brand-ink. On NoteGoat Blue that is the same blue.
+   Dark themes keep a deeper blue for buttons and a lighter blue for words. */
+.text-\[var\(--brand-primary\)\] {
+  color: var(--brand-ink);
+}
+.hover\:text-\[var\(--brand-primary\)\]:hover {
+  color: var(--brand-ink);
+}
+
+[data-brand="blue"][data-tone="light"] {
+  --brand-primary: #0d79bf;
+  --brand-ink: #0d79bf;
+  --brand-secondary: #1aa0a2;
+  --brand-accent: #f08d3f;
+  --bg-canvas: #eef6fb;
+  --bg-panel: #fdfefe;
+  --bg-soft: #e4f0f7;
+  --line-soft: #d7e6f1;
+  --text-main: #172a3a;
+  --text-primary: #172a3a;
+  --text-muted: #57758b;
+  --bg-sidebar: #0f2e46;
+  --sidebar-text: #e4f4ff;
+  --sidebar-muted: #aad0e4;
+  --sidebar-link: #d5ebf8;
+  --sidebar-active: linear-gradient(90deg, #157bbf, #1a9ba9);
+  --on-brand: #ffffff;
+  --shell-bg: #ffffff;
+  --shell-border: rgba(255, 255, 255, 0.7);
+  --header-bg: rgba(255, 255, 255, 0.7);
+  --field-bg: linear-gradient(180deg, #ffffff 0%, #f8fcff 100%);
+  --field-border: #c0d8ea;
+  --field-focus: rgba(13, 121, 191, 0.16);
+  --field-focus-border: #7cb0d3;
+  --placeholder: #7f91a4;
+  --btn-secondary-bg: #fff;
+  color-scheme: light;
+}
+
+[data-brand="blue"][data-tone="dark"] {
+  --brand-primary: #157bbf;
+  --brand-ink: #9ed4f5;
+  --brand-secondary: #3aa0a8;
+  --bg-canvas: #0c1924;
+  --bg-panel: #15283a;
+  --bg-soft: #1c3348;
+  --surface-muted: #1c3348;
+  --line-soft: #2c4a63;
+  --text-main: #e7f3fb;
+  --text-primary: #e7f3fb;
+  --text-muted: #b5cfe0;
+  --bg-sidebar: #08141c;
+  --sidebar-text: #e7f4fc;
+  --sidebar-muted: #b7d0e0;
+  --sidebar-link: #d7ebf6;
+  --sidebar-active: linear-gradient(90deg, #157bbf, #14689f);
+  --on-brand: #ffffff;
+  --header-bg: #122433;
+  --shell-bg: radial-gradient(circle at 15% 0%, #143047, transparent 46%), #0c1924;
+  --shell-border: #2c4a63;
+  --field-bg: #15283a;
+  --field-border: #2c4a63;
+  --field-focus: rgba(158, 212, 245, 0.24);
+  --field-focus-border: #9ed4f5;
+  --placeholder: #b5cfe0;
+  --btn-secondary-bg: #15283a;
+  --field-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+[data-brand="sunset"][data-tone="light"] {
+  --brand-primary: #b03a12;
+  --brand-ink: #b03a12;
+  --brand-secondary: #9a3058;
+  --bg-canvas: #fff1ea;
+  --bg-panel: #fff8f4;
+  --bg-soft: #ffe0d4;
+  --surface-muted: #ffe0d4;
+  --line-soft: #f0c2b4;
+  --text-main: #3b1c16;
+  --text-primary: #3b1c16;
+  --text-muted: #7a4638;
+  --bg-sidebar: #4a2030;
+  --sidebar-text: #ffe8e2;
+  --sidebar-muted: #f0c2b6;
+  --sidebar-link: #ffd8cc;
+  --sidebar-active: linear-gradient(90deg, #b03a12, #9a3058);
+  --on-brand: #ffffff;
+  --header-bg: #fff0e8;
+  --shell-bg:
+    radial-gradient(circle at 12% 0%, rgba(255, 183, 197, 0.55), transparent 46%),
+    radial-gradient(circle at 88% 6%, rgba(255, 160, 122, 0.5), transparent 42%),
+    radial-gradient(circle at 60% 100%, rgba(255, 196, 170, 0.45), transparent 40%),
+    linear-gradient(165deg, #ffe8dc 0%, #ffd6c8 40%, #ffd7e1 74%, #ffe9d6 100%);
+  --shell-border: #f0c2b4;
+  --field-bg: #fff8f4;
+  --field-border: #f0c2b4;
+  --field-focus: rgba(176, 58, 18, 0.16);
+  --field-focus-border: #b03a12;
+  --placeholder: #7a4638;
+  --btn-secondary-bg: #fff8f4;
+  color-scheme: light;
+}
+
+[data-brand="sunset"][data-tone="dark"] {
+  --brand-primary: #b5552b;
+  --brand-ink: #ffc2a8;
+  --brand-secondary: #9a3d4e;
+  --bg-canvas: #1a0e12;
+  --bg-panel: #2c1820;
+  --bg-soft: #3a2228;
+  --surface-muted: #3a2228;
+  --line-soft: #5a3842;
+  --text-main: #ffe8e1;
+  --text-primary: #ffe8e1;
+  --text-muted: #efc2b6;
+  --bg-sidebar: #12080c;
+  --sidebar-text: #ffe8e1;
+  --sidebar-muted: #efc2b6;
+  --sidebar-link: #ffd5c8;
+  --sidebar-active: linear-gradient(90deg, #b5552b, #9a3d4e);
+  --on-brand: #ffffff;
+  --header-bg: #24141a;
+  --shell-bg: radial-gradient(circle at 18% 0%, #3a1822, transparent 46%), #1a0e12;
+  --shell-border: #5a3842;
+  --field-bg: #2c1820;
+  --field-border: #5a3842;
+  --field-focus: rgba(255, 194, 168, 0.22);
+  --field-focus-border: #ffc2a8;
+  --placeholder: #efc2b6;
+  --btn-secondary-bg: #2c1820;
+  --field-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+[data-brand="harbor"][data-tone="light"] {
+  --brand-primary: #0c5e5b;
+  --brand-ink: #0c5e5b;
+  --brand-secondary: #0e4e68;
+  --bg-canvas: #e7f4f2;
+  --bg-panel: #f7fcfb;
+  --bg-soft: #d5ebe8;
+  --surface-muted: #d5ebe8;
+  --line-soft: #b7d4cf;
+  --text-main: #102624;
+  --text-primary: #102624;
+  --text-muted: #3c5f5c;
+  --bg-sidebar: #0c2e2c;
+  --sidebar-text: #e6f7f5;
+  --sidebar-muted: #b5d9d4;
+  --sidebar-link: #d4eeea;
+  --sidebar-active: linear-gradient(90deg, #0c5e5b, #0e4e68);
+  --on-brand: #ffffff;
+  --header-bg: #f3faf9;
+  --shell-bg: linear-gradient(160deg, #e7f4f2, #d5ebe8 55%, #e5f2f6);
+  --shell-border: #b7d4cf;
+  --field-bg: #f7fcfb;
+  --field-border: #b7d4cf;
+  --field-focus: rgba(12, 94, 91, 0.16);
+  --field-focus-border: #0c5e5b;
+  --placeholder: #3c5f5c;
+  --btn-secondary-bg: #f7fcfb;
+  color-scheme: light;
+}
+
+[data-brand="harbor"][data-tone="dark"] {
+  --brand-primary: #107e77;
+  --brand-ink: #9ee6dc;
+  --brand-secondary: #0e6878;
+  --bg-canvas: #0b1c1b;
+  --bg-panel: #14302e;
+  --bg-soft: #1c3d3a;
+  --surface-muted: #1c3d3a;
+  --line-soft: #2d5652;
+  --text-main: #e5f6f4;
+  --text-primary: #e5f6f4;
+  --text-muted: #b7d9d4;
+  --bg-sidebar: #071413;
+  --sidebar-text: #e5f6f4;
+  --sidebar-muted: #b7d9d4;
+  --sidebar-link: #d4eeea;
+  --sidebar-active: linear-gradient(90deg, #107e77, #0e6878);
+  --on-brand: #ffffff;
+  --header-bg: #122826;
+  --shell-bg: radial-gradient(circle at 12% 0%, #12302e, transparent 46%), #0b1c1b;
+  --shell-border: #2d5652;
+  --field-bg: #14302e;
+  --field-border: #2d5652;
+  --field-focus: rgba(158, 230, 220, 0.22);
+  --field-focus-border: #9ee6dc;
+  --placeholder: #b7d9d4;
+  --btn-secondary-bg: #14302e;
+  --field-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+[data-brand="grove"][data-tone="light"] {
+  --brand-primary: #215c32;
+  --brand-ink: #215c32;
+  --brand-secondary: #2f5a3a;
+  --bg-canvas: #eef4ea;
+  --bg-panel: #f8fbf6;
+  --bg-soft: #dce8d8;
+  --surface-muted: #dce8d8;
+  --line-soft: #c5d7c0;
+  --text-main: #1a291c;
+  --text-primary: #1a291c;
+  --text-muted: #3e5942;
+  --bg-sidebar: #16301c;
+  --sidebar-text: #e8f5ea;
+  --sidebar-muted: #b7d4bc;
+  --sidebar-link: #d5ead9;
+  --sidebar-active: linear-gradient(90deg, #215c32, #2f5a3a);
+  --on-brand: #ffffff;
+  --header-bg: #f3f7ef;
+  --shell-bg: linear-gradient(165deg, #eef4ea, #e0ecd8 50%, #e7f0e4);
+  --shell-border: #c5d7c0;
+  --field-bg: #f8fbf6;
+  --field-border: #c5d7c0;
+  --field-focus: rgba(33, 92, 50, 0.16);
+  --field-focus-border: #215c32;
+  --placeholder: #3e5942;
+  --btn-secondary-bg: #f8fbf6;
+  color-scheme: light;
+}
+
+[data-brand="grove"][data-tone="dark"] {
+  --brand-primary: #208239;
+  --brand-ink: #b6e7c2;
+  --brand-secondary: #1d6e34;
+  --bg-canvas: #101a12;
+  --bg-panel: #1b2e20;
+  --bg-soft: #243c28;
+  --surface-muted: #243c28;
+  --line-soft: #3b5a40;
+  --text-main: #e8f6ea;
+  --text-primary: #e8f6ea;
+  --text-muted: #c0ddc6;
+  --bg-sidebar: #0b140d;
+  --sidebar-text: #e8f6ea;
+  --sidebar-muted: #c0ddc6;
+  --sidebar-link: #d7ecd9;
+  --sidebar-active: linear-gradient(90deg, #208239, #1d6e34);
+  --on-brand: #ffffff;
+  --header-bg: #17261b;
+  --shell-bg: radial-gradient(circle at 14% 0%, #1a2e1e, transparent 46%), #101a12;
+  --shell-border: #3b5a40;
+  --field-bg: #1b2e20;
+  --field-border: #3b5a40;
+  --field-focus: rgba(182, 231, 194, 0.22);
+  --field-focus-border: #b6e7c2;
+  --placeholder: #c0ddc6;
+  --btn-secondary-bg: #1b2e20;
+  --field-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+[data-brand="cedar"][data-tone="light"] {
+  --brand-primary: #8a4520;
+  --brand-ink: #8a4520;
+  --brand-secondary: #6e3a28;
+  --bg-canvas: #f6efe6;
+  --bg-panel: #fbf7f2;
+  --bg-soft: #f0e2d2;
+  --surface-muted: #f0e2d2;
+  --line-soft: #e2cbb6;
+  --text-main: #2b2118;
+  --text-primary: #2b2118;
+  --text-muted: #6a5140;
+  --bg-sidebar: #3a291c;
+  --sidebar-text: #f8efe6;
+  --sidebar-muted: #e2c8b2;
+  --sidebar-link: #f0dcc8;
+  --sidebar-active: linear-gradient(90deg, #8a4520, #6e3a28);
+  --on-brand: #ffffff;
+  --header-bg: #f8f1e8;
+  --shell-bg: linear-gradient(165deg, #f6efe6, #f3e6d6 48%, #f8efe4);
+  --shell-border: #e2cbb6;
+  --field-bg: #fbf7f2;
+  --field-border: #e2cbb6;
+  --field-focus: rgba(138, 69, 32, 0.16);
+  --field-focus-border: #8a4520;
+  --placeholder: #6a5140;
+  --btn-secondary-bg: #fbf7f2;
+  color-scheme: light;
+}
+
+[data-brand="cedar"][data-tone="dark"] {
+  --brand-primary: #a26131;
+  --brand-ink: #f3c7a4;
+  --brand-secondary: #8a4e28;
+  --bg-canvas: #1a130e;
+  --bg-panel: #2c2118;
+  --bg-soft: #3a2c22;
+  --surface-muted: #3a2c22;
+  --line-soft: #5c4636;
+  --text-main: #f8efe6;
+  --text-primary: #f8efe6;
+  --text-muted: #e4cbb6;
+  --bg-sidebar: #120d0a;
+  --sidebar-text: #f8efe6;
+  --sidebar-muted: #e4cbb6;
+  --sidebar-link: #f3ddc8;
+  --sidebar-active: linear-gradient(90deg, #a26131, #8a4e28);
+  --on-brand: #ffffff;
+  --header-bg: #241b14;
+  --shell-bg: radial-gradient(circle at 16% 0%, #2c1c14, transparent 46%), #1a130e;
+  --shell-border: #5c4636;
+  --field-bg: #2c2118;
+  --field-border: #5c4636;
+  --field-focus: rgba(243, 199, 164, 0.22);
+  --field-focus-border: #f3c7a4;
+  --placeholder: #e4cbb6;
+  --btn-secondary-bg: #2c2118;
+  --field-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+[data-brand="mine"] {
+  --brand-primary: var(--my-accent-ink, var(--my-accent, #0d79bf));
+  --btn-bg: var(--my-button, var(--my-accent, #0d79bf));
+  --brand-ink: var(--my-link, var(--my-accent-ink, var(--my-accent, #0d79bf)));
+  --link: var(--brand-ink);
+  --on-brand: var(--my-button-text, var(--my-btn-ink, #ffffff));
+  --bg-canvas: var(--my-bg, #eef6fb);
+  --bg-panel: var(--my-surface, #fdfefe);
+  --text-main: var(--my-text, #172a3a);
+  --text: var(--text-main);
+  --text-primary: var(--text);
+  --text-muted: var(--my-muted, color-mix(in srgb, var(--my-text, #172a3a) 72%, var(--my-surface, #fdfefe)));
+  --heading: var(--my-heading, var(--btn-bg));
+  --heading-ink: var(--my-heading-ink, var(--on-brand));
+  --bg-soft: color-mix(in srgb, var(--my-accent, #0d79bf) 12%, var(--my-surface, #fdfefe));
+  --surface-muted: var(--bg-soft);
+  --line-soft: var(--my-line, color-mix(in srgb, var(--my-text, #172a3a) 18%, var(--my-surface, #fdfefe)));
+  --badge-bg: var(--my-badge, color-mix(in srgb, var(--my-accent, #0d79bf) 16%, var(--my-surface, #fdfefe)));
+  --badge-ink: var(--my-badge-ink, var(--text));
+  --danger: var(--my-danger, var(--status-alert));
+  --field-border: var(--line-soft);
+  --field-bg: var(--my-surface, #fdfefe);
+  --placeholder: var(--text-muted);
+  --btn-secondary-bg: var(--my-surface, #fdfefe);
+  --header-bg: color-mix(in srgb, var(--my-surface, #fdfefe) 78%, var(--my-bg, #eef6fb));
+  --brand-secondary: var(--my-accent-ink, var(--my-accent, #0d79bf));
+  --field-focus-border: var(--brand-ink);
+  --sidebar-active: linear-gradient(90deg, var(--btn-bg), var(--brand-ink));
+}
+[data-brand="mine"][data-tone="light"] {
+  --bg-sidebar: color-mix(in srgb, var(--my-text, #172a3a) 72%, #000);
+  --sidebar-text: color-mix(in srgb, var(--my-surface, #fdfefe) 92%, #fff);
+  --shell-bg:
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--my-accent, #0d79bf) 34%, transparent), transparent 42%),
+    linear-gradient(165deg, var(--my-bg, #eef6fb), var(--my-surface, #fdfefe));
+  color-scheme: light;
+}
+[data-brand="mine"][data-tone="dark"] {
+  --bg-sidebar: color-mix(in srgb, var(--my-bg, #13202b) 65%, #000);
+  --sidebar-text: var(--my-text, #fdfefe);
+  --shell-bg: var(--my-bg, #13202b);
+  --field-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+[data-brand="mine"] {
+  --sidebar-muted: color-mix(in srgb, var(--sidebar-text) 72%, var(--bg-sidebar));
+  --sidebar-link: color-mix(in srgb, var(--sidebar-text) 88%, var(--bg-sidebar));
+}
+
+/* Cards that are painted white follow the theme. NoteGoat Blue Light is
+   left alone, so today's white cards stay white. */
+html[data-tone="dark"] .bg-white,
+html[data-brand="sunset"] .bg-white,
+html[data-brand="harbor"] .bg-white,
+html[data-brand="grove"] .bg-white,
+html[data-brand="cedar"] .bg-white,
+html[data-brand="mine"] .bg-white {
+  background-color: var(--bg-panel);
+}
+html[data-tone="dark"] .bg-white\/50,
+html[data-tone="dark"] .bg-white\/60,
+html[data-tone="dark"] .bg-white\/70,
+html[data-tone="dark"] .bg-white\/80,
+html[data-tone="dark"] .bg-white\/90 {
+  background-color: color-mix(in srgb, var(--bg-panel) 88%, transparent);
+}
+html[data-brand="sunset"] .bg-white\/50,
+html[data-brand="sunset"] .bg-white\/60,
+html[data-brand="sunset"] .bg-white\/70,
+html[data-brand="sunset"] .bg-white\/80,
+html[data-brand="sunset"] .bg-white\/90,
+html[data-brand="harbor"] .bg-white\/50,
+html[data-brand="harbor"] .bg-white\/60,
+html[data-brand="harbor"] .bg-white\/70,
+html[data-brand="harbor"] .bg-white\/80,
+html[data-brand="harbor"] .bg-white\/90,
+html[data-brand="grove"] .bg-white\/50,
+html[data-brand="grove"] .bg-white\/60,
+html[data-brand="grove"] .bg-white\/70,
+html[data-brand="grove"] .bg-white\/80,
+html[data-brand="grove"] .bg-white\/90,
+html[data-brand="cedar"] .bg-white\/50,
+html[data-brand="cedar"] .bg-white\/60,
+html[data-brand="cedar"] .bg-white\/70,
+html[data-brand="cedar"] .bg-white\/80,
+html[data-brand="cedar"] .bg-white\/90,
+html[data-brand="mine"] .bg-white\/50,
+html[data-brand="mine"] .bg-white\/60,
+html[data-brand="mine"] .bg-white\/70,
+html[data-brand="mine"] .bg-white\/80,
+html[data-brand="mine"] .bg-white\/90 {
+  background-color: color-mix(in srgb, var(--bg-panel) 88%, transparent);
+}
+
+html[data-tone="dark"] select,
+html[data-tone="dark"] select option {
+  background-color: var(--bg-panel);
+  color: var(--text-main);
+}
+html[data-tone="dark"] select option:checked {
+  background-color: var(--brand-primary);
+  color: var(--on-brand);
+}
+html[data-tone="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):focus,
+html[data-tone="dark"] select:focus,
+html[data-tone="dark"] textarea:focus,
+html[data-tone="dark"] .time12-field:focus-within {
+  background: var(--bg-panel);
+  border-color: var(--field-focus-border);
+}
+
+/* Title bars that were locked to NoteGoat sky. The logo image is not this class. */
+.section-bar {
+  background: var(--heading, var(--btn-bg, var(--brand-primary)));
+  color: var(--heading-ink, var(--on-brand));
+}
+.theme-badge {
+  background: var(--badge-bg);
+  color: var(--badge-ink);
+}
+.text-link {
+  color: var(--link);
+}
+.text-danger {
+  color: var(--danger);
+}
+.bg-blue-50,
+.bg-sky-100,
+.bg-\[\#ecf4fa\],
+.bg-\[\#e9f4fb\],
+.bg-\[\#eef8fb\],
+.bg-\[\#e7f2f8\],
+.bg-\[\#e4f0f7\],
+.bg-\[\#f2f8fc\],
+.bg-\[\#d8e7f2\],
+.bg-\[\#cfe0ec\],
+.bg-\[\#dae6f0\] {
+  background-color: color-mix(in srgb, var(--brand-primary) 14%, var(--bg-panel)) !important;
+}
+.border-blue-300,
+.border-\[\#bfd2e0\],
+.border-\[\#b7ccdc\],
+.border-\[\#9ab8cc\],
+.border-\[\#9cc9e3\],
+.border-\[\#72bdcf\],
+.border-\[\#0d79bf\] {
+  border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--line-soft)) !important;
+}
+.text-blue-600,
+.text-blue-700,
+.text-sky-800,
+.text-sky-900,
+.text-\[\#0d79bf\],
+.text-\[\#35566f\],
+.text-\[\#2f7f93\],
+.text-\[\#0f5d92\] {
+  color: var(--brand-ink) !important;
+}
+.btn-secondary {
+  background: var(--btn-secondary-bg, var(--bg-panel)) !important;
+  color: var(--text-main) !important;
+  border-color: var(--line-soft) !important;
+}
+.btn-secondary:not(:disabled):hover {
+  background: var(--bg-soft) !important;
+}
+a.bg-white,
+button.bg-white {
+  background-color: var(--btn-secondary-bg, var(--bg-panel)) !important;
+  color: var(--text-main) !important;
+}
+[data-brand] {
+  --row-tint-checked-in: color-mix(in srgb, var(--brand-primary) 16%, transparent);
+  --row-edge-checked-in: var(--brand-primary);
+  --text: var(--text-main);
+  --link: var(--brand-ink);
+  --heading: var(--btn-bg, var(--brand-primary));
+  --heading-ink: var(--on-brand);
+  --badge-bg: color-mix(in srgb, var(--brand-primary) 18%, var(--bg-panel));
+  --badge-ink: var(--text);
+  --danger: var(--status-alert);
+}
+
+/* Body and secondary ink that used to be locked to a light-theme gray. */
+.text-\[\#1f2937\],
+.text-\[\#334155\],
+.text-\[\#111827\],
+.text-\[\#0f172a\],
+.text-\[\#172a3a\],
+.text-slate-800,
+.text-slate-900,
+.text-gray-800,
+.text-gray-900,
+.text-zinc-800,
+.text-zinc-900,
+.text-neutral-800,
+.text-neutral-900,
+.text-black {
+  color: var(--text) !important;
+}
+.text-\[\#64748b\],
+.text-\[\#475569\],
+.text-\[\#6b7280\],
+.text-\[\#9aa5b1\],
+.text-\[\#7b8794\],
+.text-\[\#6b8496\],
+.text-\[\#94a3b8\],
+.text-\[\#cbd5e1\],
+.text-slate-400,
+.text-slate-500,
+.text-slate-600,
+.text-gray-400,
+.text-gray-500,
+.text-gray-600,
+.text-zinc-400,
+.text-zinc-500 {
+  color: var(--text-muted) !important;
+}
+.text-\[\#b43b34\],
+.text-\[\#8f251f\],
+.text-\[\#7a2412\],
+.text-\[\#9b1c1c\],
+.text-red-700,
+.text-red-800,
+.text-red-900 {
+  color: var(--danger) !important;
+}
+
+/* Required / warning / note boxes that used a fixed cream or amber fill.
+   The fill follows the surface, with a warning edge and theme text.
+   Solid amber bars (bg-amber-400 and darker) are left alone. */
+.callout,
+.bg-amber-50,
+.bg-amber-50\/40,
+.bg-amber-50\/50,
+.bg-amber-50\/60,
+.bg-amber-100,
+.bg-amber-200,
+.bg-yellow-50,
+.bg-yellow-100,
+.bg-\[\#fef9e7\],
+.bg-\[\#fff8ea\],
+.bg-\[\#fffbe6\],
+.bg-\[\#fff4d6\],
+.bg-\[\#fff8e8\],
+.bg-\[\#fef3c7\],
+.bg-\[\#fff7e6\],
+.bg-\[\#fdf2c5\] {
+  background-color: color-mix(in srgb, var(--status-warning, #f0a43f) 20%, var(--bg-panel)) !important;
+  color: var(--text) !important;
+  border-color: color-mix(in srgb, var(--status-warning, #f0a43f) 55%, var(--line-soft)) !important;
+}
+.callout :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950, .text-yellow-800, .text-yellow-900),
+.bg-amber-50 :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950, .text-yellow-800, .text-yellow-900),
+.bg-amber-100 :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950),
+.bg-amber-200 :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950),
+.bg-yellow-50 :is(.text-amber-700, .text-amber-800, .text-amber-900, .text-yellow-800, .text-yellow-900),
+.bg-\[\#fef9e7\] :is(.text-\[\#92400e\], .text-amber-900),
+.bg-\[\#fff8ea\] :is(.text-\[\#8a5a00\], .text-amber-900),
+.bg-\[\#fff4d6\] :is(.text-\[\#7a4b00\], .text-amber-900) {
+  color: var(--text) !important;
+}
+
+/* Read-only fields and saved-entry surfaces. background (not background-color)
+   so a gradient field fill still paints. */
+.theme-field {
+  background: var(--field-bg);
+  color: var(--text-main);
+}
+.theme-surface {
+  background-color: var(--bg-panel);
+  color: var(--text-main);
+}
+
+/* Semantic accents mixed into the theme surface, with theme text so they
+   stay readable in Light, Dark, Sunset, Harbor, and My Theme. */
+.tone-warn {
+  background-color: color-mix(in srgb, var(--status-warning, #f0a43f) 22%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--status-warning, #f0a43f) 55%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-warn-badge {
+  background-color: color-mix(in srgb, var(--status-warning, #f0a43f) 34%, var(--bg-panel));
+  color: var(--text-main);
+}
+.tone-warn-text {
+  color: color-mix(in srgb, var(--status-warning, #f0a43f) 62%, var(--text-main));
+}
+.tone-ok {
+  background-color: color-mix(in srgb, var(--status-active, #1f9d60) 18%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--status-active, #1f9d60) 48%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-alert {
+  background-color: color-mix(in srgb, var(--status-alert, #c9423a) 16%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--status-alert, #c9423a) 48%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-info {
+  background-color: color-mix(in srgb, var(--brand-primary) 16%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--brand-primary) 42%, var(--line-soft));
+  color: var(--text-main);
+}
+.tone-neutral {
+  background-color: var(--bg-soft);
+  border-color: var(--line-soft);
+  color: var(--text-muted);
+}
+
+/* Status pills compute a dark ink for a pale tint on white. On a dark
+   theme that ink disappears, so the theme text wins. The tint stays. */
+[data-tone="dark"] .status-pill {
+  color: var(--text-main) !important;
+}
+
+/* Case page header: photo | name + patient info | patient alert.
+   Narrow screens stack photo+name, then the fields, then the alert. */
+.case-header {
+  display: grid;
+  align-items: start;
+  gap: 0.75rem 1rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "photo name"
+    "info info"
+    "actions actions";
+}
+.case-header:not(:has(.case-header-photo)) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "name"
+    "info"
+    "actions";
+}
+.case-header-photo { grid-area: photo; }
+.case-header-name { grid-area: name; }
+.case-header-info { grid-area: info; }
+.case-header-actions { grid-area: actions; }
+@media (min-width: 1280px) {
+  .case-header {
+    column-gap: 1.25rem;
+    grid-template-columns: 110px minmax(0, 1fr) minmax(24rem, 30rem);
+    grid-template-areas:
+      "photo name actions"
+      "photo info actions";
+  }
+  .case-header:not(:has(.case-header-photo)) {
+    grid-template-columns: minmax(0, 1fr) minmax(24rem, 30rem);
+    grid-template-areas:
+      "name actions"
+      "info actions";
+  }
 }

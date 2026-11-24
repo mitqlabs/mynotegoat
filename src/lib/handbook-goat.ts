@@ -19,43 +19,58 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "How it works",
       steps: [
-        "Click the goat button. You'll see a greeting and chips — tap one or just type.",
+        "The G.O.A.T. button in the sidebar and on a phone opens the G.O.A.T. Page. One welcome sits at the top: the goat, a greeting for the time of day, the office name, and today's counts. The page uses the full width of the content area. On a wide screen, G.O.A.T. Mail, today's schedule, intake, and to-dos sit side by side. The chat is the small goat in the bottom-right corner of every page. Its picture is centered and fills the circle. While a save is syncing, a ring spins around the circle and the goat nods. When it lands, the circle flashes green with a check and Saved for a moment. If the save fails, the circle turns red; tap it to retry. Motion stays still when reduced motion is on. Tap it for the greeting and chips — or just type.",
         "Ask like you'd ask a coworker: \"what's john smith's dob\", \"who's coming in today\", \"how many checks are we waiting on\".",
-        "Anything that changes data shows ONE confirm card first. Nothing is saved until you tap Confirm.",
+        "Anything that changes data shows ONE confirm card first, with the full text of what will be saved. Tap Confirm and the card says Saving…, then Saved. If it fails, it shows the reason and a Retry. Nothing is saved until you tap Confirm.",
+        "G.O.A.T. loads quietly in the background a moment after a page opens, so pages open faster and the G.O.A.T. button still opens instantly.",
         "If G.O.A.T. isn't sure (two John Smiths, an unclear category), it asks instead of guessing.",
       ],
       why: "G.O.A.T. is rules-based and runs inside NoteGoat — no outside AI, and your data stays in your workspace.",
     },
     {
+      heading: "G.O.A.T. Mail",
+      steps: [
+        "G.O.A.T. Mail is in the sidebar with the other links, just above G.O.A.T. Handbook is there too. Settings is the last item. Until G.O.A.T. Mail is turned on for the office, that page says it isn't turned on yet. G.O.A.T. does not read a mailbox.",
+        "When it is turned on, open G.O.A.T. Mail and tap Connect Outlook. Sign in with the office Outlook account. Pick which folders G.O.A.T. reads. Inbox is already checked. G.O.A.T. reads only those folders. It never sends, moves, deletes, or changes email.",
+        "On the G.O.A.T. Page, the G.O.A.T. Mail box links here: Connect before the mailbox is connected, and Open G.O.A.T. Mail after. The mail page uses the full width. Messages sit in a column for each bucket, with a count. Empty buckets stay collapsed. Phone stacks the columns; a tablet or a computer shows them side by side.",
+        "Settings → G.O.A.T. is the one place for G.O.A.T. Page boxes, G.O.A.T. chat, and G.O.A.T. Mail. Older links (Settings → G.O.A.T. Page, and Settings → G.O.A.T. words) open that same page. G.O.A.T. Mail there shows whether Outlook is connected, the folders G.O.A.T. reads, the optional Microsoft secret date, and the mail buckets. The buckets start as New Patient referral, Lien / LOP, R&B, Medicals, Specialist/imaging, Bounced, and Other, with the keywords G.O.A.T. already uses. Rename a bucket, change its keywords, add one, or remove one. Reset to defaults puts the original list back. The choice is saved for the office. G.O.A.T. still only reads mail.",
+        "Microsoft secret expires on is optional. It is saved for the office, and it lives only in Settings → G.O.A.T. → G.O.A.T. Mail. When that date is within 30 days, or has already passed, that settings section shows: G.O.A.T. Mail's Microsoft secret expires on that date, then ask you to create a new secret in Entra and update GOAT_MAIL_CLIENT_SECRET in Vercel. If Microsoft rejects the secret while reading mail, that same settings section says the secret has expired. The G.O.A.T. Mail page does not show this.",
+        "Messages sort into New Patient referral, Lien or LOP request (the word is Settings → Office Information → Claim document), R&B / Report & Bill requested, Medicals requested, Specialist/imaging reply, Bounced email, or Other.",
+        "G.O.A.T. Mail never adds a patient by itself. A new-patient referral shows in New Patient Intake on the G.O.A.T. Page, with the name, phone, date of injury, attorney, anything missing, and who sent it. Add patient is the only way a chart is created. It checks the office copy of that email first, then any chart already marked with that email, then the same name and phone or date of birth, and offers to open a match instead of adding another. The email is saved on the new chart. Dismiss hides that email for the office. The waiting list and each dismissal are saved for the office, not only on this computer. A name that isn't a real name, such as This, is left blank. A fax, a tel line, or an address in the signature is not used. Missing fields stay flagged. Unbooked referrals, multi-passenger crashes, and a second crash for someone already in the office are flagged. If two categories fit, or the name is unclear, it goes under G.O.A.T. Needs Your Answer instead of guessing.",
+      ],
+      why: "Staff connect the office mailbox when it is ready. They never see how the server was set up.",
+    },
+    {
       heading: "Just say what to do",
       steps: [
-        "Type it the way you'd text a coworker, typos and all. G.O.A.T. goes straight to one confirm card with sensible defaults. For example, a visit with no time gets the first open slot that day. If the time you asked for is taken, you get the nearest open time, with the other times as buttons.",
+        "Type it the way you'd text a coworker, typos and all. G.O.A.T. goes straight to one confirm card with sensible defaults. For example, a visit with no time gets the first open slot that day. If the time you asked for is taken, you get the nearest open time, with the other times as buttons. The New Patient popup on the Patient List works the same way: a taken time shows the open times as buttons plus a \u201cBook anyway\u201d tick (the same override as the Schedule, when overrides are on in Settings → Schedule).",
         "It only asks when something it needs is missing, and then just one short question (\"Move it to when?\").",
-        "It understands names spelled a bit wrong (\"jon smth\"), \"him/her\" for the patient you were just on, and days like \"tmrw\", \"next wed\", \"in 2 weeks\" or \"10/24\".",
+        "A name you type beats the chart that is open. One clear typo matches that record and the reply says which record it used. Several matches ask \"Which patient?\" and the one you pick is remembered for the next question. Nothing close enough says \"No match\" and does not guess. Everyday words such as \"call\" are never a name. \"him/her\" still means the patient you were just on. Days like \"tmrw\", \"next wed\", \"in 2 weeks\" or \"10/24\" work. If G.O.A.T. cannot do something, it says \"I can't do that yet\".",
         ...handbookPhrases(),
         "Open a case just navigates there. Nothing changes, so there's no card.",
       ],
       why: "The list above comes straight from G.O.A.T.'s own list of actions, so it's always current.",
     },
     {
-      heading: "Teach G.O.A.T. (👎 or just type the fix)",
+      heading: "Teach G.O.A.T. (Not what I meant? or just type the fix)",
       steps: [
-        "Under any reply, tap 👎 if G.O.A.T. got it wrong, then tap what you meant. It does that now and reads that wording the same way next time, for everyone in the office.",
+        "Under any reply, tap Not what I meant? if G.O.A.T. got it wrong, then tap what you meant. It does that now and reads that wording the same way next time, for everyone in the office.",
         "Or just type the fix: \"no I wanted you to book it\", \"not a note, a to-do\", \"I meant reschedule\", \"no, move it to Friday\". G.O.A.T. closes the wrong card, shows the right one, and learns it the same way. (\"No\" or \"no, cancel\" on its own just dismisses the card.)",
         "Names, days, times and numbers are saved as blanks, never the actual name. Any word matching a patient, contact or attorney in your office is removed, whether it's capitalized or not.",
-        "Settings → G.O.A.T. → G.O.A.T. Library has two parts. Learned in your office lists the wording your office taught it and the misses; Delete any you don't want. Built in is the read-only list that comes with NoteGoat. Office wording that matches a built-in one is merged away.",
-        "Too much on open? Tap Hide brief. The heads-ups sit behind a small \"N heads-ups ›\" link.",
+        "Settings → G.O.A.T. is one page. G.O.A.T. chat holds the Library, words, answers, and note signatures. The Library has two parts. Learned in your office lists the wording your office taught it and the misses; Delete any you don't want. Built in is the read-only list that comes with NoteGoat. Office wording that matches a built-in one is merged away.",
+        "The chat opens with the greeting and the buttons. Appointment Check runs when you tap it. The heads-ups sit behind a small \"N heads-ups ›\" link.",
       ],
       why: "Saved to the office's cloud settings, so it works on every computer.",
     },
     {
-      heading: `Good morning chips: ${CHIPS.join(", ")}`,
+      heading: `Chat buttons: ${CHIPS.join(", ")}`,
       steps: [
-        "Morning Rundown (everyone) — today's schedule, ALL open to-dos (overdue first, then by due date, then ones with no date), unread team messages, and patient questionnaires that came back and still need review (\"1 questionnaire received: Jane Example\" with a Review link to her patient file). Click a to-do line to open it on the To-Do page (highlighted); click the patient name in it to open the patient. Cleared to-dos don't show.",
+        "The chat buttons are always in this order: G.O.A.T. Mail, Today's Schedule, Appointment Check, Quick Biz, Case Review. The G.O.A.T. Page has no button row. Its welcome uses the office computer's local time: Good Morning! ☀️ before noon, Good Afternoon! 🌤️ from noon until 5:00 PM, and Good Evening! 🌙 from 5:00 PM on, then Happy and the day, like Happy Wednesday, Nov. 11, 2026. The board starts with G.O.A.T. Mail, Appointment Check, Quick Biz, Case Review, Today's Schedule (New Patient, Seen, No Show, Rebook, and Canceled), Tomorrow's Schedule (the next open office day, labeled with that day, same groups, no open slots), New Patient Intake, To-Do's & Alerts, Case Snapshot (This Year and All statuses by default; Status picks one case status), and End of Day Handoff (today's seen, new patients seen, no-shows, canceled, rebooks, unsigned notes, and checked in with no note; tomorrow is that next open day's appointments, with new patients marked). Print on that handoff prints only the handoff, on the first page. Appointments show their type, and New Patient visits sit at the top when the office has that type. One settings wheel for the whole page holds Boxes On Board (rename, order, which lines, appointment types, row fields, and height), Box By Status (one box per this office's case status), and Box By Referrals (Cases By Month, Imaging Referrals, and Specialist Referrals, with the case names opening the patient). Reset Layout puts the default board back after you confirm. Arrange boxes is the only time a box can be dragged or resized, so a tap or a scroll does not move anything. A box can be dragged twice as tall as before, and the height limit in that box's options goes twice as high. The size is still saved to the person's account. Each box title, including a box you added, sits on a light brand-blue bar. The title is a little bolder, a line sits under it, and the top corners match the box. The inside of the box is unchanged. G.O.A.T. Mail already shows every bucket, including mail that needs an answer, so there is no separate answers box. New Patient Intake shows people with no case info, including someone just saved from New Patient with no case info yet. Adding a date of injury moves them onto the Patient List. Delete asks first, then removes that chart for good, and only when it has no notes and no appointments. Otherwise Delete stays off and explains why. The sidebar G.O.A.T. button opens that page. The chat popup stays, and opens from the small goat in the bottom-right corner.",
+        "Today's Schedule (everyone) — today's visits. Asking how the day looks, or for today's schedule, answers with Today's Schedule. Open to-dos live in To-Do's & Alerts and in /view todo. Click a to-do line there to open it on the To-Do page. Cleared to-dos don't show.",
         "Appointment Check (admins) — active patients who need to be scheduled, in two groups with counts: No appointments booked (nothing today or later; longest since last visit first, with the date and days ago; never-seen patients flagged ⚠) and Running out this week (a visit this week, nothing after). Names open the patient.",
         "Quick Biz (admins) — active / ready to submit / submitted cases, new patients this month, visits this week/month and money collected, by office. Read-only. \"How's business?\" works too.",
       ],
-      why: "Office numbers — Appointment Check, Quick Biz, case counts (\"how many submitted cases\") and money questions (\"who owes us\", \"what got paid this month\") — are for the owner and admins. Anyone else gets a polite \"that's for admins\". Right after sign-in, while G.O.A.T. is still checking your role, it shows only Morning Rundown and says \"still checking your access\" if you ask for numbers.",
+      why: "Office numbers — Appointment Check, Quick Biz, case counts (\"how many submitted cases\") and money questions (\"who owes us\", \"what got paid this month\") — are for the owner and admins. Anyone else gets a polite \"that's for admins\". Right after sign-in, while G.O.A.T. is still checking your role, it shows only Today's Schedule and says \"still checking your access\" if you ask for numbers.",
     },
     {
       heading: "Actions from the G.O.A.T. box on a patient page",
@@ -66,9 +81,18 @@ export const goatHandbookChapter: HandbookChapter = {
       ],
     },
     {
+      heading: "Second dates of injury",
+      steps: [
+        "If a patient was hurt again during care, add the extra date on their page (Date Of Injury → + Add date of injury). It stays the same case.",
+        "Ask \"dates\" or \"timeline\": G.O.A.T. lists the main date of injury and then each additional date (same case) in order.",
+        "G.O.A.T. never changes dates of injury on its own; the main date of injury (\"set his DOI to …\") works as before.",
+      ],
+    },
+    {
       heading: "Case pipeline and Case Review (admins)",
       steps: [
         "Ask in plain words: \"who needs an mri referral\", \"waiting on mri results\", \"waiting for report\", \"what's ready to submit\", \"waiting for checks\" (= Submitted), \"which cases have no attorney\". \"case pipeline\" gives all the counts.",
+        "Lien follow-ups match Case Flow: a Pending, Not Set or Not Sent lien is \"Not sent yet\" (never \"sent\"); Requested is \"Requested, waiting for received\".",
         "Each list shows the count and the patients (tap a name to open them), most urgent first: longest waiting on Case Flow, earliest discharge for Ready to submit, oldest R&B Sent (with days waiting) for Submitted.",
         "After each list, 1–2 chips offer the next step (e.g. Needs MRI → \"Waiting on MRI results?\"; Waiting for reports → \"Ready to submit?\").",
         "Case Review (greeting chip, \"do a case review\", \"what's missing\", /view case review): counts per Case Flow need — e.g. X-rays: 4, MRI/CT: 7, Specialist: 3. Tap a count to see those patients, longest open first.",
@@ -83,15 +107,31 @@ export const goatHandbookChapter: HandbookChapter = {
         "Ask \"mri findings\" or \"lumbar mri\". G.O.A.T. reads the impression and lists it by region (Cervical, Thoracic, Lumbar), one line per level in spine order: size, side, what it is, and what it presses on — e.g. \"C5-6: 3 mm left paracentral disc herniation — cord compression, neuroforaminal narrowing (L>R)\".",
         "Things with no level (degeneration, desiccation, Modic changes) go on a General line. Boilerplate like \"correlation is recommended\" is left out.",
         "Shared levels are split (\"C5-6 & C6-7 herniations\" shows on both). A size cut off in the PDF says so instead of guessing.",
+        "Combined reports (e.g. Cervical + Lumbar MRI) show every region under its own heading, even when the report splits the impression with \"LUMBAR SPINE:\" sub-headings. Nothing is cut off.",
         "More than one study: the latest is first. Ask for one region to see just that one.",
+        "\"When was the MRI\" counts only real reports. A referral or order form is never listed as an MRI, even with MRI in its file name (\"MRI REFER…\", \"MRI order…\"). Name referral forms with the word referral or refer so they are recognised.",
+        "The regions shown (e.g. \"Cervical, Lumbar MRI\") are only the ones the report's own title, sub-headings or impression name. A body part mentioned in the history or on a form is not listed. The date is the report's own date: it is never copied from another file.",
         "Show original opens the report text exactly as written.",
       ],
       why: "Rules only — no outside AI. If a report isn't written level by level (e.g. a knee MRI), you get the report text as before.",
     },
     {
+      heading: "Specialist findings (pain management, ortho, neuro)",
+      steps: [
+        "Ask \"pm findings\" or \"ortho findings\". G.O.A.T. leads with the patient's own referred doctor, e.g. \"Pain management: Dr. Name, seen, report uploaded 10/26/2026.\" If none is linked: \"No pain management doctor on this case.\"",
+        "Then one Findings card from the report, in the doctor's own words: Recommendations first, then Range of motion by region (every movement with its degrees and with / without pain, e.g. \"40° anterior flexion (with pain)\"), then Exam findings by region (palpation, facet loading, straight leg raise, Spurling's and other tests), then Assessment / Diagnoses, with Open file. Nothing is guessed: a part the report doesn't have is left out, and a complaint in the history (\"worse with neck range of motion\") is never listed as ROM. Letterhead, addresses, signatures and page footers are left out.",
+        "Ask \"pm rom\" for just the Range of motion card, or \"pm recs\" for just the recommendations. The Findings card has no raw line dump.",
+        "If a report from the specialist is dated after the referral but the referral isn't marked completed, G.O.A.T. says so. It never changes the referral itself — mark it completed in the Specialist box.",
+      ],
+      why: "Rules only, in your browser — no outside AI. Contacts not linked to this patient are never listed.",
+    },
+    {
       heading: "Look things up",
       steps: [
         "Patients: \"kara's attorney\", \"when was maria's last visit\", \"does alex have an mri\".",
+        "Referral cards (MRI, X-ray, Specialist): small email line under the name from Contacts, with envelope (email) and copy icons; hidden if no email.",
+        "Patient Phone icons: the chat bubble is Text, the person-plus is Add to Contacts.",
+        "Attorney email: \"kara's attorney email\" or \"email for Hartounian\" gives the starred email from Contacts (plus any others). On the patient's page the Attorney Email box has an envelope (opens Outlook) and a copy icon for the same thing.",
         "Office: \"whats on the schedule tomorrow\", \"show our to-dos\", \"mock imaging fax number\".",
         "Money and cases (admins): \"how many submitted cases\", \"who owes us\", \"what got paid this month\".",
       ],
@@ -99,22 +139,119 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "Notes, to-dos and payments",
       steps: [
-        "Notes: \"add a note for john smith: spoke to atty\" — saved signed with your name.",
+        "Notes: \"add a note for john smith: spoke to atty\" — saved as a new entry in the patient's Notes log, stamped with today's date and your name.",
         "To-dos: \"/todo call Mock Law for John Smith friday\", or just say it: \"add to-do call vartan 555-555-8855 to schedule new appt\" or \"remind me to call armen barmen 555-555-5588\". The text is kept as typed (phone included). If a name matches a patient, G.O.A.T. still shows the to-do card and offers \"Attach to …\" — tap or ignore. A contact, law firm or patient named inside a reminder never turns it into a lookup or a question: \"remind me to call Mock Law new case 555-555-0100\" is always a to-do.",
         "Open on a patient's page? \"him\", \"her\", \"them\", \"this patient\" — or no name at all — mean that patient. \"remind me to call for appointment\" on John Smith's page → \"Call John Smith for appointment\", attached to his case, one confirm. Name someone else (\"remind me to call Jane Doe\") and it's theirs; if the name could be several people, it asks. The same goes for notes (\"add a note that he called\"), team messages (\"tell Hannah to call her about the MRI\"), booking (\"book him friday at 3\") and lookups (\"when is his next appt\").",
         "Payments and cases: \"mark smith paid 3200\", \"reduce lopez to 2500\", \"set lee to submitted\". Say \"undo\" right after to put it back.",
       ],
     },
     {
+      heading: "Compliance and notes — ask or tell G.O.A.T.",
+      steps: [
+        "Count: \"how many patients are non-compliant\", \"who is non-compliant\", \"how many patients have DNS ATM\", \"how many patients have no compliance set\". It lists the patients and links to Patient List.",
+        "Change one: \"set compliance for Mock Smith to Yes\" or \"mark Mock Smith non-compliant\". You get ONE confirm card showing the old and new value. Nothing changes until you tap Confirm. If two patients match, it asks which one; it never picks silently.",
+        "Read notes: \"what notes does Mock Smith have\" or \"show Mock Smith's notes\" lists the newest notes in the patient's Notes panel (date, who wrote it) and any Earlier notes, with a link to open the patient.",
+        "Compliance is optional. If your office has not switched it on, G.O.A.T. says so and links to the setting instead of guessing. Staff without edit access to patients can ask and count, but not change.",
+        "How-to questions about screens and settings are answered from this Handbook, with a link to the exact section.",
+      ],
+      why: "These use your own office's settings and data only, inside NoteGoat — no outside AI. Changes always go through a confirm card, the same save path as clicking it yourself, and show up in the Activity Log.",
+    },
+    {
+      heading: "Text reminders didn't send / set up 8 AM reminders",
+      steps: [
+        "Ask: \"reminders didn't send\", \"why didn't my texts go out\", \"how do I set up 8 AM reminders\". G.O.A.T. gives the exact steps and links to Text Reminders.",
+        "The key point it always makes: the NoteGoat shortcut does NOT run by itself. You also create automations in Shortcuts → Automation (Time of Day, Run Immediately). On a Mac, Time of Day is there. Message may not be. That is the device steps on the Text Reminders page.",
+        "It uses your office's own send hour, so it says 7 AM or 9 AM if you changed it. Text Reminders shows a red warning if the phone hasn't sent by itself for two expected days. The same morning, a red line at the top of NoteGoat says to tap Send Reminders Now.",
+      ],
+      why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat — no outside AI. Nothing is changed.",
+    },
+    {
+      heading: "Texting many patients at once: who gets it?",
+      steps: [
+        "Ask: \"who gets a text to everyone\", \"how do I text all active patients\", \"how do I tell everyone we're closed Thursday\". G.O.A.T. explains the Send to choices and links to Message patients. Questions like these never send anything. To actually send, use \"Text patients from G.O.A.T.\" below.",
+        "All active patients (the default): every patient whose case status is Active, once per phone number. Booked on a day: only patients with a visit that day (optional time window, skips canceled visits).",
+        "Always left out: no valid phone, \"no text reminders\" or STOP replies. Discharged, Ready to Submit, Submitted, Dropped and Paid patients are not Active.",
+      ],
+      why: "Answered from the Handbook (Message patients chapter) inside NoteGoat, no outside AI. Nothing is changed.",
+    },
+    {
+      heading: "Text patients from G.O.A.T. (/text)",
+      steps: [
+        "Owners and admins only. Type /text, or just say it: \"text all active patients that we're closed Friday\", \"text everyone scheduled tomorrow that we open at 10\", or text everyone \"Hey everyone we will be closed tomorrow\". G.O.A.T. pulls out the message (the part in quotes, or after \"that\").",
+        "Step 1, who: /text with nothing else asks \"Who should get it?\" with buttons: One patient, All active patients, Everyone scheduled tomorrow (type today or a date for another day). Words like \"everyone\" or \"all patients\" are never guessed: G.O.A.T. asks \"All active patients or everyone scheduled tomorrow?\" first.",
+        "One patient: G.O.A.T. shows that patient as a button, or the patient search, and you tap the patient to confirm. It never picks silently.",
+        "Step 2, the message: if you didn't type one, G.O.A.T. asks \"What should the text say?\". Typing cancel or never mind stops it and nothing is sent.",
+        "Step 3, the Send card: your message in a box you can edit (up to 640 characters), how many patients will get it, and a list you can open to see the names. It also shows who is left out. Nothing is sent until you tap Send.",
+        "Left out, same as Message patients: no valid phone, \"no text reminders\" or STOP replies, and repeat phone numbers (one text per phone). All active patients uses the same Active rule as Message patients. Quiet hours still apply, so nothing goes out overnight.",
+        "After you tap Send, it says \"Ready for N patient(s). Now run Send Reminders Now on the office iPhone to send it.\" The iMac is only mentioned if an iMac has actually connected. If Test mode is on, it tells you nothing will be texted. If the patient list changed while you were looking, G.O.A.T. updates the list and asks you to tap Send again, with nothing sent.",
+        "The text goes out the same way as Settings → Text Reminders → Broadcast → Message patients, and shows in Recent sends and the Activity Log (Messages).",
+      ],
+      watchOut: "G.O.A.T. never sends a text on its own. It is not available in practice mode. A message about texting that is a question (\"how do I text everyone\") only gets an explanation.",
+      why: "Runs entirely inside NoteGoat with your own office data, no outside AI, and no patient names or numbers leave your office. The Send tap is the only thing that sends a text.",
+    },
+    {
+      heading: "Cancel a whole day of appointments (bulk cancel)",
+      steps: [
+        "Say it in plain words: \"cancel all appointments for tomorrow\", \"cancel everything on Friday\", or \"cancel Dr. Lee's 3pm-5pm today\". It needs permission to edit the schedule.",
+        "G.O.A.T. shows a checklist of the Scheduled (and Reschedule) visits that match, all ticked, with a count. Untick anyone you want to keep. Visits already checked in, checked out, canceled or no-show are never touched.",
+        "Nothing is canceled until you tap the red \"Cancel N appointments\" button. \"Never mind\" closes it and changes nothing.",
+        "After you tap it, each visit becomes Canceled, the same way as canceling it on the Schedule. Each one shows in the Activity Log (Appointments), plus one line for the whole batch. If a visit changed since the list was shown (for example the patient checked in), it is left alone.",
+        "Undo: right after canceling, an Undo button puts every visit back to the status it had. It does not overwrite a visit someone has changed since.",
+        "Also text these patients: an optional button after canceling. It opens the Send card above, already filled with just the patients you canceled and a suggested message you can edit. It is owners and admins only, and nothing is sent until you tap Send.",
+        "If you don't say which day, G.O.A.T. asks (Today / Tomorrow buttons, or type a date). It cancels one day at a time, so \"cancel everything this week\" gets a polite ask for a single day. To cancel one patient's visit, use the Schedule or say \"cancel John Smith's appointment\".",
+        "Window and doctor: \"3pm-5pm\" covers visits that start from 3:00 up to, but not including, 5:00. \"Dr. Lee\" limits it to that provider.",
+      ],
+      watchOut: "It will not cancel anything from a question like \"how do I cancel appointments\", and it is not available in practice mode.",
+      why: "Uses the same cloud-saved appointment save as clicking Cancel yourself, so everyone sees it at once. No outside AI, and no patient data leaves NoteGoat.",
+    },
+    {
+      heading: "Key Dates: Closed vs Covered, and reminders",
+      steps: [
+        "Ask: \"what does Closed do to reminders\", \"I marked the 29th closed but they still got texts\", \"what is Covered on key dates\". G.O.A.T. answers from the Handbook and links to Key Dates. A question never changes a date.",
+        "To mark a day closed, say it in plain words: \"we will be closed Thursday the 19th\". G.O.A.T. shows that day and waits. Nothing is written until you tap Confirm. To also tell active patients, add \"send all active patients a message\". G.O.A.T. shows the text, how many people get it, and who is left out. It queues the text only after you tap Send. It never sends a text on its own.",
+        "Closed = office shut: a visit booked on that day is still saved and marked Canceled, and a popup tells you. Text reminders do not go out for that day or range. Covered = someone covers: visits stay bookable and reminders STILL go out. The reason (\"Texas\") is only a label. Message patients texts are never blocked by a Key Date.",
+        "Reminders go out the day before, so set Closed before then. Texts already sent can't be recalled. On Key Dates, every row shows its appointment count (like \"18 appointments \u00b7 10 canceled\"; \u2014 means none); click it to list that date's appointments at the bottom (a bar says \"Showing 10/29/26 only\", with Show all). A red \"N still booked\" also appears on upcoming Closed days that still have patients Scheduled or set to Reschedule. Old and cleared items are behind \"Show past & cleared\".",
+      ],
+      why: "Answered from the Handbook (Schedule chapter, Days the office is closed) inside NoteGoat, no outside AI. A question changes nothing. Marking a day closed uses the same Key Dates save, and only after Confirm.",
+    },
+    {
+      heading: "iMac says \"Not Opened\" when setting up text reminders",
+      steps: [
+        "Ask: \"the imac says Not Opened\", \"how do I set up the imac for text reminders\". G.O.A.T. answers from the Handbook and links to Settings → Text Reminders. It never changes a setting.",
+        "On newer macOS (Sequoia): click Done (not Move to Trash). Open System Settings → Privacy & Security, scroll to the message about NoteGoat-Reminders-Setup.command, click Open Anyway, type your Mac password if asked, then click Open Anyway again.",
+        "Then Terminal opens: paste the setup code from + Add Mac, type your Mac password (nothing shows), and press Return at All set. The iMac is optional; the iPhone sends on its own.",
+      ],
+      why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat, no outside AI. Nothing is changed.",
+    },
+    {
+      heading: "Birthday texts: who gets one, and when",
+      steps: [
+        "Ask: \"do we text patients happy birthday\", \"how do I turn on birthday texts\", \"who gets a birthday text\". G.O.A.T. answers from the Handbook and links to Settings \u2192 Text Reminders. It never changes the setting.",
+        "It is a switch in Settings \u2192 Text Reminders \u2192 Auto Texts \u2192 Birthday (off until you turn it on) with a menu to pick which saved message it sends. Write messages in Settings \u2192 Templates \u2192 SMS / Text Templates; {first name} becomes the patient's first name. If nothing is picked it uses \"Happy birthday, {first name}! From all of us at Prime Spine.\"",
+        "It rides the daily 8 AM reminder run, so the iPhone shortcut needs no change. Every patient with a date of birth and a phone, whatever the case status, on the day of their birthday (Feb 29 \u2192 Feb 28 in non-leap years). Never \"no text reminders\" or STOP patients. Once per patient per year, remembered in the cloud. If the phone fetches it and does not send it, the same day is tried again. It is not sent late. Test mode applies.",
+      ],
+      why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat, no outside AI, and no patient names or birthdays go to any outside service. Nothing is changed.",
+    },
+    {
+      heading: "Text Reminders page: sections and dates",
+      steps: [
+        "Ask: \"where did the setup steps go on text reminders\", \"why does last run say 1 sent\", \"what format are the dates\". G.O.A.T. answers from the Handbook and links to Settings → Text Reminders. It never changes a setting.",
+        "The page has three sections: Set up, Auto Texts and Broadcast. Set up is made of cards (3-step checklist, Sending devices with a Main sender or Backup sender, How it works, Opt-out STOP, iPhone setup, iMac setup), each with a Done / To do / Optional tag and a one-line summary. It is closed once setup is done. Auto Texts holds the Reminders and Birthday switches, the message each one sends, and Test mode, send time and run days. Saved text messages live in Settings → Templates → SMS / Text Templates (add, edit, delete); Auto Texts has an “Edit messages in SMS / Text Templates” link. The Broadcast section holds Message patients and Recent sends (open). Tap a heading or card to open or close it; it's remembered office-wide. The red automation warning always stays on top.",
+        "All dates there are mm/dd/yy, and a sender's last run shows the day's running total (for example \"10/29/26: 14 sent\"). Test mode (nothing is texted) is a checkbox in Auto Texts.",
+      ],
+      why: "Answered from the Handbook (Text reminders chapter) inside NoteGoat, no outside AI. Nothing is changed.",
+    },
+    {
       heading: "\"/\" commands (optional shortcuts)",
       steps: [
         "You never need these — plain words work for everything. They're shortcuts for people who like typing them, and they aren't shown in the greeting.",
         "Type / as the FIRST character in the G.O.A.T. box to open the menu (Tab picks the first one). A / later in a sentence, like 10/20, is just text.",
-        "One line is enough: \"/note gisselle call atty\" or \"/todo aram subpoena records friday\". G.O.A.T. finds the patient from the first words (first, last or full name; small typos OK), takes the rest as the text, and goes straight to the confirm card with the patient's name on it.",
+        "One line is enough: \"/note gisselle call atty\" or \"/todo aram subpoena records friday\". G.O.A.T. finds the patient from the first words (first, last or full name; small typos OK) and shows that patient as a button to confirm. It never picks silently, even when only one patient matches. Tap the patient, and the note goes to the confirm card with the patient's name on it. If no patient matches, it shows the patient search, filled in with what you typed.",
         "It only asks \"Which case?\" when more than one patient matches, and only asks for the text when you typed just a name.",
-        "Just /note asks \"Which case?\", then the text. Just /todo asks \"Just a to-do, or add to a case?\". A /todo that doesn't start with a patient name is a plain to-do.",
+        "Just /note shows a patient search (type a name, case # or phone and tap the patient), then asks \"What's the note?\". Just /todo works the same way, and the search also has \"No patient / general to-do\". Then it asks \"What's the task?\". A /todo that names no patient is a plain to-do. The to-do keeps your full wording (\"call\" is never mistaken for a name). If the text names a patient (\"/todo call tyler smith\") G.O.A.T. shows that patient as a button to confirm, and the name stays in the task text; if two patients match it asks which one; if no one is named the card says \"No patient\" with Attach chips instead of guessing from the page you are on.",
         "Changed your mind halfway? Tap a chip, type another / or @ command, ask something new, or type cancel — the half-finished step is dropped.",
         "/view shows a list: /view todo (every open to-do; click a line to open it, click the name to open the patient), /view schedule (today), /view messages (unread). Admins also get /view appointment check and /view quick biz. After typing \"/view \" the menu suggests them.",
+        "/text (owners and admins) starts a patient text: pick one patient, all active patients, or everyone scheduled a day, write the message, and tap Send. See \"Text patients from G.O.A.T.\".",
         "/contact asks \"Add or edit?\". Add: type one contact or paste a list. Edit: pick the contact, change fields, Confirm.",
         ...SLASH_COMMANDS.map((c) => `/${c.cmd} — ${c.hint}. Example: ${c.example}`),
       ],
@@ -122,7 +259,7 @@ export const goatHandbookChapter: HandbookChapter = {
     {
       heading: "Schedule visits and new patients (no / needed)",
       steps: [
-        "Existing patient: \"schedule john smith for friday at 3\", \"book maria next tuesday\" (or /schedule …). G.O.A.T. finds the patient (asks which one if several match), checks the slot and office hours, and shows a confirm card with any conflict, nearby open times and an override. Nothing books until you tap Confirm.",
+        "Existing patient: \"schedule john smith for friday at 3\", \"book maria next tuesday\" (or /schedule …). G.O.A.T. finds the patient (asks which one if several match), checks the slot and office hours, and shows a confirm card with any conflict, nearby open times and an override. Nothing books until you tap Confirm. If that day is a closed Key Date, the card says so; Confirm still schedules the visit and marks it Canceled.",
         "Missing the day or time? G.O.A.T. asks, and also offers \"Or open New Appointment\" prefilled with what it has.",
         "New patient: \"schedule new patient John Smith for next Wednesday at 10\" or \"schedule armen barmen for new appt next Thursday at 3pm\". G.O.A.T. gives an \"Open New Appointment (new patient)\" button: the Schedule's New Appointment opens in New-patient mode with the name, phone, day, time and the New Patient visit type filled in (one provider and one location are picked for you). You fill the rest; Save Appointment adds the patient and books the New Patient visit (and sets their Initial Exam date).",
         "Phone missing? If an open to-do mentions that person with a phone (\"Call Armen Barmen 555-555-5588\"), G.O.A.T. uses that phone — and after you save, the Schedule offers to mark that to-do done (Mark done / Keep it).",
@@ -142,6 +279,14 @@ export const goatHandbookChapter: HandbookChapter = {
         "\"Message the team …\" / \"let everyone know …\" posts to General with no @mention.",
         "Type @ and pick a teammate: \"@hannah please call kara back\".",
         "Tap 🔒 on the card for Eyes only — just you and them see it. Otherwise it posts to General.",
+      ],
+    },
+    {
+      heading: "Encounters, a to-do, or a form from a case",
+      steps: [
+        "Open the patient's case. Open Encounters, + To Do, and Send Form are at the top right of the case box.",
+        "Open Encounters opens that patient's encounters. + To Do adds a task for this case. Send Form sends a questionnaire.",
+        "Ask G.O.A.T. \"how do I open an encounter\" or \"how do I add a to-do\" and it names those same buttons.",
       ],
     },
     {
@@ -217,6 +362,8 @@ export const goatHandbookChapter: HandbookChapter = {
         "Ask by visit type and time: \"any upcoming new patients?\", \"new patients this week\", \"any re-exams friday\", \"when is the next new patient\", \"who's coming in tomorrow\", \"how many appointments today\".",
         "G.O.A.T. answers with a short list: date, time, patient, visit type and office. Each patient's name is a link (shown once), plus a link to that day on the Schedule.",
         "Typos and stray punctuation are fine (\"new patients>\" works). Canceled and no-show visits are left out.",
+        "Count patients by where they live: \"how many patients from Glendale\", \"how many pts in 91205\", \"top zip codes\", \"what cities are our patients from\". Counts come from each patient's home address (same as Statistics → Patients by Location), admins only.",
+        "Count canceled, no-show or completed visits: \"how many canceled appointments\", \"no-shows this week\", \"who canceled last month\". With no timeframe it asks \"For which time frame?\" with buttons (Today, This week, This month, Last month, All time), then answers.",
         "It only sees the offices you can see. Admin-only numbers (case counts, money) stay admin-only.",
         "If G.O.A.T. isn't sure what you mean, it asks a short question with buttons (schedule, to-dos, case, contact) instead of listing everything.",
       ],
@@ -231,6 +378,12 @@ export const goatHandbookChapter: HandbookChapter = {
       ],
     },
     {
+      heading: "If G.O.A.T. is waiting for the app to open",
+      steps: [
+        "G.O.A.T. uses the same records the app loads. While the screen says \"Opening your office…\", wait for it to finish before asking about encounters.",
+      ],
+    },
+    {
       heading: "Ask for help",
       steps: ["Type \"what can you do?\" or \"help\" and G.O.A.T. sums this up and links here."],
     },
@@ -241,7 +394,7 @@ export const goatHandbookChapter: HandbookChapter = {
 export function goatHelpText(): string {
   return [
     "Here's what I can do:",
-    `- Chips: ${CHIPS.join(", ")} (the last two are for admins)`,
+    `- Chips: ${CHIPS.join(", ")} (Appointment Check, Quick Biz, and Case Review are for admins)`,
     "- Look up patients, the schedule, to-dos, contacts, cases and money",
     "- Add signed notes, to-dos, payments and case changes (with a confirm card)",
     "- Message the team (\"tell hannah john smith's MRI is in\", or @; 🔒 Eyes only)",

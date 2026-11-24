@@ -1,4 +1,9 @@
 import { normalizeMaritalStatus, type MaritalStatus } from "@/lib/marital-status";
+import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
+import { splitPersonPatch } from "@/lib/patient-folder-guard";
+import { caseNumberStampFor } from "@/lib/case-number";
+import { loadOfficeSettings } from "@/lib/office-settings";
+import { complianceLabel, loadComplianceOptions, normalizeCompliance, type ComplianceField } from "@/lib/compliance";
 export { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 
 export type CaseStatus =
@@ -44,7 +49,14 @@ export type PatientMatrixField =
   | "paidAmount"
   | "billPercent"
   | "notes"
-  | "review";
+  | "review"
+  /** Source G.O.A.T. Mail message id, so the same email cannot add a second chart. */
+  | "goatMailMessageId"
+  // Stamped on a NEW patient only when the office uses a custom case number format.
+  | "caseNumberFormat"
+  | "caseSeq"
+  // Extra dates of injury (a second accident during care): ISO dates, comma-separated (lib/additional-dois).
+  | "additionalDois";
 
 export interface PatientRecord {
   id: string;
@@ -81,6 +93,19 @@ export interface PatientRecord {
    * means they still get them.
    */
   textRemindersOff?: boolean;
+  /**
+   * Older rows may still have this set from when a chart could be forced
+   * onto the Patient List. The lists no longer read it. New Patient Intake
+   * is decided at display time (attorney, plus an Initial Exam date or a
+   * booked New Patient visit). Persisted on patients.on_patient_list.
+   */
+  onPatientList?: boolean;
+  /**
+   * Optional Compliance (New Patient / Yes / No / DNS ATM / Non-Compliant),
+   * shown only when the office turns the Compliance column on. Absent = never
+   * set; "" = cleared. Stored in patients.compliance.
+   */
+  compliance?: ComplianceField;
 }
 
 export interface CashPaymentEntry {
@@ -245,6 +270,10 @@ const matrixFieldList: PatientMatrixField[] = [
   "billPercent",
   "notes",
   "review",
+  "goatMailMessageId",
+  "caseNumberFormat",
+  "additionalDois",
+  "caseSeq",
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -383,6 +412,8 @@ function normalizePatientRecord(value: unknown, index: number): PatientRecord | 
     specialistReferrals: Array.isArray(value.specialistReferrals) ? value.specialistReferrals : undefined,
     locationId: cleanString(value.locationId) || undefined,
     textRemindersOff: value.textRemindersOff === true ? true : undefined,
+    onPatientList: value.onPatientList === true ? true : undefined,
+    compliance: normalizeCompliance(value.compliance) ?? (value.compliance === "" ? "" : undefined),
   };
 }
 
@@ -714,6 +745,15 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
     matrix.notes = notes;
   }
 
+  // A custom case number format applies to this new patient only; stamp it (and the
+  // counter) so a later format change never renames an existing case.
+  const stamp = caseNumberStampFor(
+    loadOfficeSettings().caseNumberFormat,
+    patients.map((existing) => existing.matrix?.caseSeq),
+  );
+  if (stamp.caseNumberFormat) matrix.caseNumberFormat = stamp.caseNumberFormat;
+  if (stamp.caseSeq) matrix.caseSeq = stamp.caseSeq;
+
   const nextPatient: PatientRecord = {
     id: createPatientId(),
     fullName,
@@ -741,7 +781,7 @@ export function createPatientRecord(draft: CreatePatientDraft): PatientRecord | 
 export type UpdatePatientRecordPatch = Partial<
   Pick<
     PatientRecord,
-    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts" | "isCashPatient" | "locationId" | "textRemindersOff"
+    "fullName" | "dob" | "sex" | "maritalStatus" | "phone" | "email" | "address" | "attorney" | "caseStatus" | "dateOfLoss" | "lastUpdate" | "priority" | "relatedCases" | "xrayReferrals" | "mriReferrals" | "specialistReferrals" | "alerts" | "isCashPatient" | "locationId" | "textRemindersOff" | "compliance" | "onPatientList"
   > & {
     matrix: Partial<Record<PatientMatrixField, string>>;
   }
@@ -756,6 +796,30 @@ export function updatePatientRecordById(patientId: string, patch: UpdatePatientR
   const existingPatient = patients.find((entry) => entry.id === normalizedPatientId);
   if (!existingPatient) {
     return null;
+  }
+
+  // Folder preview: person fields are saved on the patient folder, not copied
+  // onto this case row. With the switch off, splitPersonPatch returns the
+  // patch unchanged.
+  if (patientFoldersEnabled()) {
+    const split = splitPersonPatch(patch);
+    if (split.hasPerson) {
+      const person = split.person;
+      void import("@/lib/patient-folder-runtime").then((mod) =>
+        mod.savePersonForCase(normalizedPatientId, {
+          fullName: typeof person.fullName === "string" ? person.fullName : existingPatient.fullName,
+          dob: typeof person.dob === "string" ? person.dob : existingPatient.dob,
+          phone: typeof person.phone === "string" ? person.phone : existingPatient.phone,
+          email: typeof person.email === "string" ? person.email : (existingPatient.email ?? ""),
+          address: typeof person.address === "string" ? person.address : (existingPatient.address ?? ""),
+          sex: typeof person.sex === "string" ? person.sex : (existingPatient.sex ?? ""),
+          maritalStatus: typeof person.maritalStatus === "string" ? person.maritalStatus : (existingPatient.maritalStatus ?? ""),
+          alerts: Array.isArray(person.alerts) ? person.alerts.filter((item): item is string => typeof item === "string") : (existingPatient.alerts ?? []),
+        }),
+      );
+      if (Object.keys(split.casePatch).length === 0) return existingPatient;
+      patch = split.casePatch as UpdatePatientRecordPatch;
+    }
   }
 
   const nextPatient: PatientRecord = {
@@ -779,6 +843,14 @@ export function updatePatientRecordById(patientId: string, patch: UpdatePatientR
       summary: `Case status: ${existingPatient.caseStatus} → ${patch.caseStatus}`,
       patient: nextPatient,
       details: { from: existingPatient.caseStatus, to: patch.caseStatus },
+    });
+  }
+  if (patch.compliance !== undefined && (patch.compliance || "") !== (existingPatient.compliance || "")) {
+    logPatientActivity({
+      action: "patient.compliance",
+      summary: `Compliance: ${complianceLabel(existingPatient.compliance, loadComplianceOptions()) || "not set"} → ${complianceLabel(patch.compliance, loadComplianceOptions()) || "not set"}`,
+      patient: nextPatient,
+      details: { from: existingPatient.compliance || "", to: patch.compliance || "" },
     });
   }
   if (patch.matrix && "review" in patch.matrix) {

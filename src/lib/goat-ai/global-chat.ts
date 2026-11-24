@@ -1,3 +1,4 @@
+import { acceptHits, isNeverName, isShortTypo, matchNameToken, type TokenHit } from "@/lib/goat-name-guard";
 import type { OfficeMemory } from "@/lib/goat-office";
 import type { BookingDraft } from "@/lib/goat-booking";
 import type { OmPlan } from "@/lib/goat-om";
@@ -14,7 +15,7 @@ import type { OmSnapshot } from "@/lib/goat-om-apply";
  * it is cleared on sign-out and when the workspace changes (cloud-state.ts).
  */
 
-import { buildCaseNumber } from "@/lib/follow-up-queue";
+import { caseNumberOf } from "@/lib/follow-up-queue";
 import { activeFirst, isActiveCase } from "@/lib/patient-name-match";
 
 export interface ChatPatient {
@@ -79,7 +80,7 @@ export interface ChatMessage {
   /** The user message this reply answered (for "not what I meant"). */
   replyTo?: string;
   /** A booking waiting for Confirm (nothing is saved before that). */
-  booking?: BookingDraft & { state: "open" | "booked" | "canceled"; appointmentId?: string; replacesId?: string; newPatient?: { firstName: string; lastName: string; phone: string; provider: string; location: string; patientId?: string } };
+  booking?: BookingDraft & { state: "open" | "saving" | "booked" | "canceled" | "error"; saveError?: string; appointmentId?: string; replacesId?: string; newPatient?: { firstName: string; lastName: string; phone: string; provider: string; location: string; patientId?: string } };
   /** In-chat new patient + first visit: waiting for one missing detail (phone / day / time). */
   npAsk?: { field: "phone" | "time" | "day"; pending: import("@/lib/goat-new-patient-booking").PendingNewPatientBooking; state: "open" | "done" };
   /** A change to a Case Notes line G.O.A.T. just added (redate / retext / undo), waiting for Confirm. */
@@ -105,8 +106,44 @@ export interface ChatMessage {
   /** "/contact" edit card. */
   contactEdit?: { contactId: string; name: string; category: string; phone: string; fax: string; email: string; address: string; state: "open" | "saved" | "canceled"; result?: string };
   /** "/todo" confirm card. */
-  todoDraft?: { title: string; dueDate: string; patientId?: string; patientName?: string; state: "open" | "saved" | "canceled" };
-  noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saved" | "canceled"; saved?: string };
+  todoDraft?: { title: string; dueDate: string; patientId?: string; patientName?: string; state: "open" | "saving" | "saved" | "canceled" | "error"; saveError?: string };
+  /** "/note" and "/todo": the patient type-ahead (name / case # / phone). `picked` once a patient is chosen. */
+  flowPicker?: { next: "note" | "todo" | "text"; prefill?: string; allowNone?: boolean; picked?: string };
+  /**
+   * A Key Dates closed day waiting for Confirm. Nothing is written until that tap.
+   * When a textDraft is on the same message, that card's Send marks the day and queues the text together.
+   */
+  closedDay?: {
+    iso: string;
+    /** "Thursday, Nov 19" */
+    label: string;
+    reason: string;
+    state: "open" | "saving" | "done" | "canceled" | "error";
+    result?: string;
+  };
+  /** "/text": who gets it, the message, and the Send card. Nothing is queued until the user taps Send. Names only — never phone numbers. */
+  textDraft?: {
+    audience: import("@/lib/goat-text").TextAudience;
+    message: string;
+    state: "open" | "queuing" | "queued" | "canceled" | "error";
+    recipients?: Array<{ id: string; name: string }>;
+    skipped?: { optedOut: number; noPhone: number; sharedPhone: number };
+    deferred?: boolean;
+    /** The "Queued…" line, or the reason nothing was queued. */
+    result?: string;
+  };
+  /** Bulk cancel: the checklist of visits. Nothing is canceled until the red button is tapped. */
+  bulkCancel?: {
+    heading: string;
+    /** "tomorrow" / "Fri 10/30", for the card. */
+    dayWord: string;
+    rows: Array<{ id: string; patientId: string; patientName: string; time: string; type: string; provider: string; prevStatus: string; checked: boolean }>;
+    state: "open" | "done" | "canceled" | "undone";
+    result?: string;
+    /** Set after cancel: "Also text these patients?" has been offered. */
+    offerText?: boolean;
+  };
+  noteDraft?: { patientId: string; patientName: string; text: string; state: "open" | "saving" | "saved" | "canceled" | "error"; saved?: string; saveError?: string };
   /** A button that opens an existing form prefilled (New Patient / New Appointment). Nothing is saved until the user saves the form. */
   formLaunch?:
     | { kind: "newPatient"; label: string; draft: Record<string, string | boolean | number | undefined>; ask: string[] }
@@ -115,7 +152,7 @@ export interface ChatMessage {
   bookingAsk?: { patientId: string; question: string };
   /** Clickable links under the answer (e.g. the Settings page that changes something). */
   links?: Array<{ label: string; href: string }>;
-  /** Clickable to-do lines (Morning Rundown, /view todo), then textAfter. */
+  /** Clickable to-do lines (/view todo), then textAfter. */
   todoRows?: Array<{ id: string; href: string; before: string; after: string; patientName?: string; patientHref?: string }>;
   textAfter?: string;
 }
@@ -137,12 +174,41 @@ function chatKey(): string {
   return `${GOAT_CHAT_PREFIX}${ws || "default"}`;
 }
 
+const APPT_CHECK_CHIP = /^(appointment check|appt check|appointments check|apptcheck)$/i;
+
+/** The list G.O.A.T. writes when the Appointment Check chip runs. */
+export function isApptCheckResult(text: string): boolean {
+  const t = text.trim();
+  return t.startsWith("Appointment Check —") || t.startsWith("Every active patient has a visit booked after this week");
+}
+
+/**
+ * The chip's generated list is not a conversation to reopen on.
+ * A typed question such as "who needs to be scheduled" stays.
+ */
+export function withoutAutoApptCheck(state: ChatState): ChatState {
+  const messages: ChatMessage[] = [];
+  for (let i = 0; i < state.messages.length; i++) {
+    const message = state.messages[i];
+    const next = state.messages[i + 1];
+    if (message.role === "user" && APPT_CHECK_CHIP.test(message.text.trim()) && next?.role === "goat" && isApptCheckResult(next.text)) {
+      i += 1;
+      continue;
+    }
+    messages.push(message);
+  }
+  return messages.length === state.messages.length ? state : { ...state, messages };
+}
+
 export function loadChat(): ChatState {
   if (typeof window === "undefined") return { messages: [], patientId: null };
   try {
     const raw = window.localStorage.getItem(chatKey());
     const v = raw ? (JSON.parse(raw) as Partial<ChatState>) : {};
-    return { messages: Array.isArray(v.messages) ? v.messages.slice(-200) : [], patientId: typeof v.patientId === "string" ? v.patientId : null };
+    return withoutAutoApptCheck({
+      messages: Array.isArray(v.messages) ? v.messages.slice(-200) : [],
+      patientId: typeof v.patientId === "string" ? v.patientId : null,
+    });
   } catch {
     return { messages: [], patientId: null };
   }
@@ -240,25 +306,22 @@ export function editDistance(a: string, b: string): number {
 
 /** How well one word of the question fits one part of a name: 1 exact, 0.85 start of the name, 0.8 / 0.6 typo, else 0. */
 export function namePartScore(word: string, part: string, whole = false): number {
+  // One shared rule (goat-name-guard): never an everyday word / EHR abbreviation, no short-token
+  // typos, a typo needs both words ≥ 4 letters and the same first letter.
+  const m = matchNameToken(word, part, { allowPrefix: !whole });
+  if (!m) return isShortTypo(word, part) ? 0.6 : 0; // 3-letter typo: only counts beside the other name part (acceptHits)
+  if (m === "exact") return 1;
+  if (m === "prefix") return 0.85;
   const w = word.toLowerCase();
   const p = part.toLowerCase();
-  if (w.length < 2 || p.length < 2) return 0;
-  if (w === p) return 1;
-  // A finished word ("armen " / "armen next visit") never matches the start of a longer name (Armenuhi).
-  if (!whole && w.length >= 3 && p.startsWith(w)) return 0.85;
-  if (w.length >= 4) {
-    const d = editDistance(w, p);
-    if (d === 1) return 0.8;
-    if (d === 2 && w.length >= 6 && p.length >= 6) return 0.6;
-  }
-  return 0;
+  return editDistance(w, p) <= 1 ? 0.8 : 0.6;
 }
 
 /** Words of a question that could be a name: doctors ("Dr. Armen") and everyday words left out; "sam's" → "sam". */
 export function nameWords(question: string): string[] {
   const q = question.replace(/\b(?:dr|doctor)\.?\s+[A-Za-z'-]+(?:\s+[A-Z][a-z'-]+)?/gi, " ");
   const words = (q.match(/[A-Za-z][A-Za-z'-]*/g) ?? []).map((w) => w.replace(/'s$/i, "").replace(/['-]+$/, ""));
-  return [...new Set(words.filter((w) => w.length >= 3 && !NOT_A_NAME.has(w.toLowerCase())))];
+  return [...new Set(words.filter((w) => w.length >= 3 && !NOT_A_NAME.has(w.toLowerCase()) && !isNeverName(w)))];
 }
 
 export interface PatientMatch {
@@ -301,7 +364,17 @@ export function scorePatients(question: string, patients: ChatPatient[]): Patien
         used.push(bestWord);
       }
     }
-    if (score >= 0.6) out.push({ patient, score, words: used });
+    if (score < 0.6) continue;
+    // Context rules: a lone typo hit or an ambiguous word (may, will) needs more than itself.
+    const hits: TokenHit[] = used.map((w) => {
+      const at = question.toLowerCase().indexOf(w.toLowerCase());
+      const raw = at >= 0 ? question.slice(at, at + w.length) : w;
+      const m = nameTokens(patient.fullName).map((part) => ({ part, m: matchNameToken(w, part, { allowPrefix: !whole(w) }) })).find((x) => x.m);
+      const short = !m && nameTokens(patient.fullName).some((part) => isShortTypo(w, part));
+      return { index: at, raw, kind: short ? "short" : (m?.m ?? "exact"), part: m?.part.toLowerCase() ?? w } as TokenHit;
+    });
+    if (acceptHits(hits).length === 0) continue;
+    out.push({ patient, score, words: used });
   }
   return out.sort((a, b) => b.score - a.score || a.patient.fullName.localeCompare(b.patient.fullName));
 }
@@ -324,7 +397,7 @@ export function typedFullName(question: string, patients: ChatPatient[]): { text
     const firstHits = patients.filter((p) => namePartScore(w1, nameParts(p.fullName).first, true) >= 0.8);
     if (!firstHits.length) { re.lastIndex = m.index + m[1].length; continue; }
     // w2 is someone's first-name too ("kara john")? then it isn't a surname claim.
-    const lastFits = (p: ChatPatient) => nameParts(p.fullName).last.split(/[\s-]+/).some((part) => namePartScore(w2, part, true) >= 0.8);
+    const lastFits = (p: ChatPatient) => nameParts(p.fullName).last.split(/[\s-]+/).some((part) => namePartScore(w2, part, true) >= 0.8 || isShortTypo(w2, part));
     const ids = new Set(firstHits.filter(lastFits).map((p) => p.id));
     const cap = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
     return { text: `${cap(m[1])} ${cap(m[2].replace(/'s$/i, ""))}`, ids };
@@ -387,7 +460,7 @@ function usDate(value: string): string {
 
 /** "Smith, John · DOB 03/12/1980 · DOI 06/14/2026 · Case # 061426SMJO" for the clarifying question. */
 export function choiceLabel(p: ChatPatient): string {
-  const caseNo = buildCaseNumber(p.dateOfLoss, p.fullName);
+  const caseNo = caseNumberOf(p);
   return [
     displayName(p.fullName),
     p.dob ? `DOB ${usDate(p.dob)}` : "",

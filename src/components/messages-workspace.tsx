@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { patients } from "@/lib/mock-data";
-import { buildCaseNumber } from "@/lib/follow-up-queue";
+import { caseNumberOf } from "@/lib/follow-up-queue";
 import { useWorkspaceMessages, type WorkspaceMessage } from "@/hooks/use-workspace-messages";
 import { useWorkspacePeople, type WorkspacePerson } from "@/hooks/use-workspace-people";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
@@ -89,7 +89,7 @@ export function MessagesWorkspace() {
     return patients
       .filter((p) => !p.deleted)
       .map((p) => {
-        const caseNumber = buildCaseNumber(p.dateOfLoss, p.fullName);
+        const caseNumber = caseNumberOf(p);
         const label = caseNumber ? `${caseNumber} ${p.fullName}` : p.fullName;
         return { id: p.id, name: p.fullName, caseNumber, label };
       })
@@ -340,30 +340,19 @@ export function MessagesWorkspace() {
     );
   }
 
+  const countLine = `${conversations.length} active chat${conversations.length === 1 ? "" : "s"} · ${messages.length} message${messages.length === 1 ? "" : "s"}`;
+
   return (
     <div className="space-y-5">
-      <section className="panel-card p-4">
-        <div className="flex flex-wrap items-start justify-end gap-3">
-          <div className="text-right text-sm">
-            <p>
-              <span className="font-semibold">{conversations.length}</span> active chat
-              {conversations.length === 1 ? "" : "s"}
-            </p>
-            <p className="text-[var(--text-muted)]">
-              {messages.length} message{messages.length === 1 ? "" : "s"}
-            </p>
-          </div>
-        </div>
-      </section>
-
       {canPost && (
         <section className="panel-card overflow-hidden">
           <button
-            className="flex w-full items-center justify-between px-4 py-3 text-left"
+            className="flex w-full items-center gap-3 px-4 py-3 text-left"
             onClick={() => setComposerOpen((v) => !v)}
             type="button"
           >
-            <span className="text-lg font-semibold">New message</span>
+            <span className="text-lg font-semibold">New Message</span>
+            <span className="ml-auto text-xs text-[var(--text-muted)]">{countLine}</span>
             <span className="text-[var(--text-muted)]">{composerOpen ? "▾" : "▸"}</span>
           </button>
           {composerOpen && (
@@ -592,7 +581,7 @@ export function MessagesWorkspace() {
                   {todoNotice && <span className="ml-2 font-semibold text-emerald-700">{todoNotice}</span>}
                 </span>
                 <button
-                  className="rounded-xl bg-[var(--brand-primary)] px-5 py-2 text-sm font-semibold text-white transition-all active:scale-[0.97] active:brightness-90 disabled:opacity-50"
+                  className="btn btn-primary disabled:opacity-50"
                   disabled={!body.trim() || sending || (eyesOnly && !replyingTo?.isPrivate && notify.size === 0)}
                   onClick={() => void handleSend()}
                   type="button"
@@ -684,7 +673,7 @@ export function MessagesWorkspace() {
                           className="text-xs font-semibold text-[var(--brand-primary)] hover:underline"
                           href={`/patients/${conv.patientId}`}
                         >
-                          Open patient file →
+                          Open case file →
                         </Link>
                       </div>
                     )}
@@ -711,7 +700,7 @@ export function MessagesWorkspace() {
                             (other) => other.id !== m.id && other.threadRootId === m.id,
                           ).length;
                           // The starter can clear their own thread; admins and
-                          // managers can clear any, per Settings → Admin Access.
+                          // managers can clear any, per Settings → Roles & Permissions.
                           const canDeleteThread =
                             supportsPrivateThreads &&
                             (mine || canDeleteAnyThread) &&
@@ -825,7 +814,7 @@ export function MessagesWorkspace() {
                                   <div className="mt-1.5 flex flex-wrap gap-1">
                                     {m.mentions.map((mn) => (
                                       <span
-                                        className="rounded-full bg-[rgba(13,121,191,0.12)] px-2 py-0.5 text-xs font-semibold text-[#0d79bf]"
+                                        className="rounded-full bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] px-2 py-0.5 text-xs font-semibold text-[var(--brand-ink)]"
                                         key={mn.userId}
                                       >
                                         @{mn.label}

@@ -41,7 +41,50 @@ export interface SmsReminderSettings {
   dryRun: boolean;
   /** IANA time zone the office runs in (decides "today" and "tomorrow"). */
   timeZone: string;
+  /** Append an opt-out line ("Reply STOP to opt out.") to every text. */
+  optOutLine: boolean;
+  /** Wording of that line. */
+  optOutText: string;
+  /** Staff ticked "I created the 8 AM automation" (the iPhone's Shortcuts
+   *  automation iOS won't let a shortcut ship with). Saved to cloud settings. */
+  automationConfirmed: boolean;
+  /** ISO time the box was ticked ("" when not). */
+  automationConfirmedAt: string;
+  /** Text every patient (any case status) whose birthday is today, during the same daily
+   *  run. Off until the office turns it on. Saved to cloud settings. */
+  birthdayTexts: boolean;
+  /** Birthday text wording. `{first name}` becomes the patient's first name. */
+  birthdayMessage: string;
+  /** The library message birthday texts send ("" = not attached yet; the server then falls back). */
+  birthdayTemplateId: string;
+  /** Earliest hour a birthday text may go out. Falls back to sendHour for older settings. */
+  birthdayHour: number;
+  /**
+   * Saved "which message, when" rows. null means this office has not opened the new
+   * screen yet — the queue keeps the old send-hour behavior until they do.
+   */
+  rules: TextRule[] | null;
+  /** Which Text Reminders sections staff opened / closed. Saved to cloud settings so every
+   *  computer shows the same layout. A section that is not listed uses its default. */
+  sections: Partial<Record<"setup" | "texts" | "messages" | "sends" | "steps" | "devices" | "how" | "optout" | "optedout" | "iphone" | "imac" | "birthday" | "autotexts" | "library" | "more" | "templates" | "shortcuts" | "stop", boolean>>;
 }
+
+export type TextWhenKind = "day-before" | "birthday" | "open-day" | "hours-before";
+
+/** One automatic text: a saved message, when it goes out, and on or off. */
+export interface TextRule {
+  id: string;
+  templateId: string;
+  on: boolean;
+  kind: TextWhenKind;
+  hour: number;
+  /** Shortcut the Device runs for this row, for example "NoteGoat – Birthdays 9 AM". */
+  shortcutName?: string;
+}
+
+export const DEFAULT_OPT_OUT_TEXT = "Reply STOP to opt out.";
+export const DEFAULT_BIRTHDAY_MESSAGE = "Happy birthday, {first name}! From all of us at Prime Spine.";
+export const BIRTHDAY_MESSAGE_MAX = 320;
 
 export function defaultSmsReminderSettings(): SmsReminderSettings {
   return {
@@ -59,7 +102,40 @@ export function defaultSmsReminderSettings(): SmsReminderSettings {
     // office turns this off on purpose.
     dryRun: true,
     timeZone: "America/Los_Angeles",
+    optOutLine: true,
+    optOutText: DEFAULT_OPT_OUT_TEXT,
+    automationConfirmed: false,
+    automationConfirmedAt: "",
+    birthdayTexts: false,
+    birthdayMessage: DEFAULT_BIRTHDAY_MESSAGE,
+    birthdayTemplateId: "",
+    birthdayHour: 8,
+    rules: null,
+    sections: {},
   };
+}
+
+const TEXT_WHEN: ReadonlySet<string> = new Set(["day-before", "birthday", "open-day", "hours-before"]);
+
+function normalizeTextRules(value: unknown): TextRule[] | null {
+  if (!Array.isArray(value)) return null;
+  const rules: TextRule[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as Record<string, unknown>;
+    if (typeof raw.id !== "string" || !TEXT_WHEN.has(String(raw.kind))) continue;
+    const hour = Number(raw.hour);
+    const shortcutName = typeof raw.shortcutName === "string" ? raw.shortcutName.trim().slice(0, 80) : "";
+    rules.push({
+      id: raw.id.slice(0, 40),
+      templateId: typeof raw.templateId === "string" ? raw.templateId : "",
+      on: raw.on === true,
+      kind: raw.kind as TextWhenKind,
+      hour: Number.isFinite(hour) ? Math.min(23, Math.max(0, Math.round(hour))) : 8,
+      ...(shortcutName ? { shortcutName } : {}),
+    });
+  }
+  return rules;
 }
 
 export function normalizeSmsReminderSettings(value: unknown): SmsReminderSettings {
@@ -91,6 +167,25 @@ export function normalizeSmsReminderSettings(value: unknown): SmsReminderSetting
   }
   if (raw.dryRun === false) base.dryRun = false;
   if (typeof raw.timeZone === "string" && raw.timeZone.trim()) base.timeZone = raw.timeZone.trim();
+  if (raw.optOutLine === false) base.optOutLine = false;
+  if (typeof raw.optOutText === "string" && raw.optOutText.trim()) base.optOutText = raw.optOutText.trim().slice(0, 120);
+  if (raw.automationConfirmed === true) {
+    base.automationConfirmed = true;
+    if (typeof raw.automationConfirmedAt === "string") base.automationConfirmedAt = raw.automationConfirmedAt;
+  }
+  if (raw.birthdayTexts === true) base.birthdayTexts = true;
+  if (typeof raw.birthdayMessage === "string" && raw.birthdayMessage.trim()) {
+    base.birthdayMessage = raw.birthdayMessage.trim().slice(0, BIRTHDAY_MESSAGE_MAX);
+  }
+  if (typeof raw.birthdayTemplateId === "string") base.birthdayTemplateId = raw.birthdayTemplateId;
+  base.birthdayHour = num("birthdayHour", 0, 23) ?? base.sendHour;
+  base.rules = normalizeTextRules(raw.rules);
+  if (raw.sections && typeof raw.sections === "object") {
+    const sec = raw.sections as Record<string, unknown>;
+    for (const key of ["setup", "texts", "messages", "sends", "steps", "devices", "how", "optout", "optedout", "iphone", "imac", "birthday", "autotexts", "library", "more", "templates", "shortcuts", "stop"] as const) {
+      if (typeof sec[key] === "boolean") base.sections[key] = sec[key] as boolean;
+    }
+  }
   return base;
 }
 
@@ -210,4 +305,15 @@ export function reminderSendDate(visitDateIso: string, daysAhead: number): strin
   const date = new Date(Date.UTC(year, month - 1, day));
   date.setUTCDate(date.getUTCDate() - Math.max(0, Math.round(daysAhead)));
   return date.toISOString().slice(0, 10);
+}
+
+/** The saved reminder settings on this computer (browser only; empty defaults on the server). */
+export function loadSmsReminderSettings(): SmsReminderSettings {
+  if (typeof window === "undefined") return defaultSmsReminderSettings();
+  try {
+    const raw = window.localStorage.getItem(SMS_REMINDER_SETTINGS_KEY);
+    return normalizeSmsReminderSettings(raw ? JSON.parse(raw) : null);
+  } catch {
+    return defaultSmsReminderSettings();
+  }
 }

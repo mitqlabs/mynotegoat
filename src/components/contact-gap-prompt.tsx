@@ -91,7 +91,7 @@ export function ContactGapPrompt({ gap, onClose, onSaved }: ContactGapPromptProp
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.5)] px-4 py-8">
+    <div className="modal-overlay fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.5)] px-4 py-8">
       <ScrollLock />
       <section className="w-full max-w-lg rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
         <div className="flex items-start justify-between gap-3">
@@ -100,7 +100,7 @@ export function ContactGapPrompt({ gap, onClose, onSaved }: ContactGapPromptProp
             <p className="mt-1 text-sm text-[var(--text-muted)]">{headline}</p>
           </div>
           <button
-            className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+            className="btn btn-secondary btn-sm"
             onClick={onClose}
             type="button"
           >
@@ -190,14 +190,14 @@ export function ContactGapPrompt({ gap, onClose, onSaved }: ContactGapPromptProp
 
         <div className="mt-4 flex justify-end gap-2">
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+            className="btn btn-secondary"
             onClick={onClose}
             type="button"
           >
             Skip
           </button>
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+            className="btn btn-primary"
             onClick={handleSave}
             type="button"
           >

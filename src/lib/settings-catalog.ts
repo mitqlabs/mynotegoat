@@ -48,7 +48,13 @@ export type SettingsSectionKey =
   | "account"
   | "diagnostics"
   // G.O.A.T. words & abbreviations — the editor lives on /settings/goat.
-  | "goat";
+  | "goat"
+  // G.O.A.T. Page briefing board: which boxes, and how each one is arranged.
+  | "goatPage"
+  // Office theme. Light or Dark is each person's own, on the same screen.
+  | "themes"
+  // This person's sidebar page order. Settings stays last.
+  | "sidebar";
 
 export const settingsSearchCatalog: Array<{
   key: SettingsSectionKey;
@@ -99,6 +105,11 @@ export const settingsSearchCatalog: Array<{
     key: "caseStatuses",
     title: "Case Status Categories",
     aliases: [
+      "compliance",
+      "compliance column",
+      "compliance categories",
+      "compliance options",
+      "compliance colors",
       "status",
       "case status",
       "lien",
@@ -136,10 +147,39 @@ export const settingsSearchCatalog: Array<{
     parent: "officeSettings",
   },
   {
+    key: "sidebar",
+    title: "Sidebar",
+    aliases: ["sidebar", "menu", "order", "rearrange", "navigation", "nav", "drag"],
+  },
+  {
+    key: "themes",
+    title: "Themes",
+    aliases: [
+      "theme",
+      "themes",
+      "color",
+      "colors",
+      "colour",
+      "dark",
+      "light",
+      "dark mode",
+      "appearance",
+      "sunset",
+      "brand",
+      "notegoat blue",
+    ],
+  },
+  {
     key: "goat",
     title: "G.O.A.T.",
     description: "Words, abbreviations and synonym groups G.O.A.T. uses",
     aliases: ["goat", "g.o.a.t.", "ask", "abbreviation", "abbreviations", "synonym", "synonyms", "words", "terms", "rom", "pm", "pain management"],
+  },
+  {
+    key: "goatPage",
+    title: "G.O.A.T. Page",
+    description: "Which boxes are on the G.O.A.T. Page, and what each box shows",
+    aliases: ["goat page", "briefing", "board", "boxes", "end of day", "handoff", "tomorrow", "case snapshot"],
   },
   // Macros wrapper + children
   { key: "macros", title: "Macros" },
@@ -230,7 +270,7 @@ export const settingsSearchCatalog: Array<{
   {
     key: "textReminders",
     title: "Text Reminders",
-    aliases: ["reminder", "appointment reminder", "automatic text", "imac", "mac", "sms", "24 hour"],
+    aliases: ["reminder", "appointment reminder", "automatic text", "imac", "mac", "sms", "24 hour", "8 am", "automation", "shortcut", "send reminders", "iphone reminders"],
     parent: "templates",
   },
   {
@@ -256,6 +296,9 @@ export const settingsSearchCatalog: Array<{
       "doctor name",
       "office",
       "office name",
+      "case number",
+      "case number format",
+      "case #",
       "account",
       "password",
       "office account settings",
@@ -264,9 +307,34 @@ export const settingsSearchCatalog: Array<{
   },
   {
     key: "adminAccess",
-    title: "Admin Access",
-    description: "Roles, what Managers can see and delete, and the delete password.",
-    aliases: ["role", "roles", "manager", "admin", "permission", "permissions", "delete password", "access"],
+    title: "Roles & Permissions",
+    description: "What each role (Staff, Manager, Admin) is allowed to open, add, edit and delete, plus the delete password.",
+    aliases: [
+      "role",
+      "roles",
+      "role settings",
+      "role manager",
+      "role approval",
+      "role permissions",
+      "permission",
+      "permissions",
+      "approval",
+      "approvals",
+      "allowed",
+      "what can staff do",
+      "staff",
+      "manager",
+      "managers",
+      "admin",
+      "admin access",
+      "access",
+      "who can edit",
+      "who can delete",
+      "contacts",
+      "edit contacts",
+      "add contacts",
+      "delete password",
+    ],
   },
   {
     key: "diagnostics",
@@ -300,8 +368,10 @@ export const settingsSearchCatalog: Array<{
   },
 ];
 
-export const GOAT_SETTINGS_PAGE = { key: "goatPage", title: "G.O.A.T. Settings (answers, words)", href: "/settings/goat" } as const;
+export const GOAT_SETTINGS_PAGE = { key: "goat", title: "G.O.A.T.", href: "/settings/goat" } as const;
 
 export function settingsHref(key: SettingsSectionKey): string {
-  return key === "goat" ? "/settings/goat" : `/settings?section=${key}`;
+  if (key === "goat") return "/settings/goat#chat";
+  if (key === "goatPage") return "/settings/goat#goat-page";
+  return `/settings?section=${key}`;
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateSnapshot } from "@/lib/patient-forms";
+import { DEMO_NOT_SENT } from "@/lib/demo-office";
 import {
   adminClient,
   DEFAULT_EXPIRY_DAYS,
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest) {
   const admin = adminClient(cfg);
   const caller = await verifyStaff(request, cfg, admin);
   if (!caller) return NextResponse.json({ error: "Not signed in." }, { status: 401, headers: NO_STORE });
+  if (caller.demo) return NextResponse.json({ error: DEMO_NOT_SENT, message: DEMO_NOT_SENT, demo: true }, { status: 403, headers: NO_STORE });
   if (!(await rateOk(admin, `send:${caller.userId}`, 60, 3600))) {
     return NextResponse.json({ error: "Too many forms sent in the last hour. Try again later." }, { status: 429, headers: NO_STORE });
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
+import { isoToShortUs } from "@/lib/additional-dois";
 import type { DischargeInfo } from "@/lib/discharge-date";
 import { toUsDateCanonical } from "@/lib/follow-up-queue";
 
@@ -75,6 +76,7 @@ function readRegionsList(entry: ImagingSummaryEntry): string {
  */
 export function QuickGlance({
   doi,
+  additionalDois,
   ie,
   discharge,
   billed,
@@ -85,6 +87,8 @@ export function QuickGlance({
   legacyReviewed,
 }: {
   doi: string;
+  /** Extra dates of injury on this same record (ISO), shown under the main DOI. */
+  additionalDois?: string[];
   ie: string;
   /** The Discharge box date (lib/discharge-date): saved, else the attended Discharge visit. */
   discharge?: DischargeInfo;
@@ -185,7 +189,7 @@ export function QuickGlance({
   return (
     <article className="panel-card p-3">
       <button
-        className="flex w-full items-center justify-between rounded-xl bg-[#72bdcf] px-3 py-2 text-lg font-semibold text-white"
+        className="flex w-full items-center justify-between rounded-xl section-bar px-3 py-2 text-lg font-semibold text-white"
         onClick={toggleOpen}
         type="button"
       >
@@ -203,6 +207,11 @@ export function QuickGlance({
         <div>
           <div className="font-semibold text-[var(--text-muted)]">DOI</div>
           <div className="font-semibold tabular-nums">{doiLabel || dash}</div>
+          {(additionalDois ?? []).map((iso) => (
+            <div className="font-semibold tabular-nums" data-quick-glance="additional-doi" key={iso} title="Additional date of injury">
+              + {isoToShortUs(iso)}
+            </div>
+          ))}
         </div>
         <div>
           <div className="font-semibold text-[var(--text-muted)]">IE</div>
@@ -274,7 +283,7 @@ export function QuickGlance({
                       <span className="whitespace-nowrap">
                         <span className="text-[var(--text-muted)]">Reviewed </span>
                         {row.reviewed ? (
-                          <span className="font-semibold text-[#0d79bf]">✓ {row.reviewed}</span>
+                          <span className="font-semibold text-[var(--brand-ink)]">✓ {row.reviewed}</span>
                         ) : (
                           dash
                         )}
@@ -334,7 +343,7 @@ function StatusCounts({
     <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums">
       <span className="text-[#111]">{counts.scheduled}</span>
       <span className="text-[var(--text-muted)]"> / </span>
-      <span className="text-[#0d79bf]">{counts.checkedIn}</span>
+      <span className="text-[var(--brand-ink)]">{counts.checkedIn}</span>
       <span className="text-[var(--text-muted)]"> / </span>
       <span className="text-[#047857]">{counts.checkedOut}</span>
       <span className="text-[var(--text-muted)]"> / </span>

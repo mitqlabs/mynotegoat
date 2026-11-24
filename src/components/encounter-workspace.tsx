@@ -1,9 +1,11 @@
 "use client";
 
 import { ageTokenOn } from "@/lib/age";
-import { isDecompressionSinglePick } from "@/lib/treatment-plans";
 import { NumberInput } from "@/components/number-input";
 import { NoteOpenTag, useCheckoutNoteGuard } from "@/components/checkout-note-guard";
+import { toInlineMacroHtml } from "@/lib/macro-inline";
+import { groupSoapMacros, orderComplaintMacros, soapMacroChipClass, soapNonRegionLabel } from "@/lib/soap-macro-groups";
+import { ResizableColumns } from "@/components/resizable-columns";
 import { SplitPane } from "@/components/split-pane";
 import { buildDischargeIndex, patientDischargeInfo, type DischargeIndex } from "@/lib/discharge-date";
 import { resolveInitialExamDate } from "@/lib/initial-exam-date";
@@ -26,11 +28,13 @@ import { refreshFormRequests } from "@/hooks/use-form-requests";
 import { answersToMacroFills, answersToPatientInfo, customAnswersHtml, findMacroByName, findSectionMacro, patientInfoPatch, PATIENT_INFO_FIELDS } from "@/lib/patient-forms";
 import { manageFormRequest, type FormRequestRow } from "@/lib/patient-forms-client";
 import { RichTextTemplateEditor, type RichTextTemplateEditorHandle } from "@/components/rich-text-template-editor";
-import { formatUsDateInput } from "@/components/us-date-input";
+import { MacroPromptQuestion } from "@/components/macro-prompt-question";
 import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
 import { getFormalTitle } from "@/lib/honorifics";
 import { useBillingMacros } from "@/hooks/use-billing-macros";
 import { useEncounterNotes } from "@/hooks/use-encounter-notes";
+import { mergePatientCloudNotes } from "@/lib/encounter-merge";
+import { encounterDisplayType } from "@/lib/encounter-link";
 import { draftKeyFor } from "@/lib/draft-recovery";
 import { normalizeEditorBlocks } from "@/lib/soap-html-normalize";
 import {
@@ -51,9 +55,13 @@ import {
   type EncounterMacroRunRecord,
   type EncounterSection,
 } from "@/lib/encounter-notes";
+import { isMacroQuestionVisible, questionsHaveShowIf } from "@/lib/macro-show-if";
 import {
   formatMacroAnswerValue,
   groupMacrosByFolder,
+  insertMissingVisibleMacroSpans,
+  macroInsertParts,
+  removeHiddenPromptSpan,
   renderMacroPromptSpan,
   renderMacroTemplateWithPromptSpans,
   type MacroAnswerMap,
@@ -68,7 +76,9 @@ import { QuickGlance } from "@/components/quick-glance";
 import { EncounterGoat } from "@/components/encounter-goat";
 import { useTreatmentPlanSettings } from "@/hooks/use-treatment-plan-settings";
 import { patients, updatePatientRecordById, type UpdatePatientRecordPatch } from "@/lib/mock-data";
+import { hasSoapContent, mergeNotesByNewest, pickSaltSource } from "@/lib/salt-source";
 import { carryForwardNoteText, decideOpenNoteUpdate } from "@/lib/plan-carry-forward";
+import { buildSoapPrintDocument } from "@/lib/print-soap";
 import { decideFillVisit, fillDateSpan, fillPromptText } from "@/lib/fill-plan-rules";
 import { useSimpleConfirm } from "@/components/fill-confirm-dialog";
 import {
@@ -80,6 +90,8 @@ import {
   confirmStatusChangeIfNeeded,
   type AppointmentStatus,
 } from "@/lib/schedule-appointments";
+import { appConfirm } from "@/components/app-dialog";
+import { extraDoisFor } from "@/lib/additional-dois";
 
 type EncounterWorkspaceProps = {
   initialPatientId?: string;
@@ -124,44 +136,9 @@ function rewriteMacroRunIds(html: string): { html: string; idMap: Map<string, st
  *   formatChargeDelta([], []) === ""
  */
 /**
- * Body-region macro buttons (Head, Cervical, Knee…) get their own row
- * under the question-style ones (MVC HX, Vitals, Chief Complaints…).
- * The doctor reaches for one of each per note, and mixing them in a
- * single wrapped row meant hunting for the region every time.
+ * Body-region names live in lib/soap-macro-groups.ts so the chip board
+ * and the bilateral pluraliser share one list.
  */
-const BODY_REGION_WORDS = new Set([
-  "head",
-  "tmj",
-  "jaw",
-  "neck",
-  "cervical",
-  "thoracic",
-  "lumbar",
-  "sacral",
-  "sacroiliac",
-  "si",
-  "coccyx",
-  "pelvis",
-  "chest",
-  "rib",
-  "ribs",
-  "shoulder",
-  "arm",
-  "elbow",
-  "forearm",
-  "wrist",
-  "hand",
-  "finger",
-  "hip",
-  "thigh",
-  "knee",
-  "leg",
-  "ankle",
-  "foot",
-  "toe",
-  "extremity",
-  "spine",
-]);
 
 /**
  * The macro question that asks which side — "LEFT/RIGHT", "Side",
@@ -268,26 +245,6 @@ function pluralizeRegionInHtml(html: string, regionName: string): string {
       return out;
     })
     .join("");
-}
-
-function isBodyRegionMacroName(name: string): boolean {
-  const words = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (words.length === 0) return false;
-  return words.some((word) => BODY_REGION_WORDS.has(word));
-}
-
-/** [question macros, body-region macros] — the second row is dropped when
- *  empty, so a section with no region macros looks exactly as it did.
- *  Not used for Subjective, which shows one row in saved order. */
-function splitMacrosByKind<T extends { buttonName: string }>(macros: T[]): T[][] {
-  const general = macros.filter((macro) => !isBodyRegionMacroName(macro.buttonName));
-  const regions = macros.filter((macro) => isBodyRegionMacroName(macro.buttonName));
-  return [general, regions].filter((row) => row.length > 0);
 }
 
 /**
@@ -467,19 +424,6 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
-function formatSoapText(text: string) {
-  const trimmed = text.trim();
-  if (!trimmed) return "-";
-  // The SOAP sections are stored as HTML from the rich-text editor.
-  // Render the HTML directly for print but neutralise the interactive
-  // macro-prompt spans — strip their wrapper tags while keeping the
-  // visible answer text inside so the print looks clean.
-  return trimmed.replace(
-    /<span\s+class="macro-prompt"[^>]*>([\s\S]*?)<\/span>/gi,
-    "$1",
-  );
-}
-
 function buildSoapPrintHtml(config: {
   officeName: string;
   officeAddress: string;
@@ -498,231 +442,7 @@ function buildSoapPrintHtml(config: {
     soap: Record<EncounterSection, string>;
   }>;
 }) {
-  const logoMarkup = config.logoDataUrl.trim()
-    ? `<img alt="Office Logo" src="${escapeHtml(config.logoDataUrl)}" class="logo" />`
-    : "";
-
-  const encounterMarkup = config.encounters
-    .map((encounter, idx) => {
-      const sections = [
-        { label: "Subjective", content: formatSoapText(encounter.soap.subjective) },
-        { label: "Objective", content: formatSoapText(encounter.soap.objective) },
-        { label: "Assessment", content: formatSoapText(encounter.soap.assessment) },
-        { label: "Plan", content: formatSoapText(encounter.soap.plan) },
-      ];
-
-      return `<section class="encounter">
-  <div class="encounter-header">
-    <div class="encounter-date">${escapeHtml(encounter.encounterDate)}</div>
-    <div class="encounter-type">${escapeHtml(encounter.appointmentType)}</div>
-  </div>
-  <div class="encounter-meta">
-    <span>Provider: <strong>${escapeHtml(encounter.provider)}</strong></span>
-  </div>
-  ${sections
-    .map(
-      (s) => `
-  <div class="soap-section">
-    <div class="soap-label">${s.label}</div>
-    <div class="soap-content">${s.content}</div>
-  </div>`,
-    )
-    .join("")}
-</section>`;
-    })
-    .join("");
-
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(config.documentTitle || `SOAP Notes - ${config.patientName}`)}</title>
-    <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body {
-        background: #fff;
-        color: #1a1a1a;
-        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-        font-size: 12px;
-        line-height: 1.4;
-      }
-
-      /* ── Letterhead ── */
-      .letterhead {
-        display: flex;
-        align-items: flex-start;
-        gap: 16px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #0d79bf;
-        margin-bottom: 10px;
-      }
-      .logo {
-        height: 70px;
-        width: auto;
-        max-width: 200px;
-        object-fit: contain;
-        flex-shrink: 0;
-        display: block;
-        margin: 0;
-        padding: 0;
-      }
-      .office-info {
-        flex: 1;
-        text-align: right;
-        margin: 0;
-        padding: 0;
-      }
-      .office-name {
-        font-size: 15px;
-        font-weight: 700;
-        color: #0d79bf;
-        margin: 0;
-        padding: 0;
-        line-height: 1.2;
-      }
-      .office-detail {
-        font-size: 11px;
-        color: #444;
-        line-height: 1.5;
-        margin: 0;
-      }
-
-      /* ── Patient banner ── */
-      .patient-banner {
-        background: #f0f6fb;
-        border: 1px solid #d0dfe9;
-        border-radius: 4px;
-        padding: 6px 10px;
-        margin-bottom: 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .patient-banner .label {
-        font-size: 9px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #5a7a8f;
-      }
-      .patient-banner .name {
-        font-size: 14px;
-        font-weight: 700;
-        color: #13293d;
-      }
-      .patient-banner .doc-title {
-        font-size: 11px;
-        font-weight: 600;
-        color: #0d79bf;
-      }
-
-      /* ── Encounter card ── */
-      .encounter {
-        border: 1px solid #d0dfe9;
-        border-radius: 4px;
-        margin-bottom: 8px;
-      }
-      .encounter-header {
-        background: #0d79bf;
-        color: #fff;
-        padding: 4px 10px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .encounter-date {
-        font-size: 12px;
-        font-weight: 700;
-      }
-      .encounter-type {
-        font-size: 11px;
-        opacity: 0.9;
-      }
-      .encounter-meta {
-        background: #f7fafc;
-        padding: 3px 10px;
-        border-bottom: 1px solid #e2eaf0;
-        font-size: 10px;
-        color: #5a7a8f;
-        display: flex;
-        gap: 16px;
-      }
-
-      /* ── SOAP sections ── */
-      .soap-section {
-        padding: 4px 10px;
-        border-bottom: 1px solid #eef2f6;
-      }
-      .soap-section:last-child {
-        border-bottom: none;
-      }
-      .soap-label {
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #0d79bf;
-        margin-bottom: 2px;
-      }
-      .soap-content {
-        font-size: 12px;
-        line-height: 1.45;
-        color: #1a1a1a;
-        word-break: break-word;
-      }
-      .soap-content p { margin: 0 0 3px 0; }
-      .soap-content b, .soap-content strong { font-weight: 700; }
-      .soap-content span { font-size: inherit; color: inherit; }
-
-      /* ── Footer ── */
-      .print-footer {
-        margin-top: 14px;
-        padding-top: 6px;
-        border-top: 1px solid #d0dfe9;
-        font-size: 9px;
-        color: #8899a6;
-        text-align: center;
-      }
-
-      @page {
-        size: Letter;
-        margin: 0.5in;
-      }
-      @media print {
-        * { break-inside: auto !important; break-before: auto !important; break-after: auto !important; }
-        .encounter { page-break-inside: auto !important; page-break-before: auto !important; }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="wrapper">
-      <header class="letterhead">
-        ${logoMarkup}
-        <div class="office-info">
-          <p class="office-name">${escapeHtml(config.officeName)}</p>
-          <p class="office-detail">
-            ${escapeHtml(config.officeAddress)}<br />
-            T: ${escapeHtml(config.officePhone)}${config.officeFax.trim() ? ` &nbsp;|&nbsp; F: ${escapeHtml(config.officeFax)}` : ""}<br />
-            ${escapeHtml(config.officeEmail)}
-          </p>
-        </div>
-      </header>
-
-      <div class="patient-banner">
-        <div>
-          <p class="label">Patient</p>
-          <p class="name">${escapeHtml(config.patientName)}</p>
-        </div>
-        <div class="doc-title">Clinical SOAP Notes</div>
-      </div>
-
-      ${encounterMarkup || "<p>No encounters found for this patient.</p>"}
-
-      <div class="print-footer">
-        ${escapeHtml(config.officeName)} &bull; Confidential Medical Record
-      </div>
-    </main>
-  </body>
-</html>`;
+  return buildSoapPrintDocument(config);
 }
 
 function printHtmlWithIframeFallback(printableHtml: string) {
@@ -882,10 +602,10 @@ function AppointmentsOverview({
                     <td className="px-3 py-2">
                       <select
                         className={`rounded-full border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold ${getStatusBadgeClass(apt.status as AppointmentStatus)}`}
-                        onChange={(event) => {
+                        onChange={async (event) => {
                           const nextStatus = event.target.value as AppointmentStatus;
                           if (nextStatus === apt.status) return;
-                          if (!confirmStatusChangeIfNeeded(apt.status as AppointmentStatus, nextStatus)) return;
+                          if (!(await confirmStatusChangeIfNeeded(apt.status as AppointmentStatus, nextStatus))) return;
                           onStatusChange(apt.id, nextStatus);
                         }}
                         value={apt.status}
@@ -907,7 +627,7 @@ function AppointmentsOverview({
                     <td className="px-3 py-2">
                       {linked ? (
                         <button
-                          className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs font-semibold"
+                          className="btn btn-secondary btn-sm"
                           onClick={() => onOpenEncounter(linked.id, apt.patientName)}
                           type="button"
                         >
@@ -928,7 +648,7 @@ function AppointmentsOverview({
                         <button
                           className={`rounded-lg border px-2 py-1 text-xs font-semibold ${
                             canStart
-                              ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                              ? "tone-ok border"
                               : "cursor-not-allowed border-[var(--line-soft)] bg-[var(--bg-soft)] text-[var(--text-muted)]"
                           }`}
                           disabled={!canStart}
@@ -968,16 +688,6 @@ function AppointmentsOverview({
   );
 }
 
-/** One-paragraph macro HTML → its inline content; null if it has several blocks or line breaks. */
-function toInlineMacroHtml(html: string): string | null {
-  let inner = html.trim();
-  const wrapped = /^<(p|div)>([\s\S]*)<\/\1>$/i.exec(inner);
-  if (wrapped) inner = wrapped[2].trim();
-  inner = inner.replace(/(?:<br\s*\/?>\s*)+$/i, "").trim();
-  if (!inner || /<\/?(p|div|ul|ol|li|table|h[1-6]|blockquote)\b|<br\b|\n/i.test(inner)) return null;
-  return inner;
-}
-
 export function EncounterWorkspace({ initialPatientId, initialEncounterId, initialAppointmentId, initialQuestionnaireId }: EncounterWorkspaceProps) {
   const { macroLibrary, reorderMacroInSection } = useMacroTemplates();
   const { getPlansForPatient, updatePlan } = useTreatmentPlans();
@@ -1005,7 +715,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   // Discharge visits across the schedule — the Discharge box date (lib/discharge-date).
   const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
   const {
-    encountersByNewest,
+    encountersByNewest: hookEncountersByNewest,
     createEncounter,
     updateEncounter,
     setSoapSection,
@@ -1022,6 +732,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     setSignedAndConfirm,
     resaveEncountersToCloud,
     deleteEncounter,
+    syncEncounterTypeForAppointment,
     forceSaveAll,
   } = useEncounterNotes();
   const { guardCheckout, checkoutNoteDialog } = useCheckoutNoteGuard();
@@ -1098,6 +809,42 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     initialPatientId ?? null,
   );
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "closed">("all");
+
+  // The page-wide notes list only holds a pruned slice of old notes, so an
+  // older visit can be missing from it even though it exists. Same fix the
+  // patient page uses: fetch the picked patient's notes straight from the
+  // cloud (one small query) and combine them with the in-memory list. This
+  // feeds the appointments table "+ Enc."/link column, the prior-encounter
+  // dropdown, the encounter list and next-encounter. Display only: nothing
+  // fetched here is written back anywhere; on failure we fall back to the
+  // in-memory list exactly as before.
+  const cloudPatientId = selectedPatientIdForList;
+  const [cloudPatientNotes, setCloudPatientNotes] = useState<{
+    patientId: string;
+    notes: typeof hookEncountersByNewest;
+  } | null>(null);
+  useEffect(() => {
+    if (!cloudPatientId) return;
+    let cancelled = false;
+    void import("@/lib/encounter-notes-cloud")
+      .then(({ fetchEncounterNotesForPatient }) => fetchEncounterNotesForPatient(cloudPatientId))
+      .then((rows) => {
+        if (!cancelled && rows) setCloudPatientNotes({ patientId: cloudPatientId, notes: rows });
+      })
+      .catch(() => {
+        // Fall back to the in-memory list.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cloudPatientId]);
+  const encountersByNewest = useMemo(
+    () =>
+      cloudPatientNotes && cloudPatientNotes.patientId === cloudPatientId && cloudPatientId
+        ? mergePatientCloudNotes(hookEncountersByNewest, cloudPatientNotes.notes, cloudPatientId)
+        : hookEncountersByNewest,
+    [hookEncountersByNewest, cloudPatientNotes, cloudPatientId],
+  );
   const [message, setMessage] = useState("");
   const [printSelectionByPatient, setPrintSelectionByPatient] = useState<Record<string, string[]>>({});
   const [openChargesPanel, setOpenChargesPanel] = useState(false);
@@ -1210,19 +957,22 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
    * Returns a human-readable suffix describing what it copied, or "".
    */
   const applySaltToNewEncounter = useCallback(
-    (newEncounterId: string, patientId: string): string => {
+    (newEncounterId: string, patientId: string, encounterDateUs: string, pool?: readonly (typeof encountersByNewest)[number][]): string => {
       const selectedSections = encounterSections.filter(
         (section) => macroLibrary.saltDefaults.sections[section],
       );
       if (!macroLibrary.saltDefaults.enabled || selectedSections.length === 0) return "";
 
-      const priorForPatient = encountersByNewest.filter(
-        (entry) => entry.patientId === patientId && entry.id !== newEncounterId,
+      // Newest prior VISIT DATE with content. Pass the cloud-merged list when
+      // the in-memory table is still hydrating, or the salt copies an older visit
+      // while Copy From later shows the Re-Exam.
+      const sourceEncounter = pickSaltSource(
+        pool ?? encountersByNewest,
+        patientId,
+        encounterDateUs,
+        newEncounterId,
+        selectedSections,
       );
-      const sourceEncounter =
-        priorForPatient.find((entry) =>
-          selectedSections.some((section) => entry.soap[section].trim().length > 0),
-        ) ?? null;
       if (!sourceEncounter) return "";
 
       let copiedCount = 0;
@@ -1318,9 +1068,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           handledAppointmentRef.current = null;
           return;
         }
-        const byId = new Map(known.map((e) => [e.id, e]));
-        for (const note of cloud) if (!byId.has(note.id)) byId.set(note.id, note);
-        known = Array.from(byId.values());
+        known = mergeNotesByNewest(known, cloud);
       } catch {
         setMessage("Couldn't reach the cloud to check for an existing note. Nothing was created — try again.");
         handledAppointmentRef.current = null;
@@ -1366,14 +1114,19 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         // Durable link so a later date/type edit can't orphan this encounter.
         appointmentId: appointment.id,
       });
-      if (newId) {
-        const saltNote = applySaltToNewEncounter(newId, appointment.patientId);
-        setEncounterSearch(appointment.patientName);
-        setSelectedEncounterId(newId);
-        setMessage(`Started ${dateUs} — ${appointment.appointmentType || "visit"}.${saltNote}`);
-      } else {
+      if (!newId) {
         setMessage("Could not start the encounter. Check the appointment details and try again.");
+        return;
       }
+      const createdNow = !known.some((entry) => entry.id === newId);
+      const saltNote = createdNow ? applySaltToNewEncounter(newId, appointment.patientId, dateUs, known) : "";
+      setEncounterSearch(appointment.patientName);
+      setSelectedEncounterId(newId);
+      setMessage(
+        createdNow
+          ? `Started ${dateUs} — ${appointment.appointmentType || "visit"}.${saltNote}`
+          : `Opened ${dateUs} — ${appointment.appointmentType || "visit"}.`,
+      );
     })();
   }, [
     applySaltToNewEncounter,
@@ -1524,7 +1277,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     (entry) => entry.id === saltSourceEncounterIdDraft,
   )
     ? saltSourceEncounterIdDraft
-    : priorPatientEncounters[0]?.id ?? "";
+    : (priorPatientEncounters.find((entry) => hasSoapContent(entry, encounterSections)) ??
+        priorPatientEncounters[0])?.id ?? "";
   const saltSourceEncounter = useMemo(
     () =>
       priorPatientEncounters.find(
@@ -1622,81 +1376,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   // Track which encounter we last auto-applied the treatment plan into.
   const autoAppliedPlanRef = useRef<string | null>(null);
 
-  // Auto-Salt: when enabled and a new encounter is selected that has empty SOAP,
-  // automatically copy all SOAP sections from the most recent prior encounter.
-  useEffect(() => {
-    if (!autoSalt) return;
-    if (!selectedEncounter) return;
-    if (selectedEncounter.signed) return;
-    if (!saltSourceEncounter) return;
-    // Don't re-salt the same encounter
-    if (autoSaltedRef.current === selectedEncounter.id) return;
-
-    // Only auto-salt if all SOAP sections are empty
-    const allEmpty = encounterSections.every(
-      (section) => selectedEncounter.soap[section].trim().length === 0,
-    );
-    if (!allEmpty) {
-      // Mark as "already handled" so switching away and back doesn't re-check
-      autoSaltedRef.current = selectedEncounter.id;
-      return;
-    }
-
-    // Copy all SOAP from the most recent prior encounter
-    autoSaltedRef.current = selectedEncounter.id;
-    const sectionsWithText = encounterSections.filter(
-      (section) =>
-        saltSourceEncounter.soap[section].trim().length > 0 &&
-        // When a treatment plan owns the Plan section, don't copy the prior
-        // encounter's Plan text over it — the plan auto-apply fills it.
-        !(planWins && section === "plan"),
-    );
-    if (sectionsWithText.length === 0) return;
-
-    let totalMacros = 0;
-    sectionsWithText.forEach((section) => {
-      const sourceText = saltSourceEncounter.soap[section].trim();
-      const { html: rewrittenText, idMap } = rewriteMacroRunIds(sourceText);
-      setSoapSection(selectedEncounter.id, section, rewrittenText);
-      idMap.forEach((newId, oldId) => {
-        const sourceRun = saltSourceEncounter.macroRuns.find((entry) => entry.id === oldId);
-        if (!sourceRun) return;
-        addMacroRun(selectedEncounter.id, {
-          id: newId,
-          section,
-          macroId: sourceRun.macroId,
-          macroName: sourceRun.macroName,
-          body: sourceRun.body,
-          answers: { ...sourceRun.answers },
-          generatedText: sourceRun.generatedText.replace(
-            new RegExp(`data-macro-run-id=["']${oldId}["']`, "g"),
-            `data-macro-run-id="${newId}"`,
-          ),
-        });
-        totalMacros += 1;
-      });
-    });
-    const macroSuffix = totalMacros > 0 ? ` (with ${totalMacros} editable macro${totalMacros === 1 ? "" : "s"})` : "";
-    // Reconcile so any linked-charge options on the copied macro runs get
-    // their encounter charges added (or adopted if autoSaltCharges already
-    // ran and brought matching CPTs along).
-    const { added, removed } = reconcileLinkedCharges(
-      selectedEncounter.id,
-      macroLibraryById,
-    );
-    setMessage(
-      `Auto-Salted ${sectionsWithText.length} SOAP section${sectionsWithText.length === 1 ? "" : "s"} from ${saltSourceEncounter.encounterDate}${macroSuffix}.${formatChargeDelta(added, removed)}`,
-    );
-  }, [
-    autoSalt,
-    selectedEncounter,
-    saltSourceEncounter,
-    setSoapSection,
-    addMacroRun,
-    reconcileLinkedCharges,
-    macroLibraryById,
-    planWins,
-  ]);
+  // Picking a prior visit only changes which note is shown underneath.
+  // Copy Subjective / Copy SOAP are the actions that write into this note.
+  const selectPriorEncounter = (nextId: string) => {
+    if (!nextId || !selectedEncounter || selectedEncounter.signed) return;
+    setSaltSourceEncounterIdDraft(nextId);
+  };
 
   // Auto-Salt Charges: when enabled and a new encounter is selected that has no charges,
   // automatically copy charges from the most recent prior encounter.
@@ -1858,14 +1543,18 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     const snippetId = existingRun?.id ?? createEncounterMacroRunId();
     // Render the full macro body with each prompt answer wrapped in an inline
     // atomic span. The static parts of the macro stay editable; only the
-    // answer pills are read-only and re-tappable.
+    // answer pills are read-only and re-tappable. A hidden show-if question
+    // is left out of the text. Macros with no rules use the body and answers
+    // unchanged.
+    const rulesOn = questionsHaveShowIf(macro.questions);
+    const insertParts = macroInsertParts(macro.body, macro.questions, answers);
     const generatedText = renderMacroTemplateWithPromptSpans(
-      macro.body,
-      answers,
+      insertParts.template,
+      insertParts.answers,
       context,
       snippetId,
     );
-    if (!generatedText) {
+    if (!generatedText && !(existingRun && rulesOn)) {
       setMessage("Generated macro output was empty.");
       return;
     }
@@ -1894,20 +1583,38 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         "i",
       );
 
-      if (hasPromptSpans) {
+      const onlyPrompt =
+        editingMacroPromptId && editingMacroPromptId !== "__specialist_referred__"
+          ? editingMacroPromptId
+          : null;
+      // Full edit of a macro that has show-if rules: swap the previous
+      // inserted block for a fresh render so questions that just appeared
+      // or disappeared land in the right place. A single-pill edit stays
+      // surgical so the other pills are not rewritten.
+      const canReplaceSavedBlock =
+        rulesOn &&
+        !onlyPrompt &&
+        Boolean(existingRun.generatedText) &&
+        currentSectionText.includes(existingRun.generatedText);
+
+      if (canReplaceSavedBlock) {
+        nextSectionText = currentSectionText.replace(existingRun.generatedText, generatedText);
+      } else if (hasPromptSpans) {
         // When the user tapped a SINGLE prompt pill, only that pill may change.
         // Re-rendering every question's span from `answers` would overwrite the
         // other pills with their initial (possibly defaulted-to-first-option)
         // values — e.g. editing Weight would silently reset a blank-in-answers
         // Segment to option[0]. So restrict replacement to the edited prompt.
-        const onlyPrompt =
-          editingMacroPromptId && editingMacroPromptId !== "__specialist_referred__"
-            ? editingMacroPromptId
-            : null;
         const questionsToReplace = onlyPrompt
           ? macro.questions.filter((question) => question.id === onlyPrompt)
           : macro.questions;
         questionsToReplace.forEach((question) => {
+          const hidden =
+            rulesOn && !onlyPrompt && !isMacroQuestionVisible(question, macro.questions, answers);
+          if (hidden) {
+            nextSectionText = removeHiddenPromptSpan(nextSectionText, snippetId, question.id);
+            return;
+          }
           const replacement = renderMacroPromptSpan(
             snippetId,
             question.id,
@@ -1919,6 +1626,14 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           );
           nextSectionText = nextSectionText.replace(promptPattern, replacement);
         });
+        if (rulesOn && !onlyPrompt) {
+          nextSectionText = insertMissingVisibleMacroSpans(
+            nextSectionText,
+            snippetId,
+            macro.questions,
+            answers,
+          );
+        }
       } else if (legacyWrapperPattern.test(currentSectionText)) {
         nextSectionText = currentSectionText.replace(legacyWrapperPattern, generatedText);
       } else {
@@ -2143,10 +1858,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       .filter((r) => r.macro && selectedEncounter.macroRuns.some((run) => run.section === (r.fill.section ?? "objective") && run.macroId === r.macro!.id))
       .map((r) => r.macro!.buttonName);
     if (existingText || repeats.length) {
-      const ok = window.confirm(
-        `Objective already has text${repeats.length ? ` (including ${repeats.join(", ")})` : ""}.\n\n` +
-          "Add the questionnaire answers BELOW it? Nothing already in the note is changed or removed.",
-      );
+      const ok = (await appConfirm(`Objective already has text${repeats.length ? ` (including ${repeats.join(", ")})` : ""}.\n\n` +
+                "Add the questionnaire answers BELOW it? Nothing already in the note is changed or removed."));
       if (!ok) return;
     }
     const context = buildMacroContext(selectedEncounter.patientId, selectedEncounter.encounterDate);
@@ -2399,8 +2112,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       }
       return 0;
     }
-    prepared.forEach(({ snippetId, macro, answers, html }) => {
-      appendSoapSection(selectedEncounter.id, "plan", html);
+    prepared.forEach(({ snippetId, macro, answers, html }, index) => {
+      appendSoapSection(selectedEncounter.id, "plan", html, {
+        inlineWithPrevious: index > 0 && isDecompressionMacroName(macro.buttonName) && isDecompressionMacroName(prepared[index - 1].macro.buttonName),
+      });
       addMacroRun(selectedEncounter.id, {
         id: snippetId,
         section: "plan",
@@ -2726,8 +2441,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           return t != null && t >= planStartT && t <= planEndT && t < targetT;
         }).length;
         const snippets = buildPlanSnippets(coverage, source.patientId, priorInRange + createdIds.length, row.dateUs);
-        for (const { snippetId, macro, answers, html } of snippets) {
-          appendSoapSection(newId, "plan", html);
+        for (const [index, { snippetId, macro, answers, html }] of snippets.entries()) {
+          appendSoapSection(newId, "plan", html, {
+            inlineWithPrevious: index > 0 && isDecompressionMacroName(macro.buttonName) && isDecompressionMacroName(snippets[index - 1].macro.buttonName),
+          });
           addMacroRun(newId, {
             id: snippetId,
             section: "plan",
@@ -2762,13 +2479,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (refreshable.length > 0) {
         // Only OPEN notes, dated today or later, on Checked In visits after this
         // note — closed notes and checked-out days are never offered.
-        const proceed = window.confirm(
-          `${refreshable.length} upcoming visit${refreshable.length === 1 ? "" : "s"} (${fillDateSpan(refreshable.map((row) => row.dateUs))}) already ${
-            refreshable.length === 1 ? "has an open note" : "have open notes"
-          }.\n\n` +
-            "Replace their Subjective, Objective and Assessment with this note's, so they read like today's findings?\n\n" +
-            "Their Plan and charges are left exactly as they are. Closed notes and checked-out visits are not changed.",
-        );
+        const proceed = (await appConfirm(`${refreshable.length} upcoming visit${refreshable.length === 1 ? "" : "s"} (${fillDateSpan(refreshable.map((row) => row.dateUs))}) already ${
+                    refreshable.length === 1 ? "has an open note" : "have open notes"
+                  }.\n\n` +
+                    "Replace their Subjective, Objective and Assessment with this note's, so they read like today's findings?\n\n" +
+                    "Their Plan and charges are left exactly as they are. Closed notes and checked-out visits are not changed."));
         if (proceed) {
           for (const row of refreshable) {
             const target = encountersByNewest.find((entry) => entry.id === row.existingNoteId);
@@ -2980,7 +2695,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
   // of already-open later notes that still read exactly what the plan
   // prefilled (src/lib/plan-carry-forward.ts). Notes edited by hand, closed
   // notes, checked-out visits and anything on/before this note never change.
-  const maybeCarryForwardDecompression = (
+  const maybeCarryForwardDecompression = async (
     macro: MacroTemplate,
     newAnswers: MacroAnswerMap,
     editingRun: EncounterMacroRunRecord | null,
@@ -3066,7 +2781,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         if (
           formulaWeight != null &&
           newWeight !== formulaWeight &&
-          window.confirm(`Hold the decompression weight at ${newWeightStr} lbs for the rest of this plan?${CARRY_FORWARD_NOTE}`)
+          (await appConfirm(`Hold the decompression weight at ${newWeightStr} lbs for the rest of this plan?${CARRY_FORWARD_NOTE}`))
         ) {
           nextUpdates.maxWeight = newWeightStr;
         }
@@ -3078,7 +2793,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (
         newCycles &&
         newCycles !== (dc.cycles ?? "").trim() &&
-        window.confirm(`Use ${newCycles} cycles for the rest of this plan?${CARRY_FORWARD_NOTE}`)
+        (await appConfirm(`Use ${newCycles} cycles for the rest of this plan?${CARRY_FORWARD_NOTE}`))
       ) {
         nextUpdates.cycles = newCycles;
       }
@@ -3097,7 +2812,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (
         newSeg.length &&
         newSeg.join("|") !== curSeg.join("|") &&
-        window.confirm(`Set ${treatmentsQ.label} to ${newSeg.join(", ")} for the rest of this plan?${CARRY_FORWARD_NOTE}`)
+        (await appConfirm(`Set ${treatmentsQ.label} to ${newSeg.join(", ")} for the rest of this plan?${CARRY_FORWARD_NOTE}`))
       ) {
         nextRegion = { ...nextRegion, treatments: newSeg };
         regionChanged = true;
@@ -3109,7 +2824,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       if (
         newProgram.length &&
         newProgram.join("|") !== curProgram.join("|") &&
-        window.confirm(`Set ${programQ.label} to ${newProgram.join(", ")} for the rest of this plan?${CARRY_FORWARD_NOTE}`)
+        (await appConfirm(`Set ${programQ.label} to ${newProgram.join(", ")} for the rest of this plan?${CARRY_FORWARD_NOTE}`))
       ) {
         nextRegion = {
           ...nextRegion,
@@ -3143,8 +2858,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           .filter((run) => run.section === "plan")
           .forEach((run) => removeMacroRun(note.id, run.id));
         setSoapSection(note.id, "plan", "");
-        for (const { snippetId, macro, answers, html } of snippets) {
-          appendSoapSection(note.id, "plan", html);
+        for (const [index, { snippetId, macro, answers, html }] of snippets.entries()) {
+          appendSoapSection(note.id, "plan", html, {
+            inlineWithPrevious: index > 0 && isDecompressionMacroName(macro.buttonName) && isDecompressionMacroName(snippets[index - 1].macro.buttonName),
+          });
           addMacroRun(note.id, {
             id: snippetId,
             section: "plan",
@@ -3180,7 +2897,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     setRunMacroAnswers({});
   };
 
-  const handleCopyActiveSectionFromSelected = () => {
+  const handleCopyActiveSectionFromSelected = async () => {
     if (!selectedEncounter) {
       return;
     }
@@ -3199,9 +2916,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     }
     const currentText = selectedEncounter.soap[activeSection].trim();
     if (currentText && currentText !== sourceText) {
-      const confirmed = window.confirm(
-        `Replace current ${sectionLabels[activeSection]} text with the selected prior encounter note?`,
-      );
+      const confirmed = (await appConfirm(`Replace current ${sectionLabels[activeSection]} text with the selected prior encounter note?`));
       if (!confirmed) {
         return;
       }
@@ -3257,7 +2972,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     );
   };
 
-  const handleCopyAllSoapFromSelected = () => {
+  const handleCopyAllSoapFromSelected = async () => {
     if (!selectedEncounter) {
       return;
     }
@@ -3286,11 +3001,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       (section) => selectedEncounter.soap[section].trim().length > 0,
     );
     if (hasExistingText) {
-      const confirmed = window.confirm(
-        protectPlan
-          ? `Replace the Subjective / Objective / Assessment sections with the notes from ${saltSourceEncounter.encounterDate}? The Plan section stays as this patient's treatment plan.`
-          : `Replace ALL current SOAP sections with the notes from ${saltSourceEncounter.encounterDate}?`,
-      );
+      const confirmed = (await appConfirm(protectPlan
+                ? `Replace the Subjective / Objective / Assessment sections with the notes from ${saltSourceEncounter.encounterDate}? The Plan section stays as this patient's treatment plan.`
+                : `Replace ALL current SOAP sections with the notes from ${saltSourceEncounter.encounterDate}?`));
       if (!confirmed) {
         return;
       }
@@ -3339,7 +3052,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     );
   };
 
-  const handleCopyChargesFromSelected = () => {
+  const handleCopyChargesFromSelected = async () => {
     if (!selectedEncounter) {
       return;
     }
@@ -3356,9 +3069,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       return;
     }
     if (selectedEncounter.charges.length > 0) {
-      const confirmed = window.confirm(
-        `Append ${saltSourceEncounter.charges.length} charge(s) from ${saltSourceEncounter.encounterDate} to this encounter? Existing charges will be kept.`,
-      );
+      const confirmed = (await appConfirm(`Append ${saltSourceEncounter.charges.length} charge(s) from ${saltSourceEncounter.encounterDate} to this encounter? Existing charges will be kept.`));
       if (!confirmed) {
         return;
       }
@@ -3382,7 +3093,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     );
   };
 
-  const handleDeleteEncounter = () => {
+  const handleDeleteEncounter = async () => {
     if (!selectedEncounter) {
       return;
     }
@@ -3391,9 +3102,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       chargeCount > 0
         ? `\n\nThis will also remove ${chargeCount} charge${chargeCount === 1 ? "" : ""} attached to this encounter so billing stays in sync.`
         : "";
-    const confirmed = window.confirm(
-      `Delete encounter for ${selectedEncounter.patientName} on ${selectedEncounter.encounterDate}?${chargeWarning}`,
-    );
+    const confirmed = (await appConfirm(`Delete encounter for ${selectedEncounter.patientName} on ${selectedEncounter.encounterDate}?${chargeWarning}`));
     if (!confirmed) {
       return;
     }
@@ -3484,7 +3193,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     }
   };
 
-  const addChargeFromTreatment = (treatmentMacroId: string) => {
+  const addChargeFromTreatment = async (treatmentMacroId: string) => {
     if (!selectedEncounter) {
       return;
     }
@@ -3507,7 +3216,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
     // First attempt without bumping — detect duplicate
     const result = addCharge(selectedEncounter.id, chargeInput);
     if (result === "duplicate") {
-      if (window.confirm(`"${treatment.name}" is already added. Add another unit?`)) {
+      if ((await appConfirm(`"${treatment.name}" is already added. Add another unit?`))) {
         addCharge(selectedEncounter.id, chargeInput, { bumpIfDuplicate: true });
         setMessage(`Added unit to "${treatment.name}".`);
       }
@@ -3646,12 +3355,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
             appointmentType,
             encounterDate: date,
           });
-          if (newId) {
-            const saltNote = applySaltToNewEncounter(newId, patientId);
-            setEncounterSearch(patientName);
-            setSelectedEncounterId(newId);
-            setMessage(`Encounter created for ${date}.${saltNote}`);
-          }
+          if (!newId) return;
+          const createdNow = !encountersByNewest.some((entry) => entry.id === newId);
+          const saltNote = createdNow ? applySaltToNewEncounter(newId, patientId, date) : "";
+          setEncounterSearch(patientName);
+          setSelectedEncounterId(newId);
+          setMessage(createdNow ? `Encounter created for ${date}.${saltNote}` : `Opened ${date}.`);
         }}
         onOpenEncounter={(encounterId, patientName) => {
           setEncounterSearch(patientName);
@@ -3882,7 +3591,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                 key={apt.id}
                                 className={`border-t border-[var(--line-soft)] ${
                                   isLinkedToSelected
-                                    ? "bg-[rgba(13,121,191,0.08)]"
+                                    ? "bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)]"
                                     : ""
                                 }`}
                               >
@@ -3939,20 +3648,15 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                                 appointmentType: nextType,
                                                 durationMin: matched?.durationMin ?? current.durationMin,
                                               }));
-                                              // Also propagate to a linked
-                                              // encounter on the same date so
-                                              // the encounter editor's stored
-                                              // type doesn't drift from the
-                                              // appointment's.
-                                              const linkedEnc = encountersByNewest.find(
-                                                (e) =>
-                                                  e.patientId === apt.patientId &&
-                                                  e.encounterDate === dateUs &&
-                                                  e.appointmentType.toLowerCase() === apt.appointmentType.toLowerCase(),
+                                              // Also make the linked encounter follow, so
+                                              // its stored type never drifts from the
+                                              // appointment's (also finds older notes
+                                              // that aren't in the page list).
+                                              void syncEncounterTypeForAppointment(
+                                                apt,
+                                                apt.appointmentType,
+                                                nextType,
                                               );
-                                              if (linkedEnc) {
-                                                updateEncounter(linkedEnc.id, { appointmentType: nextType });
-                                              }
                                             }
                                             setAptTypeEditId(null);
                                           }}
@@ -4010,7 +3714,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                     <button
                                       className={`rounded-lg border px-2 py-0.5 text-xs font-semibold transition-all active:scale-[0.97] ${
                                         resolvedEncounterId === linked.id
-                                          ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] text-[var(--brand-primary)]"
+                                          ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] text-[var(--brand-primary)]"
                                           : "border-[var(--line-soft)] bg-white"
                                       }`}
                                       onClick={() => setSelectedEncounterId(linked.id)}
@@ -4020,7 +3724,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                     </button>
                                   ) : canStart ? (
                                     <button
-                                      className="rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 transition-all active:scale-[0.97] active:brightness-95"
+                                      className="tone-ok rounded-lg border px-2 py-0.5 text-xs font-semibold transition-all active:scale-[0.97] active:brightness-95"
                                       onClick={() => {
                                         const provider = officeSettings.doctorName || "Provider";
                                         const newId = createEncounter({
@@ -4047,11 +3751,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                 <td className="px-1 py-1.5 text-center">
                                   {linked && (
                                     <button
-                                      className="rounded p-0.5 text-[10px] text-red-400 hover:bg-red-50 hover:text-red-600 active:scale-90"
+                                      className="rounded p-0.5 text-[10px] text-[var(--status-alert)] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] active:scale-90"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         void (async () => {
-                                          if (!window.confirm(`Delete encounter for ${dateUs} (${apt.appointmentType})? This cannot be undone.`)) return;
+                                          if (!(await appConfirm(`Delete encounter for ${dateUs} (${apt.appointmentType})? This cannot be undone.`))) return;
                                           if (!(await ensureDeleteAllowed("notes"))) return;
                                           deleteEncounter(linked.id);
                                           if (resolvedEncounterId === linked.id) {
@@ -4098,7 +3802,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         </button>
                       </div>
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner disabled:opacity-50"
+                        className="btn btn-secondary btn-sm disabled:opacity-50"
                         disabled={!selectedSoapPrintEncounterIds.length}
                         onClick={handlePrintSelectedSoapNotes}
                         type="button"
@@ -4128,19 +3832,19 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   }
                   if (warnings.length === 0) return null;
                   return (
-                    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Encounter Warnings</p>
+                    <div className="tone-warn mt-2 rounded-lg border px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide">Encounter Warnings</p>
                       <ul className="mt-1 space-y-0.5">
                         {warnings.map((w) => (
-                          <li key={w.encId} className="flex items-center gap-2 text-xs text-amber-800">
+                          <li key={w.encId} className="flex items-center gap-2 text-xs">
                             <button
                               type="button"
-                              className="font-semibold underline hover:text-amber-900"
+                              className="font-semibold underline"
                               onClick={() => setSelectedEncounterId(w.encId)}
                             >
                               {w.date}
                             </button>
-                            <span className="text-amber-600">
+                            <span className="text-[var(--text-muted)]">
                               Missing: {w.issues.join(", ")}
                             </span>
                           </li>
@@ -4189,6 +3893,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
           {selectedEncounter && (
             <CaseNotesBox
               patientId={selectedEncounter.patientId}
+              patientName={selectedPatient?.fullName ?? ""}
               seed={selectedPatient?.matrix?.notes ?? ""}
             />
           )}
@@ -4225,13 +3930,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                           </span>
                         )}
                       </span>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${selectedEncounter.signed ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${selectedEncounter.signed ? "tone-ok" : "tone-warn"}`}>
                         {selectedEncounter.signed ? "Closed" : "Open"}
                       </span>
                       <span>Charges: {selectedEncounter.charges.length} (${encounterChargeTotal.toFixed(2)})</span>
                       {selectedPatient && (
                         <Link className="underline" href={`/patients/${selectedPatient.id}`}>
-                          Patient File
+                          Case File
                         </Link>
                       )}
                     </div>
@@ -4240,7 +3945,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         {selectedPatient.alerts.map((alert, i) => (
                           <span
                             key={`enc-alert-${i}`}
-                            className="inline-flex items-center rounded-md border border-[#e8b931] bg-[#fef9e7] px-1.5 py-0.5 text-[10px] font-bold text-[#92400e]"
+                            className="tone-warn inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold"
                           >
                             ⚠ {alert}
                           </span>
@@ -4250,7 +3955,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     <button
-                      className="rounded-lg border border-blue-300 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 transition-all active:scale-[0.97]"
+                      className="tone-info rounded-lg border px-2 py-1 text-[11px] font-semibold transition-all active:scale-[0.97]"
                       onClick={async () => {
                         setMessage("Saving encounters...");
                         const result = await forceSaveAll(selectedEncounter.patientId);
@@ -4302,11 +4007,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       </button>
                     ) : (
                       <button
-                        className="rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 transition-all active:scale-[0.97] disabled:opacity-60"
+                        className="tone-ok rounded-lg border px-2 py-1 text-[11px] font-semibold transition-all active:scale-[0.97] disabled:opacity-60"
                         disabled={closeBusy}
                         onClick={async () => {
                           if (selectedEncounter.charges.length === 0) {
-                            if (!window.confirm("This encounter has no charges. Close and check out anyway?")) return;
+                            if (!(await appConfirm("This encounter has no charges. Close and check out anyway?"))) return;
                           }
                           // Write the close straight to the cloud and wait for it.
                           // Only check out once the cloud confirms the note is
@@ -4362,7 +4067,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       </button>
                     )}
                     <button
-                      className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
+                      className="rounded-lg border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
                       onClick={handleGoToNextEncounter}
                       title={`Open the next non-cancelled appointment for ${selectedEncounter.patientName} (starts it if needed)`}
                       type="button"
@@ -4370,7 +4075,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                       Next Enc. →
                     </button>
                     <button
-                      className="rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-600 transition-all active:scale-[0.97]"
+                      className="tone-alert rounded-lg border px-2 py-1 text-[11px] font-semibold transition-all active:scale-[0.97]"
                       onClick={handleDeleteEncounter}
                       type="button"
                     >
@@ -4392,11 +4097,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
                 {/* Compare / Copy — compact row */}
                 <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Copy From</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">View prior</span>
                   <select
+                    aria-label="View prior encounter"
                     className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-1 text-xs"
                     disabled={selectedEncounter.signed || priorPatientEncounters.length === 0}
-                    onChange={(event) => setSaltSourceEncounterIdDraft(event.target.value)}
+                    onChange={(event) => selectPriorEncounter(event.target.value)}
                     value={resolvedSaltSourceEncounterId}
                   >
                     {priorPatientEncounters.length === 0 ? (
@@ -4407,7 +4113,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         {priorPatientEncounters.map((entry) => (
                           <option key={entry.id} value={entry.id}>
                             {entry.encounterDate}
-                            {entry.appointmentType ? ` • ${entry.appointmentType}` : ""}
+                            {(() => {
+                              const shownType = encounterDisplayType(entry, scheduleAppointments);
+                              return shownType ? ` • ${shownType}` : "";
+                            })()}
                             {entry.signed ? " • Closed" : ""}
                           </option>
                         ))}
@@ -4423,7 +4132,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     Copy {sectionLabels[activeSection]}
                   </button>
                   <button
-                    className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97] disabled:opacity-40 disabled:border-[var(--line-soft)] disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+                    className="rounded-lg border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97] disabled:opacity-40 disabled:border-[var(--line-soft)] disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
                     disabled={selectedEncounter.signed || !saltSourceEncounter}
                     onClick={handleCopyAllSoapFromSelected}
                     title={
@@ -4452,7 +4161,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 </div>
               </section>
 
-              <section className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+              <section className="theme-surface rounded-xl border border-[var(--line-soft)] p-3">
                 <QuestionnaireInsertBanner
                   focusId={initialQuestionnaireId}
                   onInsert={applyQuestionnaire}
@@ -4465,7 +4174,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     <p className="text-sm font-semibold">SOAP Macros: {sectionLabels[activeSection]}</p>
                     {activeSection === "objective" && (
                       <button
-                        className="rounded-lg border border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
+                        className="rounded-lg border border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--brand-primary)] transition-all active:scale-[0.97]"
                         onClick={() => {
                           setImportText("");
                           setImportPlan(null);
@@ -4487,7 +4196,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         <div key={group.folder || "__ungrouped__"}>
                           {!isUngrouped && (
                             <button
-                              className="mb-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-xs font-bold uppercase tracking-wide text-[var(--text-muted)] hover:bg-white/60"
+                              className="mb-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-xs font-bold uppercase tracking-wide text-[var(--text-muted)] hover:bg-[var(--bg-soft)]"
                               onClick={() => toggleMacroFolder(group.folder)}
                               type="button"
                             >
@@ -4504,15 +4213,18 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             </button>
                           )}
                           {!isCollapsed &&
-                            // Subjective: one wrapping row in saved order (no
-                            // general-vs-body-region split). Other sections
-                            // keep the two-row split.
-                            (activeSection === "subjective"
-                              ? [group.macros].filter((row) => row.length > 0)
-                              : splitMacrosByKind(group.macros)
-                            ).map((macroRow, rowIndex) => (
-                            <div className="flex flex-wrap gap-2 [&+div]:mt-2" key={`macro-row-${rowIndex}`}>
-                              {macroRow.map((macro) => {
+                            (activeSection === "subjective" && !group.folder.trim()
+                              ? group.macros.length
+                                ? [{ label: "Complaints" as const, quiet: false, macros: orderComplaintMacros(group.macros) }]
+                                : []
+                              : groupSoapMacros(group.macros, soapNonRegionLabel(activeSection, group.folder))
+                            ).map((macroGroup) => (
+                            <div className="[&+div]:mt-2" key={macroGroup.label}>
+                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                                {macroGroup.label}
+                              </p>
+                              <div className={activeSection === "subjective" ? "grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-8" : "flex flex-wrap gap-1.5"}>
+                              {macroGroup.macros.map((macro) => {
                                 // Native HTML5 drag-and-drop. Making the
                                 // button itself `draggable` still lets
                                 // clicks fire normally (browsers only
@@ -4524,8 +4236,8 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                   <button
                                     key={macro.id}
                                     draggable
-                                    className={`rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold transition-opacity ${
-                                      isDragging ? "opacity-40" : ""
+                                    className={`${soapMacroChipClass(macroGroup.quiet, isDragging)} ${
+                                      activeSection === "subjective" ? "w-full truncate text-center" : ""
                                     } ${draggedMacroId && !isDragging ? "cursor-grab" : ""}`}
                                     onClick={() => handleRunMacroClick(macro)}
                                     onDragStart={(event) => {
@@ -4559,6 +4271,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                   </button>
                                 );
                               })}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -4589,7 +4302,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             .slice(0, 2)
                             .join(" • ");
                           return (
-                            <span key={run.id} className="inline-flex items-center gap-1 rounded-lg border border-[var(--line-soft)] bg-white pr-1">
+                            <span key={run.id} className="theme-surface inline-flex items-center gap-1 rounded-lg border border-[var(--line-soft)] pr-1">
                               <button
                                 className="px-3 py-1.5 text-left text-sm font-semibold transition-all active:scale-[0.97] active:shadow-inner"
                                 disabled={selectedEncounter.signed}
@@ -4603,9 +4316,9 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                               </button>
                               {!selectedEncounter.signed && (
                                 <button
-                                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[var(--text-muted)] hover:bg-red-50 hover:text-[#b43b34] transition-colors"
-                                  onClick={() => {
-                                    if (window.confirm(`Remove "${run.macroName}" input?`)) {
+                                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[var(--text-muted)] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] hover:text-[var(--status-alert)] transition-colors"
+                                  onClick={async () => {
+                                    if ((await appConfirm(`Remove "${run.macroName}" input?`))) {
                                       removeMacroRun(selectedEncounter.id, run.id);
                                       // Reconcile so any charges that were
                                       // auto-added by this run's picked
@@ -4673,13 +4386,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             visit at a glance, in the same left-to-right order
                             as the tabs above. Drops to two columns on a
                             narrower screen and one on a phone. */}
-                        <div className="grid h-full gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        <ResizableColumns storageKey="casemate.soap-split-columns.v1">
                           {encounterSections.map((section) => {
                             const body = saltSourceEncounter.soap[section].trim();
                             const isActive = section === activeSection;
                             return (
                               <div
-                                className={`flex min-h-0 flex-col overflow-hidden rounded-xl border bg-white ${
+                                className={`theme-surface flex min-h-0 flex-col overflow-hidden rounded-xl border ${
                                   isActive
                                     ? "border-[var(--brand-primary)]"
                                     : "border-[var(--line-soft)]"
@@ -4689,7 +4402,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                                 <div
                                   className={`border-b px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide ${
                                     isActive
-                                      ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.08)] text-[var(--brand-primary)]"
+                                      ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)] text-[var(--brand-primary)]"
                                       : "border-[var(--line-soft)] text-[var(--text-muted)]"
                                   }`}
                                 >
@@ -4715,10 +4428,11 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                               </div>
                             );
                           })}
-                        </div>
+                        </ResizableColumns>
                       </div>
                     }
                     storageKey="casemate.soap-split-height.v1"
+                    bottomStorageKey="casemate.soap-split-bottom-height.v1"
                     top={
                       <div className="grid gap-1">
                         <span className="text-sm font-semibold text-[var(--text-muted)]">
@@ -4761,12 +4475,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
               </section>
 
               <section>
-                <article className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
+                <article className="theme-surface rounded-xl border border-[var(--line-soft)] p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h4 className="text-lg font-semibold">Encounter Charges</h4>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+                        className="btn btn-secondary btn-sm disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
                         disabled={!saltSourceEncounter}
                         onClick={() => setShowPriorChargesPreview((prev) => !prev)}
                         title={
@@ -4779,7 +4493,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         {showPriorChargesPreview ? "Hide Prior Charges" : "View Prior Charges"}
                       </button>
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
+                        className="btn btn-secondary btn-sm disabled:cursor-not-allowed disabled:bg-[var(--bg-soft)] disabled:text-[var(--text-muted)]"
                         disabled={!saltSourceEncounter || selectedEncounter.signed}
                         onClick={handleCopyChargesFromSelected}
                         title={
@@ -4794,7 +4508,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                     </div>
                   </div>
                   {showPriorChargesPreview && saltSourceEncounter && (
-                    <div className="mt-2 rounded-xl border border-[var(--line-soft)] bg-[#f6f9fc] p-3 text-sm">
+                    <div className="mt-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3 text-sm">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                         Prior charges from {saltSourceEncounter.encounterDate}
                       </p>
@@ -4808,7 +4522,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                             {sortedSaltSourceCharges.map((charge) => (
                               <li
                                 key={`prior-charge-${charge.id}`}
-                                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5"
+                                className="theme-surface flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--line-soft)] px-3 py-1.5"
                               >
                                 <span className="font-semibold">
                                   {charge.name}
@@ -4840,7 +4554,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   <div className="mt-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <button
-                        className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                        className="btn btn-secondary btn-sm"
                         onClick={() => setOpenChargesPanel((previous) => !previous)}
                         type="button"
                       >
@@ -4862,7 +4576,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                           {filteredActiveTreatments.map((entry) => (
                             <button
                               key={entry.id}
-                              className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-left transition hover:border-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.08)]"
+                              className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-left transition hover:border-[var(--brand-primary)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)]"
                               disabled={selectedEncounter.signed}
                               onClick={() => { addChargeFromTreatment(entry.id); setChargeSearch(""); }}
                               type="button"
@@ -4939,13 +4653,13 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                         <p className="px-1 text-xs font-semibold">${(entry.unitPrice * entry.units).toFixed(2)}</p>
                         {/* Remove */}
                         <button
-                          className="rounded-lg p-1 text-[#b43b34] hover:bg-red-50 transition-colors disabled:opacity-30"
+                          className="rounded-lg p-1 text-[var(--status-alert)] hover:bg-[color-mix(in_srgb,var(--status-alert)_14%,transparent)] transition-colors disabled:opacity-30"
                           disabled={selectedEncounter.signed}
-                          onClick={() => {
+                          onClick={async () => {
                             // Pass macroLibraryById so linked charges also
                             // unpick their option in the SOAP — otherwise
                             // the next reconcile would re-add the charge.
-                            if (window.confirm(`Remove charge "${entry.name}"?`)) {
+                            if ((await appConfirm(`Remove charge "${entry.name}"?`))) {
                               removeCharge(selectedEncounter.id, entry.id, macroLibraryById);
                             }
                           }}
@@ -4982,12 +4696,12 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
       </section>
 
       {importOpen && (
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
           <div className="w-full max-w-2xl rounded-2xl bg-white p-4 shadow-2xl">
             <div className="flex items-center justify-between gap-2 border-b border-[var(--line-soft)] pb-2">
               <h3 className="text-base font-semibold">Import from ChiroTouch → Objective</h3>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setImportOpen(false);
                   setImportPlan(null);
@@ -5016,7 +4730,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
             />
             <div className="mt-2 flex items-center gap-2">
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                className="btn btn-primary btn-sm disabled:opacity-40"
                 disabled={!importText.trim()}
                 onClick={handleImportPreview}
                 type="button"
@@ -5025,7 +4739,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
               </button>
               {importPlan && (
                 <button
-                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 disabled:opacity-40"
+                  className="tone-ok rounded-lg border px-3 py-1.5 text-sm font-semibold disabled:opacity-40"
                   disabled={importPlan.fills.length === 0 && importPlan.unmatched.length === 0}
                   onClick={applyChirotouchImport}
                   type="button"
@@ -5086,7 +4800,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 )}
                 {importPlan.unmatched.length > 0 && (
                   <div>
-                    <p className="font-semibold text-amber-700">
+                    <p className="tone-warn-text font-semibold">
                       {importPlan.unmatched.length} unmatched — added as text at the bottom of
                       Objective so nothing is lost:
                     </p>
@@ -5114,7 +4828,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
         // out macro prompts. Letting the body scroll behind the
         // fixed-position modal makes that possible without closing
         // and re-opening the macro run.
-        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-8">
           <div className="panel-card max-h-[85vh] w-full max-w-3xl overflow-auto p-4">
             <div className="mb-3 flex items-center justify-between">
               <h4 className="text-xl font-semibold">
@@ -5122,10 +4836,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   ? `Edit Answer: ${runMacro.questions.find((q) => q.id === editingMacroPromptId)?.label ?? runMacro.buttonName}`
                   : editingMacroRun
                     ? `Edit Macro Answers: ${runMacro.buttonName}`
-                    : `Run Macro: ${runMacro.buttonName}`}
+                    : runMacro.buttonName}
               </h4>
               <button
-                className="rounded-lg border border-[var(--line-soft)] px-3 py-1"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setRunMacroId(null);
                   setEditingMacroRunId(null);
@@ -5142,10 +4856,10 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                   Hidden when editing a single non-specialist prompt. */}
               {runMacroAnswers.__specialist_referred__ !== undefined &&
                 (!editingMacroPromptId || editingMacroPromptId === "__specialist_referred__") && (
-                <div className="rounded-xl border-2 border-[#0d79bf] bg-[#e9f4fb] p-3">
+                <div className="rounded-xl border-2 border-[var(--brand-primary)] bg-[var(--bg-soft)] p-3">
                   <p className="text-sm font-semibold">
                     Referring Specialist
-                    <span className="ml-2 rounded-full bg-[#0d79bf] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    <span className="ml-2 rounded-full bg-[var(--btn-bg,var(--brand-primary))] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
                       From Contacts
                     </span>
                   </p>
@@ -5229,189 +4943,17 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
               {(editingMacroPromptId
                 ? runMacro.questions.filter((question) => question.id === editingMacroPromptId)
-                : runMacro.questions
+                : runMacro.questions.filter((question) =>
+                    isMacroQuestionVisible(question, runMacro.questions, runMacroAnswers),
+                  )
               ).map((question) => (
-                (() => {
-                  const normalizedOptions = question.options
-                    .map((option) => option.trim())
-                    .filter((option): option is string => Boolean(option));
-                  const answerValue = runMacroAnswers[question.id];
-                  const selectedAnswers = Array.isArray(answerValue)
-                    ? answerValue.map((option) => option.trim()).filter((option) => option.length > 0)
-                    : typeof answerValue === "string" && answerValue.trim()
-                      ? [answerValue.trim()]
-                      : [];
-                  const selectedAnswer = selectedAnswers[0] ?? "";
-                  // Decompression "Targeted Segment" / "Which program": one pick
-                  // per section even if the saved macro question is multi-select.
-                  const singlePick =
-                    Boolean(question.multiSelect) && isDecompressionSinglePick(runMacro.buttonName, question.label);
-                  const freeTextValue = Array.isArray(answerValue) ? answerValue.join(", ") : answerValue ?? "";
-                  const numericOptions = Array.from(
-                    new Set(
-                      normalizedOptions
-                        .filter((option) => /^\d+$/.test(option))
-                        .map((option) => Number(option)),
-                    ),
-                  ).sort((left, right) => left - right);
-                  const nonNumericOptions = normalizedOptions.filter((option) => !/^\d+$/.test(option));
-                  const usePainScaleColumns = numericOptions.length >= 5;
-                  const midPoint = usePainScaleColumns ? Math.ceil(numericOptions.length / 2) : 0;
-                  const leftPainScaleOptions = usePainScaleColumns
-                    ? numericOptions.slice(0, midPoint).map(String)
-                    : [];
-                  const rightPainScaleOptions = usePainScaleColumns
-                    ? numericOptions.slice(midPoint).map(String)
-                    : [];
-                  const selectableOptions = normalizedOptions.length > 0 ? normalizedOptions : question.options;
-                  const useMultiColumn = !usePainScaleColumns && selectableOptions.length >= 5;
-                  const renderOptionRow = (option: string) => (
-                    <label
-                      key={`${question.id}-${option}`}
-                      className="inline-flex w-full items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm"
-                    >
-                      {singlePick ? (
-                        <input
-                          checked={selectedAnswers.includes(option)}
-                          onChange={() =>
-                            setRunMacroAnswers((current) => ({ ...current, [question.id]: [option] }))
-                          }
-                          type="radio"
-                        />
-                      ) : question.multiSelect ? (
-                        <input
-                          checked={selectedAnswers.includes(option)}
-                          onChange={() =>
-                            setRunMacroAnswers((current) => {
-                              const rawCurrentValues = current[question.id];
-                              const currentValues = Array.isArray(rawCurrentValues) ? rawCurrentValues : [];
-                              const toggled = currentValues.includes(option)
-                                ? currentValues.filter((entry) => entry !== option)
-                                : [...currentValues, option];
-                              // Sort by the original option order, not click order
-                              const optionOrder = question.options;
-                              const nextValues = toggled.slice().sort((a, b) => {
-                                const ai = optionOrder.indexOf(a);
-                                const bi = optionOrder.indexOf(b);
-                                // Items not in the predefined list go to the end
-                                return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi);
-                              });
-                              return {
-                                ...current,
-                                [question.id]: nextValues,
-                              };
-                            })
-                          }
-                          type="checkbox"
-                        />
-                      ) : (
-                        <input
-                          checked={selectedAnswer === option}
-                          onChange={() =>
-                            setRunMacroAnswers((current) => ({
-                              ...current,
-                              [question.id]: option,
-                            }))
-                          }
-                          type="radio"
-                        />
-                      )}
-                      {option}
-                    </label>
-                  );
-
-                  // The free-text field below the options always shows the current
-                  // answer (or the joined multi-select answers) so the user can edit
-                  // it like a "live preview". Picking a radio overwrites the field
-                  // with that option text; the user can then click into the field
-                  // and append a detail (e.g. "Yes" -> "Yes - Glendale Adventist").
-                  const freeTextEditableValue = Array.isArray(answerValue)
-                    ? answerValue.join(", ")
-                    : (answerValue ?? "");
-
-                  return (
-                    <div key={question.id} className="rounded-xl border border-[var(--line-soft)] bg-white p-3">
-                      <p className="text-sm font-semibold">
-                        {question.label}
-                        {singlePick ? " (pick one)" : ""}
-                      </p>
-                      {question.options.length > 0 ? (
-                        <>
-                          {usePainScaleColumns ? (
-                            <div className="mt-2 space-y-2">
-                              <div className="grid gap-2 md:grid-cols-2">
-                                <div className="grid gap-2">{leftPainScaleOptions.map(renderOptionRow)}</div>
-                                <div className="grid gap-2">{rightPainScaleOptions.map(renderOptionRow)}</div>
-                              </div>
-                              {nonNumericOptions.length > 0 && (
-                                <div className="grid gap-2">{nonNumericOptions.map(renderOptionRow)}</div>
-                              )}
-                            </div>
-                          ) : useMultiColumn ? (
-                            // Auto-balanced multi-column: the browser fits as
-                            // many equal ~11rem columns as the width allows and
-                            // balances their heights, so options read A,B,C DOWN
-                            // each column with no lopsided last column.
-                            // break-inside-avoid keeps each chip whole.
-                            <div className="mt-2" style={{ columnWidth: "11rem", columnGap: "0.5rem" }}>
-                              {selectableOptions.map((option) => (
-                                <div
-                                  key={`${question.id}-opt-${option}`}
-                                  className="mb-2 break-inside-avoid"
-                                >
-                                  {renderOptionRow(option)}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="mt-2 grid gap-2">{selectableOptions.map(renderOptionRow)}</div>
-                          )}
-                          {/* Live-preview / edit field — always shows the current
-                              answer and is always editable. Picking a radio above
-                              updates this field; typing here overwrites the answer.
-                              Lets the user pick "Yes" then type " - Glendale Adventist"
-                              to end up with "Yes - Glendale Adventist" without losing
-                              the macro structure. */}
-                          <div className="mt-2">
-                            <label className="flex items-start gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-2 text-sm">
-                              <span className="pt-1 text-xs font-semibold text-[var(--text-muted)]">
-                                Other / edit:
-                              </span>
-                              <textarea
-                                className="flex-1 resize-y rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm"
-                                onChange={(event) =>
-                                  setRunMacroAnswers((current) => ({
-                                    ...current,
-                                    [question.id]: event.target.value,
-                                  }))
-                                }
-                                placeholder="Pick an option above to start, or type your own"
-                                rows={1}
-                                value={freeTextEditableValue}
-                              />
-                            </label>
-                          </div>
-                        </>
-                      ) : (
-                        <input
-                          className="mt-2 w-full rounded-xl border border-[var(--line-soft)] px-3 py-2"
-                          inputMode={question.dateInput ? "numeric" : undefined}
-                          maxLength={question.dateInput ? 10 : undefined}
-                          placeholder={question.dateInput ? "MM/DD/YYYY" : undefined}
-                          onChange={(event) =>
-                            setRunMacroAnswers((current) => ({
-                              ...current,
-                              [question.id]: question.dateInput
-                                ? formatUsDateInput(event.target.value)
-                                : event.target.value,
-                            }))
-                          }
-                          value={freeTextValue}
-                        />
-                      )}
-                    </div>
-                  );
-                })()
+                <MacroPromptQuestion
+                  key={question.id}
+                  answers={runMacroAnswers}
+                  buttonName={runMacro.buttonName}
+                  question={question}
+                  setAnswers={setRunMacroAnswers}
+                />
               ))}
               {runMacro.questions.length === 0 && (
                 <p className="text-sm text-[var(--text-muted)]">No question prompts for this macro.</p>
@@ -5420,7 +4962,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
 
             <div className="mt-4 flex justify-end gap-2">
               <button
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1 text-xs font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+                className="btn btn-secondary btn-sm"
                 onClick={() => {
                   setRunMacroId(null);
                   setEditingMacroRunId(null);
@@ -5431,7 +4973,7 @@ export function EncounterWorkspace({ initialPatientId, initialEncounterId, initi
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+                className="btn btn-primary btn-sm"
                 onClick={handleConfirmMacroRun}
                 type="button"
               >
@@ -5506,6 +5048,7 @@ function EncounterQuickGlance({
       }}
       billed={chargesTotal > 0 ? chargesTotal : Number(billedFallback) || 0}
       doi={patient.dateOfLoss ?? ""}
+      additionalDois={extraDoisFor(patient.dateOfLoss ?? "", typeof patient.matrix?.additionalDois === "string" ? patient.matrix.additionalDois : "")}
       ie={initialExam}
       discharge={dischargeHidden ? undefined : discharge}
       mriReferrals={patient.mriReferrals}

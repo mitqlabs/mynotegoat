@@ -14,6 +14,7 @@ import type { PatientPackage } from "@/lib/patient-packages";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 import type { CashPaymentEntry } from "@/lib/mock-data";
 import { loadOfficeSettings } from "@/lib/office-settings";
+import { appAlert, appConfirm } from "@/components/app-dialog";
 
 /** ISO YYYY-MM-DD → US MM/DD/YYYY (to match encounterDate format). */
 function isoToUs(iso: string): string {
@@ -349,8 +350,8 @@ export function CashPaymentsSection({ patientId, patientName, packages, appointm
     );
   };
 
-  const handleDelete = (id: string) => {
-    const ok = window.confirm("Delete this payment? This cannot be undone.");
+  const handleDelete = async (id: string) => {
+    const ok = (await appConfirm("Delete this payment? This cannot be undone."));
     if (!ok) return;
     updatePatientPayments(patientId, (current) => current.filter((e) => e.id !== id));
   };
@@ -511,7 +512,7 @@ export function CashPaymentsSection({ patientId, patientName, packages, appointm
 
     const popup = window.open("", "_blank");
     if (!popup) {
-      window.alert("Please allow pop-ups to print the statement.");
+      void appAlert("Please allow pop-ups to print the statement.");
       return;
     }
     popup.document.open();
@@ -526,7 +527,7 @@ export function CashPaymentsSection({ patientId, patientName, packages, appointm
   };
 
   return (
-    <section className="rounded-2xl border border-[#bfd2e0] bg-white p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+    <section className="rounded-2xl border border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))] bg-white p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xl font-semibold">Payments</h3>
         <div className="flex flex-wrap items-center gap-2">

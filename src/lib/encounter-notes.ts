@@ -631,11 +631,10 @@ export async function forceSaveAllEncountersToCloud(
   saveEncounterNoteRecords(records);
 
   // 2. Bulk-upsert everything to cloud, WITH visible status signals so the
-  // user gets the familiar blue "Saving to cloud..." pill during the
-  // write and the green "Cloud Saved ✓" pill when it succeeds. Without
-  // these signals the Save Encounters button looked silent even when
-  // the save was working — terrifying for a user who's worried their
-  // data isn't persisting.
+  // circular G.O.A.T. button shows Saving during the write and Saved when
+  // it succeeds. Without these signals the Save Encounters button looked
+  // silent even when the save was working — terrifying for a user who's
+  // worried their data isn't persisting.
   const { reportCloudWriteStart, reportCloudWriteSuccess, reportCloudWriteError } =
     await import("@/lib/storage-sync-interceptor");
   try {
@@ -958,12 +957,28 @@ export function replaceEncounterNotesFromCloud(cloudRecords: EncounterNoteRecord
  * Async fallback: fetch encounters from the cloud table when localStorage
  * is empty (e.g. quota exceeded). Returns the records or null.
  */
+/**
+ * Record cloud rows as the write queue's baseline (what the cloud holds).
+ * Only affects "is this unchanged?" checks; never sends or drops a write.
+ */
+export function markNotesConfirmedFromCloud(rows: EncounterNoteRecord[]): void {
+  noteCloudQueue.setConfirmed(rows);
+}
+
 export async function loadEncounterNotesFromCloud(): Promise<EncounterNoteRecord[] | null> {
   try {
     const { isCloudEntityEnabled } = await import("@/lib/feature-flags");
     if (!isCloudEntityEnabled("encounterNotes")) return null;
     const { fetchAllEncounterNotesFromTable } = await import("@/lib/encounter-notes-cloud");
-    return await fetchAllEncounterNotesFromTable();
+    const rows = await fetchAllEncounterNotesFromTable();
+    // These rows ARE what the cloud holds, so they become the write queue's
+    // baseline. Without this, older notes merged in by useEncounterNotes
+    // (pruned from the local cache) looked "never confirmed", and the next
+    // save re-uploaded every one of them unchanged (~3,000 identical writes,
+    // each bumping updated_at, which then forced every boot to download every
+    // note). A note edited locally still has a different fingerprint and uploads.
+    if (rows) markNotesConfirmedFromCloud(rows);
+    return rows;
   } catch (err) {
     console.warn("[encounter-notes] cloud fallback failed:", err);
     return null;
@@ -1035,6 +1050,12 @@ function loadWatch() {
   } catch {
     /* ignore a bad list */
   }
+}
+
+/** Ids of notes whose cloud save isn't confirmed yet (fast boot re-checks them in full). */
+export function getUnconfirmedNoteIds(): Set<string> {
+  loadWatch();
+  return new Set(watched.keys());
 }
 
 function saveWatch() {

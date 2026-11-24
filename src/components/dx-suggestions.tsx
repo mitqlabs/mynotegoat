@@ -1,7 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { DxHeldBack, DxSuggestion } from "@/lib/dx-suggest";
+import { onLocalChange } from "@/lib/local-sync";
+
+export const DX_SUGGESTIONS_COLLAPSED_KEY = "casemate.dx-suggestions-collapsed.v1";
+
+function readCollapsedMap(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DX_SUGGESTIONS_COLLAPSED_KEY) ?? "{}") as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
 
 export const DX_DISCLAIMER = "Suggestions only. Confirm against the MRI and documentation before billing.";
 const disclaimer = (kind: "MRI" | "X-ray") => (kind === "MRI" ? DX_DISCLAIMER : "Suggestions only. Confirm against the X-ray and documentation before billing.");
@@ -22,6 +36,9 @@ export function DxSuggestions({
   hasMriText,
   unreadFiles = 0,
   onAdd,
+  onIgnore,
+  ignored = [],
+  onRestore,
   kind = "MRI",
 }: {
   /** Which report the list reads: the MRI/CT list or the X-ray list. */
@@ -34,27 +51,56 @@ export function DxSuggestions({
   /** Uploaded files G.O.A.T. hasn't read yet (their findings aren't included). */
   unreadFiles?: number;
   onAdd: (code: string, description: string) => void;
+  /** Hide this suggestion for the patient (saved to the cloud). */
+  onIgnore?: (code: string, description: string) => void;
+  /** Suggestions the user ignored (still found in the report), for "Show ignored". */
+  ignored?: Array<{ code: string; description: string }>;
+  onRestore?: (code: string) => void;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showAll, setShowAll] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => readCollapsedMap()[kind] === true);
+  useEffect(() => onLocalChange(DX_SUGGESTIONS_COLLAPSED_KEY, () => setCollapsed(readCollapsedMap()[kind] === true)), [kind]);
+  const toggleCollapsed = () => {
+    const next = !collapsed;
+    const map = { ...readCollapsedMap(), [kind]: next };
+    window.localStorage.setItem(DX_SUGGESTIONS_COLLAPSED_KEY, JSON.stringify(map));
+    setCollapsed(next);
+  };
   const SHOWN = 5;
   const visible = showAll ? suggestions : suggestions.slice(0, SHOWN);
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-        <p className="text-sm font-semibold">
-          <span className="mr-1.5 rounded-md bg-[#72bdcf]/20 px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[#2f7f93]">
+    <div className="grid min-w-0 grid-cols-1 gap-2" data-dx-suggestions={kind}>
+      <div className="flex flex-wrap items-center justify-between gap-x-2">
+        <button
+          aria-expanded={!collapsed}
+          className="flex items-center gap-1.5 text-left text-sm font-semibold"
+          onClick={toggleCollapsed}
+          type="button"
+        >
+          <svg
+            aria-hidden
+            className={`h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none ${collapsed ? "" : "rotate-90"}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.5}
+            viewBox="0 0 24 24"
+          >
+            <path d="m9 5 7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="rounded-md bg-[color-mix(in_srgb,var(--brand-primary)_20%,transparent)] px-1.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[var(--brand-ink)]">
             G.O.A.T.
           </span>
           Suggested from {kind}
-        </p>
+        </button>
         <span className="text-[11px] text-[var(--text-muted)]">Nothing is added for you</span>
       </div>
-      <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-900" role="note">
+      {collapsed ? null : (<>
+      <p className="tone-warn rounded-lg border px-2.5 py-1.5 text-xs font-semibold" role="note">
         {disclaimer(kind)}
       </p>
       {suggestions.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-[var(--line-soft)] bg-white px-3 py-2 text-sm text-[var(--text-muted)]">
+        <p className="theme-surface rounded-xl border border-dashed border-[var(--line-soft)] px-3 py-2 text-sm text-[var(--text-muted)]">
           {kind === "X-ray"
             ? hasMriText
               ? "No new codes to suggest. The X-ray findings are covered by codes already on this patient, or they don't name a mapped finding."
@@ -69,7 +115,7 @@ export function DxSuggestions({
             const open = Boolean(expanded[s.code]);
             const first = s.evidence[0];
             return (
-              <li className="min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2" key={s.code}>
+              <li className="theme-surface min-w-0 rounded-xl border border-[var(--line-soft)] px-3 py-2" key={s.code}>
                 <div className="flex items-start gap-3">
                   <span className="w-[4.5rem] shrink-0 pt-0.5 font-mono text-sm font-semibold">{s.code}</span>
                   <div className="min-w-0 flex-1">
@@ -79,7 +125,7 @@ export function DxSuggestions({
                     </span>
                   </div>
                   <button
-                    className="shrink-0 rounded-lg bg-[var(--brand-primary)] px-2.5 py-1 text-xs font-semibold text-white transition-all active:scale-[0.97]"
+                    className="btn btn-primary btn-sm shrink-0"
                     onClick={() => onAdd(s.code, s.description)}
                     type="button"
                   >
@@ -108,14 +154,26 @@ export function DxSuggestions({
                     ))}
                   </p>
                 )}
-                <button
-                  aria-expanded={open}
-                  className="mt-1 text-[11px] font-semibold text-[var(--brand-primary)]"
-                  onClick={() => setExpanded((cur) => ({ ...cur, [s.code]: !open }))}
-                  type="button"
-                >
-                  {open ? "Hide why" : "Why?"}
-                </button>
+                <div className="mt-1 flex items-center gap-3">
+                  <button
+                    aria-expanded={open}
+                    className="text-[11px] font-semibold text-[var(--brand-primary)]"
+                    onClick={() => setExpanded((cur) => ({ ...cur, [s.code]: !open }))}
+                    type="button"
+                  >
+                    {open ? "Hide why" : "Why?"}
+                  </button>
+                  {onIgnore && (
+                    <button
+                      className="text-[11px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-main,#1f2937)]"
+                      onClick={() => onIgnore(s.code, s.description)}
+                      title={`Hide ${s.code} for this patient`}
+                      type="button"
+                    >
+                      Ignore
+                    </button>
+                  )}
+                </div>
                 {open && (
                   <div className="mt-1 grid gap-1 rounded-lg bg-[var(--bg-soft)] px-2 py-1.5 text-[11px] leading-snug text-[var(--text-muted)]">
                     <p>
@@ -151,6 +209,27 @@ export function DxSuggestions({
           {showAll ? "Show fewer" : `Show all ${suggestions.length} suggestions`}
         </button>
       )}
+      {ignored.length > 0 && onRestore && (
+        <details className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-xs">
+          <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">Show ignored ({ignored.length})</summary>
+          <ul className="mt-1 grid gap-1">
+            {ignored.map((g) => (
+              <li className="flex items-baseline justify-between gap-2" key={g.code}>
+                <span className="min-w-0">
+                  <span className="font-mono font-semibold">{g.code}</span> {g.description}
+                </span>
+                <button
+                  className="shrink-0 text-[11px] font-semibold text-[var(--brand-primary)]"
+                  onClick={() => onRestore(g.code)}
+                  type="button"
+                >
+                  Restore
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {heldBack.length > 0 && (
         <details className="rounded-lg border border-[var(--line-soft)] bg-white px-2.5 py-1.5 text-xs">
           <summary className="cursor-pointer font-semibold text-[var(--text-muted)]">
@@ -171,6 +250,7 @@ export function DxSuggestions({
           {unreadFiles} uploaded file{unreadFiles === 1 ? " isn't" : "s aren't"} read yet, so {unreadFiles === 1 ? "it isn't" : "they aren't"} included. Use &ldquo;Read files&rdquo; in G.O.A.T.
         </p>
       )}
+      </>)}
     </div>
   );
 }

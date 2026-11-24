@@ -14,6 +14,7 @@ import {
   type ReminderQueueEntry,
   type SmsReminderSettings,
 } from "@/lib/sms-reminders";
+import { isTimeWithinHours, type KeyDateHours } from "@/lib/key-dates";
 
 export const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
@@ -191,15 +192,35 @@ export function buildDeviceQueue(input: {
   templateBody: string;
   office: ReminderOffice;
   alreadySentIds: Set<string>;
+  /** Same-day catch-up: only visits starting after this "HH:MM". */
+  onlyAfter?: string;
+  /** 24-hour texts: only visits starting at or before this "HH:MM". */
+  notAfter?: string;
+  /** Same-day catch-up: say "today" instead of "tomorrow". */
+  sameDay?: boolean;
+  /** Key Date special hours: visits outside them get no reminder. */
+  hours?: KeyDateHours | null;
 }): DeviceQueueItem[] {
   const queue = buildReminderQueue(input.appointments, input.patientsById, input.settings, input.visitDate);
+  const after = input.onlyAfter ? normalizeHHMM(input.onlyAfter) : "";
+  const before = input.notAfter ? normalizeHHMM(input.notAfter) : "";
   return sendableReminders(queue)
     .filter((entry) => !input.alreadySentIds.has(entry.appointmentId))
-    .map((entry) => ({
-      id: entry.appointmentId,
-      phone: toE164(entry.phone),
-      text: renderReminderText(input.templateBody, entry, input.patientsById.get(entry.patientId), input.office),
-    }))
+    .filter((entry) => !after || normalizeHHMM(entry.time) > after)
+    .filter((entry) => {
+      if (!before) return true;
+      const time = normalizeHHMM(entry.time);
+      return !time || time <= before;
+    })
+    .filter((entry) => isTimeWithinHours(entry.time, input.hours ?? null))
+    .map((entry) => {
+      const text = renderReminderText(input.templateBody, entry, input.patientsById.get(entry.patientId), input.office);
+      return {
+        id: entry.appointmentId,
+        phone: toE164(entry.phone),
+        text: withOptOutLine(input.sameDay ? todayWording(text) : text, input.settings),
+      };
+    })
     .filter((item) => item.phone && item.text);
 }
 
@@ -221,6 +242,50 @@ export function generateDeviceToken(): string {
 export const BACKUP_DELAY_MIN = 30;
 /** How long a device holds the reminders it was handed. */
 export const CLAIM_MINUTES = 15;
+/** Largest batch= the shortcut queue will hand out in one call. */
+export const SHORTCUT_BATCH_MAX = 40;
+
+/**
+ * `batch` on GET /api/reminders/queue. 0 means no limit (the shortcut
+ * installed before batching). A positive integer is capped.
+ */
+export function shortcutBatchSize(raw: string | null): number {
+  if (raw == null || raw.trim() === "") return 0;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) return 0;
+  return Math.min(SHORTCUT_BATCH_MAX, n);
+}
+
+/**
+ * May this device take a reminder or broadcast lease? Free, expired, or
+ * already this device's. A live lease belonging to someone else stays put,
+ * so two phones never text the same person. Ack is what makes it permanent:
+ * an expired lease with no ack is handed out again.
+ */
+export function leaseCanTake(
+  claimedBy: string | null | undefined,
+  claimedUntil: string | null | undefined,
+  deviceId: string,
+  now: Date,
+): boolean {
+  if (!claimedUntil) return true;
+  if (claimedBy && claimedBy === deviceId) return true;
+  const until = new Date(claimedUntil).getTime();
+  return !Number.isFinite(until) || until < now.getTime();
+}
+
+/** Clock labels for the send run and the two catch-up runs (30 and 60 minutes later). */
+export function catchUpClockLabels(sendHour: number): [string, string, string] {
+  const label = (totalMin: number) => {
+    const h = Math.floor(totalMin / 60) % 24;
+    const m = totalMin % 60;
+    const suffix = h >= 12 ? "PM" : "AM";
+    const hour = h % 12 === 0 ? 12 : h % 12;
+    return `${hour}:${String(m).padStart(2, "0")} ${suffix}`;
+  };
+  const start = sendHour * 60;
+  return [label(start), label(start + 30), label(start + 60)];
+}
 
 /**
  * May a BACKUP device send now? Only after the primary has had its chance:
@@ -249,4 +314,491 @@ export function backupWaitReason(input: {
   const h = Math.floor(readyMin / 60);
   const m = readyMin % 60;
   return `Backup device: waits until ${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}.`;
+}
+
+/** "9:5" / "09:05:00" → "09:05" (empty when unparseable). */
+export function normalizeHHMM(value: string): string {
+  // "" means "no time" (e.g. an all-active broadcast has no visit). It must NOT
+  // become "00:00", which made every time-less recipient look like a visit that
+  // already passed and silently dropped them from today's broadcast.
+  if (!value || !value.trim()) return "";
+  const [h, m] = (value || "").split(":").map(Number);
+  if (!Number.isFinite(h)) return "";
+  return `${String(h).padStart(2, "0")}:${String(Number.isFinite(m) ? m : 0).padStart(2, "0")}`;
+}
+
+/** Same-day wording: "tomorrow" → "today" (keeps capitalisation). */
+export function todayWording(text: string): string {
+  return text.replace(/\btomorrow\b/gi, (w) =>
+    w === w.toUpperCase() ? "TODAY" : w[0] === "T" ? "Today" : "today",
+  );
+}
+
+/** Office-local "HH:MM" right now. */
+export function localHHMM(now: Date, timeZone: string): string {
+  const fmt = (tz: string) =>
+    new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = fmt(timeZone);
+  } catch {
+    parts = fmt("America/Los_Angeles");
+  }
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  return `${get("hour").padStart(2, "0").replace(/^24$/, "00")}:${get("minute").padStart(2, "0")}`;
+}
+
+export function isQuietNow(now: Date, settings: SmsReminderSettings): boolean {
+  const { quietStartHour: qs, quietEndHour: qe } = settings;
+  const hour = localNow(now, settings.timeZone).hour;
+  return qs !== qe && (qs < qe ? hour >= qs && hour < qe : hour >= qs || hour < qe);
+}
+
+export interface CatchUpDate {
+  visitDate: string;
+  /** "today": same-day catch-up (future visits only, "today" wording). */
+  mode: "today" | "tomorrow";
+  /** For "today": only visits starting after this office-local HH:MM. */
+  onlyAfter?: string;
+  /** Key Date special hours for that date (partial closure / custom hours). */
+  hours?: KeyDateHours;
+}
+
+export interface CatchUpPlan {
+  todayIso: string;
+  /** Tomorrow's date; the reply's top-level visitDate. */
+  visitDate: string;
+  dates: CatchUpDate[];
+  /** Why nothing (or only part) can be sent. */
+  reason: string;
+}
+
+/**
+ * "Send Reminders Now" = catch-up backup (e.g. the phone was dead at 8 AM).
+ * Sends TODAY's reminders that never went out (only visits still ahead),
+ * plus TOMORROW's when they are due (a run day, at/after the send hour).
+ * Quiet hours and Key Dates closures still apply; duplicates are removed
+ * later by the sent log and claims.
+ */
+export function planCatchUp(input: {
+  now: Date;
+  settings: SmsReminderSettings;
+  officeHours: OfficeHoursDay[];
+  closedIsoDates: Set<string>;
+  /** Key Date special hours per date; visits outside them are skipped. */
+  hoursByDate?: Map<string, KeyDateHours>;
+}): CatchUpPlan {
+  const { now, settings, officeHours, closedIsoDates } = input;
+  const hoursFor = (iso: string) => {
+    const h = input.hoursByDate?.get(iso);
+    return h ? { hours: h } : {};
+  };
+  const today = localNow(now, settings.timeZone);
+  const visitDate = addDaysIso(today.iso, 1);
+  const base = { todayIso: today.iso, visitDate };
+  if (!settings.enabled) return { ...base, dates: [], reason: "Text reminders are turned off." };
+  if (isQuietNow(now, settings)) return { ...base, dates: [], reason: "Quiet hours — nothing sends now." };
+  const dates: CatchUpDate[] = [];
+  const notes: string[] = [];
+  if (closedIsoDates.has(today.iso)) notes.push("The office is closed today (Key Dates).");
+  else dates.push({ visitDate: today.iso, mode: "today", onlyAfter: localHHMM(now, settings.timeZone), ...hoursFor(today.iso) });
+  if (closedIsoDates.has(visitDate)) notes.push("The office is closed tomorrow (Key Dates).");
+  else if (!effectiveRunDays(settings, officeHours).includes(today.dow)) notes.push("Tomorrow's reminders aren't due (not a run day).");
+  else if (today.hour < settings.sendHour) notes.push(`Tomorrow's reminders go out at ${settings.sendHour}:00.`);
+  else dates.push({ visitDate, mode: "tomorrow", ...hoursFor(visitDate) });
+  return { ...base, dates, reason: notes.join(" ") };
+}
+
+/**
+ * Last line of defence for every send path (scheduled, Send Now, catch-up,
+ * preview): whatever the planner decided, a visit date that is a full-day
+ * Closed key date never gets reminder texts.
+ */
+export function withoutClosedDates<T extends { visitDate: string }>(groups: T[], closedIsoDates: Set<string>): T[] {
+  return groups.filter((g) => !closedIsoDates.has(g.visitDate));
+}
+
+/**
+ * The automatic (scheduled, non-forced) run. Same as the catch-up — TODAY's
+ * unsent reminders for visits still ahead ("today" wording) plus TOMORROW's
+ * when due — but only from the send hour, and a dry run only once a day.
+ * Real sends are deduped by the sent log and claims, so a second call (or a
+ * later "Send Reminders Now") never texts anyone twice.
+ */
+export function planScheduledRun(input: {
+  now: Date;
+  settings: SmsReminderSettings;
+  officeHours: OfficeHoursDay[];
+  closedIsoDates: Set<string>;
+  hoursByDate?: Map<string, KeyDateHours>;
+  /** Only passed for dry runs (once-a-day). */
+  lastRunAt?: Date | null;
+}): CatchUpPlan {
+  const { now, settings } = input;
+  const today = localNow(now, settings.timeZone);
+  const base = { todayIso: today.iso, visitDate: addDaysIso(today.iso, 1) };
+  if (!settings.enabled) return { ...base, dates: [], reason: "Text reminders are turned off." };
+  if (isQuietNow(now, settings)) return { ...base, dates: [], reason: "Quiet hours — nothing sends now." };
+  if (today.hour < settings.sendHour) return { ...base, dates: [], reason: `Too early — sends at ${settings.sendHour}:00.` };
+  if (input.lastRunAt && localNow(input.lastRunAt, settings.timeZone).iso === today.iso) {
+    return { ...base, dates: [], reason: "Already ran today." };
+  }
+  return planCatchUp(input);
+}
+
+/**
+ * Queue item ids. Plain appointment id = the reply's visitDate (backward
+ * compatible); "r:<date>:<appt>" = a reminder for another date (catch-up);
+ * "b:<recipient id>" = a "Message patients" broadcast text;
+ * "bd:<year>:<patient id>" = a birthday text (the year is in the id so a late
+ * ack still lands on the right year).
+ */
+export type QueueItemRef =
+  | { kind: "reminder"; visitDate: string; appointmentId: string }
+  | { kind: "broadcast"; recipientId: string }
+  | { kind: "birthday"; year: number; patientId: string };
+
+export function encodeBirthdayItemId(year: number, patientId: string): string {
+  return `bd:${year}:${patientId}`;
+}
+
+export function encodeReminderItemId(visitDate: string, appointmentId: string, primaryVisitDate: string): string {
+  return visitDate === primaryVisitDate ? appointmentId : `r:${visitDate}:${appointmentId}`;
+}
+
+export function decodeQueueItemId(id: string, fallbackVisitDate: string): QueueItemRef | null {
+  if (!id) return null;
+  const bd = /^bd:(\d{4}):(.+)$/.exec(id);
+  if (bd) return { kind: "birthday", year: Number(bd[1]), patientId: bd[2] };
+  if (id.startsWith("b:")) return id.length > 2 ? { kind: "broadcast", recipientId: id.slice(2) } : null;
+  const m = /^r:(\d{4}-\d{2}-\d{2}):(.+)$/.exec(id);
+  if (m) return { kind: "reminder", visitDate: m[1], appointmentId: m[2] };
+  return fallbackVisitDate ? { kind: "reminder", visitDate: fallbackVisitDate, appointmentId: id } : null;
+}
+
+/** Should a backup device hold a broadcast? Gives the primary BACKUP_DELAY_MIN. */
+export function broadcastBackupHold(createdAt: Date, now: Date, selfForced: boolean): boolean {
+  return !selfForced && now.getTime() - createdAt.getTime() < BACKUP_DELAY_MIN * 60_000;
+}
+
+/** Recipients for "Message patients": one per patient with a valid phone. */
+export interface BroadcastCandidate {
+  appointmentId: string;
+  patientId: string;
+  patientName: string;
+  time: string;
+  status: string;
+  phone: string;
+  optedOut?: boolean;
+}
+
+/**
+ * "Message patients" time window. `startTime` / `endTime` are "HH:MM" (end
+ * exclusive, either optional). `notBefore` drops visits already past (the
+ * current office time when the target date is today). Unknown visit times
+ * stay in, except when a window was chosen.
+ */
+export interface BroadcastTimeWindow {
+  startTime?: string;
+  endTime?: string;
+  notBefore?: string;
+}
+
+export function broadcastTimeOk(time: string, window: BroadcastTimeWindow): boolean {
+  const t = normalizeHHMM(time);
+  const start = window.startTime ? normalizeHHMM(window.startTime) : "";
+  const end = window.endTime ? normalizeHHMM(window.endTime) : "";
+  const notBefore = window.notBefore ? normalizeHHMM(window.notBefore) : "";
+  if (!t) return !start && !end;
+  if (start && t < start) return false;
+  if (end && t >= end) return false;
+  if (notBefore && t < notBefore) return false;
+  return true;
+}
+
+/** A US phone: 10 digits, or 11 starting with 1. */
+function hasValidPhone(phone: string): boolean {
+  const d = phone.replace(/\D/g, "");
+  return d.length === 10 || (d.length === 11 && d.startsWith("1"));
+}
+
+export function pickBroadcastRecipients(
+  rows: BroadcastCandidate[],
+  options: { excludeCanceled: boolean } & BroadcastTimeWindow,
+): BroadcastCandidate[] {
+  const seen = new Set<string>();
+  const seenPhones = new Set<string>();
+  return rows
+    .slice()
+    .sort((a, b) => normalizeHHMM(a.time).localeCompare(normalizeHHMM(b.time)))
+    .filter((row) => {
+      if (!row.patientId || seen.has(row.patientId)) return false;
+      if (options.excludeCanceled && /^cancel/i.test(row.status)) return false;
+      if (!broadcastTimeOk(row.time, options)) return false;
+      if (row.optedOut) return false;
+      if (!hasValidPhone(row.phone)) return false;
+      // Family members who share one phone get one text.
+      const key = phoneMatchKey(row.phone);
+      if (seenPhones.has(key)) return false;
+      seen.add(row.patientId);
+      seenPhones.add(key);
+      return true;
+    });
+}
+
+// ---- "Message patients": who the text goes to (the audience) ----
+
+/**
+ * Audiences for "Message patients". To add one later ("All patients",
+ * "Patients seen in a time period"): add an id here, a case in
+ * `pickAudienceRecipients` (and, if it needs extra inputs, the loader in
+ * message-patients-composer.tsx). "booked" is the visit-based one and keeps
+ * its own date + time-window picker; every other audience is a patient list.
+ */
+export type BroadcastAudience = "active" | "booked";
+
+export interface BroadcastAudienceOption {
+  id: BroadcastAudience;
+  label: string;
+  /** One line shown under the selector. */
+  summary: string;
+}
+
+export const BROADCAST_AUDIENCES: BroadcastAudienceOption[] = [
+  { id: "active", label: "All active patients", summary: "Every patient whose case status is Active." },
+  { id: "booked", label: "Booked on a day", summary: "Only patients with a visit on the day you pick." },
+];
+
+export const DEFAULT_BROADCAST_AUDIENCE: BroadcastAudience = "active";
+
+/**
+ * "Active" for broadcasts = the Patients list status named Active (any
+ * capitalisation) or no status at all (new patients default to Active). Every
+ * other status (Discharged, Ready to Submit, Submitted, Dropped, Paid and any
+ * status the office adds) is NOT active.
+ */
+export function isActiveCaseStatus(status: unknown): boolean {
+  const s = typeof status === "string" ? status.trim().toLowerCase() : "";
+  return s === "" || s === "active";
+}
+
+/** A patient row as read for a patient-list audience. */
+export interface BroadcastPatient {
+  patientId: string;
+  patientName: string;
+  phone: string;
+  caseStatus: string;
+  optedOut?: boolean;
+}
+
+/**
+ * Recipients for a patient-list audience (anything but "booked"): one text
+ * per patient with a valid phone, once per phone number, never anyone who
+ * opted out. Sorted by name. No appointment, so appointmentId/time are "".
+ */
+export function pickAudienceRecipients(
+  audience: Exclude<BroadcastAudience, "booked">,
+  patients: BroadcastPatient[],
+): BroadcastCandidate[] {
+  const inAudience = (p: BroadcastPatient) => {
+    switch (audience) {
+      case "active":
+        return isActiveCaseStatus(p.caseStatus);
+    }
+  };
+  const seen = new Set<string>();
+  const seenPhones = new Set<string>();
+  return patients
+    .slice()
+    .sort((a, b) => a.patientName.localeCompare(b.patientName, undefined, { sensitivity: "base" }))
+    .filter((p) => {
+      if (!p.patientId || seen.has(p.patientId) || !inAudience(p) || p.optedOut) return false;
+      if (!hasValidPhone(p.phone)) return false;
+      const key = phoneMatchKey(p.phone);
+      if (seenPhones.has(key)) return false;
+      seen.add(p.patientId);
+      seenPhones.add(key);
+      return true;
+    })
+    .map((p) => ({
+      appointmentId: "",
+      patientId: p.patientId,
+      patientName: p.patientName,
+      time: "",
+      status: p.caseStatus,
+      phone: p.phone,
+    }));
+}
+
+/**
+ * What the phone shortcut should do with one fetch.
+ * A closed-day note explains why appointment texts were skipped. It is the
+ * message only when this batch is empty. It never turns send off, and it is
+ * never the sentence the shortcut shows when a queued broadcast is in the batch.
+ */
+export function shortcutFetchDecision(input: {
+  itemCount: number;
+  reason: string;
+  summary: string;
+  dryRun: boolean;
+  preview: boolean;
+}): { send: "yes" | "no"; message: string } {
+  if (input.itemCount <= 0) {
+    return { send: "no", message: input.reason.trim() || "Nothing to send." };
+  }
+  if (input.dryRun && !input.preview) {
+    return { send: "no", message: `Dry run: ${input.summary} logged, nothing sent.` };
+  }
+  const sending = input.summary ? `Sending ${input.summary}.` : "Sending.";
+  if (input.preview) return { send: "no", message: sending };
+  return { send: "yes", message: sending };
+}
+
+/**
+ * The day a list-audience broadcast is queued for ("send day"). Today, unless
+ * it's the evening part of quiet hours: then the first moment it can go out
+ * is tomorrow, so the row is dated tomorrow. A row that is still queued after
+ * that day is still handed to the phone. A closed day does not drop it.
+ */
+export function broadcastSendDay(
+  now: Date,
+  settings: Pick<SmsReminderSettings, "timeZone" | "quietStartHour" | "quietEndHour">,
+): { iso: string; deferred: boolean } {
+  const today = localNow(now, settings.timeZone);
+  const { quietStartHour: qs, quietEndHour: qe } = settings;
+  const quiet = qs !== qe && (qs < qe ? today.hour >= qs && today.hour < qe : today.hour >= qs || today.hour < qe);
+  const eveningOfWrap = quiet && qs > qe && today.hour >= qs;
+  return eveningOfWrap ? { iso: addDaysIso(today.iso, 1), deferred: true } : { iso: today.iso, deferred: quiet };
+}
+
+// ---- Opt-out by reply ("STOP") ----
+
+/** Stored on reminder_opt_outs. Not a patient. Proves the phone reported a test. */
+export const STOP_TEST_PATIENT_ID = "test";
+/** Stored on reminder_opt_outs. The rest of patient_id is who we could not match. */
+export const UNMATCHED_PREFIX = "unmatched:";
+
+/** Replies that opt a patient out (carrier-standard keywords). */
+export const OPT_OUT_KEYWORDS = ["STOP", "STOPALL", "UNSUBSCRIBE", "END", "QUIT"] as const;
+/** Replies that opt a patient back in. */
+export const OPT_IN_KEYWORDS = ["START", "UNSTOP"] as const;
+
+/**
+ * Is this incoming text an opt-out / opt-in keyword? The whole message must
+ * be the keyword (case-insensitive, trimmed, trailing punctuation ignored),
+ * so "Can I cancel my 3pm?" is NOT an opt-out.
+ */
+export function parseOptOutReply(text: unknown): "stop" | "start" | null {
+  if (typeof text !== "string") return null;
+  const word = text.trim().replace(/[\s.!]+$/, "").replace(/^["'“]+|["'”]+$/g, "").toUpperCase();
+  if ((OPT_OUT_KEYWORDS as readonly string[]).includes(word)) return "stop";
+  if ((OPT_IN_KEYWORDS as readonly string[]).includes(word)) return "start";
+  return null;
+}
+
+/** Comparable phone key: the last 10 digits ("" if fewer than 10). */
+export function phoneMatchKey(phone: unknown): string {
+  const digits = String(phone ?? "").replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : "";
+}
+
+/** Letters and numbers only, lower case, one space between words. */
+export function normalizePersonName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The whole reply "STOP TEST" is the office testing the phone. It is not a
+ * patient opting out.
+ */
+export function isStopTest(text: unknown): boolean {
+  if (typeof text !== "string") return false;
+  const word = text.trim().replace(/[\s.!]+$/, "").replace(/^["'“]+|["'”]+$/g, "").replace(/\s+/g, " ").toUpperCase();
+  return word === "STOP TEST";
+}
+
+/**
+ * When the phone sends a contact name instead of a number, match it only
+ * when exactly one patient in the office has that name. "Jane Doe" matches
+ * "Doe, Jane". Two Janes match nobody.
+ */
+export function matchPatientByName(patients: { id: string; fullName: string }[], from: string): string | null {
+  const want = normalizePersonName(from);
+  if (want.length < 2) return null;
+  const hits = new Set<string>();
+  for (const patient of patients) {
+    const { firstName, lastName } = splitPatientName(patient.fullName || "");
+    const forms = [
+      normalizePersonName(patient.fullName || ""),
+      normalizePersonName(`${firstName} ${lastName}`),
+      normalizePersonName(`${lastName} ${firstName}`),
+      normalizePersonName(firstName),
+      normalizePersonName(lastName),
+    ].filter((form) => form.length >= 2);
+    if (forms.includes(want)) hits.add(patient.id);
+  }
+  return hits.size === 1 ? [...hits][0] : null;
+}
+
+/** How an opted-out row is described. A phone reply is STOP; anything else was added in the office. */
+export function optOutHowLabel(source: string | null | undefined): string {
+  return source === "iphone" || source === "mac" ? "Replied STOP" : "Added by staff";
+}
+
+/**
+ * Patients to offer in the Opted out "Add patient" box. A name matches any
+ * part of the full name. A phone matches when at least 3 digits are in the
+ * number on file. People already opted out are left out.
+ */
+export function searchPatientsToOptOut<T extends { id: string; fullName: string; phone: string; textRemindersOff?: boolean; deleted?: boolean }>(
+  patients: T[],
+  query: string,
+): T[] {
+  const text = query.trim().toLowerCase();
+  const digits = query.replace(/\D/g, "");
+  if (text.length < 2 && digits.length < 3) return [];
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const patient of patients) {
+    if (!patient.id || seen.has(patient.id) || patient.deleted || patient.textRemindersOff) continue;
+    const name = (patient.fullName || "").toLowerCase();
+    const phone = (patient.phone || "").replace(/\D/g, "");
+    const nameHit = text.length >= 2 && name.includes(text);
+    const phoneHit = digits.length >= 3 && phone.includes(digits);
+    if (!nameHit && !phoneHit) continue;
+    seen.add(patient.id);
+    out.push(patient);
+    if (out.length === 8) break;
+  }
+  return out;
+}
+
+/** Patients the office can tap when a STOP name did not match exactly one person. */
+export function stopReplyChoices<T extends { id: string; fullName: string; deleted?: boolean }>(patients: T[], label: string): T[] {
+  const words = normalizePersonName(label).split(" ").filter((word) => word.length >= 3);
+  if (!words.length) return [];
+  const scored = patients
+    .filter((patient) => !patient.deleted)
+    .map((patient) => {
+      const name = normalizePersonName(patient.fullName || "");
+      return { patient, score: words.filter((word) => name.includes(word)).length };
+    })
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score || a.patient.fullName.localeCompare(b.patient.fullName));
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of scored) {
+    if (seen.has(row.patient.id)) continue;
+    seen.add(row.patient.id);
+    out.push(row.patient);
+    if (out.length === 5) break;
+  }
+  return out;
+}
+
+/** Append the opt-out line (when on) unless the text already mentions STOP. */
+export function withOptOutLine(text: string, settings: { optOutLine?: boolean; optOutText?: string }): string {
+  const line = (settings.optOutText ?? "").trim();
+  if (!text || settings.optOutLine === false || !line || /\bSTOP\b/i.test(text)) return text;
+  return `${text.trimEnd()} ${line}`;
 }

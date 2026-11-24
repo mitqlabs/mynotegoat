@@ -29,6 +29,7 @@ import {
   findKeyDatesForDate,
   findOpenKeyDateForDate,
   isHolidaySourcedKeyDate,
+  keyDateHasHours,
   formatUsDateFromIso,
 } from "@/lib/key-dates";
 import {
@@ -52,6 +53,8 @@ import {
   isStartTimeAlignedToInterval,
   weekdayLabels,
 } from "@/lib/schedule-settings";
+import { appAlert, appConfirm } from "@/components/app-dialog";
+import { closedDateHit, closedDateNote, closedDateNotice } from "@/lib/closed-date-booking";
 
 type RecurrenceUnit = "days" | "weeks";
 type RecurrenceEndMode = "date" | "visits";
@@ -401,13 +404,14 @@ function buildSeriesPlans(
   openDays: Set<number>,
   rule?: HolidayCancelRule,
   typeDuration?: TypeDurationLookup,
+  isClosed?: (dateIso: string) => boolean,
 ): { draft: NewAppointmentDraft; dates: string[]; label: string }[] {
   const plans: { draft: NewAppointmentDraft; dates: string[]; label: string }[] = [];
   const main =
     draft.isRecurring && draft.recurUnit === "weeks"
       ? { ...draft, recurDays: draft.recurDays.filter((day) => openDays.has(day)) }
       : draft;
-  plans.push({ draft: main, dates: getDatesForDraft(main, rule), label: "Series 1" });
+  plans.push({ draft: main, dates: getDatesForDraft(main, rule, isClosed), label: "Series 1" });
 
   if (!draft.isRecurring) return plans;
 
@@ -423,7 +427,7 @@ function buildSeriesPlans(
     );
     plans.push({
       draft: seriesDraft,
-      dates: getDatesForDraft(seriesDraft, rule),
+      dates: getDatesForDraft(seriesDraft, rule, isClosed),
       label: `Series ${index + 2}`,
     });
   });
@@ -481,7 +485,11 @@ function getSeriesHolidayName(draft: NewAppointmentDraft, dateIso: string, rule?
  * and the series runs one step longer. In "date" mode the end date is
  * still the hard stop.
  */
-function getDatesForDraft(draft: NewAppointmentDraft, rule?: HolidayCancelRule) {
+function getDatesForDraft(
+  draft: NewAppointmentDraft,
+  rule?: HolidayCancelRule,
+  isClosed?: (dateIso: string) => boolean,
+) {
   if (!draft.isRecurring) {
     return [draft.startDate];
   }
@@ -498,7 +506,9 @@ function getDatesForDraft(draft: NewAppointmentDraft, rule?: HolidayCancelRule) 
   let activeCount = 0;
   const pushDate = (dateIso: string) => {
     dates.push(dateIso);
-    if (!getSeriesHolidayName(draft, dateIso, rule)) activeCount += 1;
+    // A closed key date is still on the series (saved as Canceled). It does
+    // not use up a "stop after N visits" slot.
+    if (!getSeriesHolidayName(draft, dateIso, rule) && !isClosed?.(dateIso)) activeCount += 1;
   };
   const interval = Math.max(1, Math.round(draft.recurInterval));
 
@@ -587,7 +597,7 @@ export function NewAppointmentModal({
     (dateIso) => {
       const name = getUsFederalHolidayName(dateIso);
       if (!name) return null;
-      const closedRows = findKeyDatesForDate(keyDates, dateIso).filter((row) => row.officeStatus === "Closed");
+      const closedRows = findKeyDatesForDate(keyDates, dateIso).filter((row) => row.officeStatus === "Closed" && !keyDateHasHours(row));
       if (closedRows.length) {
         // A closure created for this holiday (e.g. auto-added on an earlier
         // save) behaves like a Closed holiday: Canceled + make-up visit.
@@ -628,7 +638,8 @@ export function NewAppointmentModal({
   const closedDateSet = useMemo(() => {
     const set = new Set<string>();
     keyDates.forEach((row) => {
-      if (row.officeStatus !== "Closed") return;
+      // A Closed key date with special hours is a partial day: still bookable.
+      if (row.officeStatus !== "Closed" || keyDateHasHours(row)) return;
       // Expand date ranges into individual iso dates.
       const start = row.startDate;
       const end = row.endDate || row.startDate;
@@ -840,7 +851,7 @@ export function NewAppointmentModal({
   // yields, or which date a visit count ends on. Uses the same generator the
   // save path uses (getDatesForDraft, with closed office days dropped the
   // same way), so the projection is exactly what will be booked. Dates on
-  // CLOSED key dates are reported separately because saving skips them.
+  // CLOSED key dates are still booked, marked Canceled, and called out.
   const recurrenceProjection = useMemo(() => {
     if (!draft.isRecurring) return null;
     if (draft.recurrenceEndMode === "date" && draft.recurEndDate < draft.startDate) return null;
@@ -849,7 +860,8 @@ export function NewAppointmentModal({
         ? { ...draft, recurDays: draft.recurDays.filter((day) => openRecurringDays.has(day)) }
         : draft;
     if (projectedDraft.recurUnit === "weeks" && projectedDraft.recurDays.length === 0) return null;
-    const dates = getDatesForDraft(projectedDraft, holidayCancelRule);
+    const dateIsClosed = (dateIso: string) => closedDateHit(keyDates, dateIso) !== null;
+    const dates = getDatesForDraft(projectedDraft, holidayCancelRule, dateIsClosed);
     if (!dates.length) return null;
     // Unchecked holiday dates are booked as Canceled (not skipped) and
     // don't count as visits. A holiday that is also a CLOSED key date is
@@ -877,8 +889,13 @@ export function NewAppointmentModal({
   // Every stretch resolved to real dates — drives each row's summary and
   // the running total at the bottom.
   const seriesPlans = useMemo(
-    () => (draft.isRecurring ? buildSeriesPlans(draft, openRecurringDays, holidayCancelRule, typeDuration) : []),
-    [draft, openRecurringDays, holidayCancelRule, typeDuration],
+    () =>
+      draft.isRecurring
+        ? buildSeriesPlans(draft, openRecurringDays, holidayCancelRule, typeDuration, (dateIso) =>
+            closedDateHit(keyDates, dateIso) !== null,
+          )
+        : [],
+    [draft, openRecurringDays, holidayCancelRule, typeDuration, keyDates],
   );
   const totalPlannedVisits = useMemo(
     () => seriesPlans.reduce((sum, plan) => sum + countActiveDates(plan.draft, plan.dates, holidayCancelRule), 0),
@@ -903,7 +920,7 @@ export function NewAppointmentModal({
   // US federal holidays inside the series range (start date → projected
   // end date, inclusive — through the last follow-on series, if any), each
   // with its Keep / Closed choice. Office closures (CLOSED Key Dates) that
-  // aren't holidays have their own amber "will be skipped" line below.
+  // aren't holidays have their own amber "scheduled as Canceled" line below.
   const recurrenceHolidayLabels = useMemo(() => {
     if (!recurrenceProjection) return [];
     const startIso = draft.startDate;
@@ -1061,7 +1078,7 @@ export function NewAppointmentModal({
     resetQuickNewPatientPanel();
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const selectedPatient = findPatientById(draft.patientId);
     if (!selectedPatient) {
       setError("Select a patient.");
@@ -1140,7 +1157,9 @@ export function NewAppointmentModal({
     // series id. From here on the checks work on entries (date + time +
     // stretch) rather than bare dates, because two stretches can want
     // different times on the same weekday.
-    const plans = buildSeriesPlans(sanitizedDraft, openRecurringDays, holidayCancelRule, typeDuration);
+    const plans = buildSeriesPlans(sanitizedDraft, openRecurringDays, holidayCancelRule, typeDuration, (dateIso) =>
+      closedDateHit(keyDates, dateIso) !== null,
+    );
     for (const [index, plan] of plans.entries()) {
       if (index === 0) continue;
       if (plan.draft.recurDays.length === 0) {
@@ -1174,6 +1193,8 @@ export function NewAppointmentModal({
       durationMin: number;
       seriesId?: string;
       holidayName?: string;
+      /** Set when the day is a full CLOSED key date. Undefined when it is open. */
+      closedReason?: string;
     };
     const seenDates = new Set<string>();
     let scheduleEntries: PlannedVisit[] = [];
@@ -1184,13 +1205,16 @@ export function NewAppointmentModal({
         // rather than double-booking the patient.
         if (seenDates.has(dateIso)) continue;
         seenDates.add(dateIso);
+        const holidayName = getSeriesHolidayName(plan.draft, dateIso, holidayCancelRule) ?? undefined;
+        const closed = holidayName ? null : closedDateHit(keyDates, dateIso);
         scheduleEntries.push({
           dateIso,
           startTime: resolveTimeForDate(plan.draft, dateIso),
           appointmentType: plan.draft.appointmentType.trim(),
           durationMin: getDurationMinutes(plan.draft.durationHours, plan.draft.durationMinutes),
           seriesId,
-          holidayName: getSeriesHolidayName(plan.draft, dateIso, holidayCancelRule) ?? undefined,
+          holidayName,
+          closedReason: closed ? closed.reason : undefined,
         });
       }
     }
@@ -1217,7 +1241,7 @@ export function NewAppointmentModal({
       ? []
       : scheduleEntries.filter((planned) => {
           // A canceled holiday placeholder doesn't take a slot.
-          if (planned.holidayName) return false;
+          if (planned.holidayName || planned.closedReason !== undefined) return false;
           const countAtSlot = scheduleAppointments.filter(
             (entry) => entry.date === planned.dateIso && entry.startTime === planned.startTime,
           ).length;
@@ -1234,38 +1258,6 @@ export function NewAppointmentModal({
         }. Tick "Override Office Hours" if you need to add anyway.`,
       );
       return;
-    }
-
-    // Canceled holiday placeholders aren't visits, so they stay out of the
-    // skip prompt. (A holiday that is also a closed key date never gets a
-    // holidayName — it follows this closure behaviour like any closed day.)
-    const closedDates = scheduleEntries.filter(
-      (planned) => !planned.holidayName && Boolean(findClosedKeyDateForDate(keyDates, planned.dateIso)),
-    );
-    if (closedDates.length > 0) {
-      const closedSet = new Set(closedDates.map((planned) => planned.dateIso));
-      const openDates = scheduleEntries.filter((planned) => !closedSet.has(planned.dateIso));
-      const closedList = closedDates
-        .map((planned) => {
-          const entry = findClosedKeyDateForDate(keyDates, planned.dateIso);
-          const reason = entry?.reason ? ` (${entry.reason})` : "";
-          return `${formatUsDateFromIso(planned.dateIso)}${reason}`;
-        })
-        .join("\n  • ");
-
-      if (!openDates.some((planned) => !planned.holidayName)) {
-        setError(`Cannot schedule — all dates fall on CLOSED key dates:\n  • ${closedList}`);
-        return;
-      }
-
-      const openActiveCount = openDates.filter((planned) => !planned.holidayName).length;
-      const skipConfirmed = window.confirm(
-        `Cannot schedule on CLOSED key date(s):\n  • ${closedList}\n\nWould you like to skip ${closedDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${openActiveCount} appointment${openActiveCount === 1 ? "" : "s"}?`,
-      );
-      if (!skipConfirmed) return;
-
-      // Keep only the dates the office is actually open.
-      scheduleEntries = openDates;
     }
 
     // Duplicate-day detection: prevent scheduling this patient on a day they already have an appointment
@@ -1298,9 +1290,7 @@ export function NewAppointmentModal({
       }
 
       const nonDupActiveCount = nonDupDates.filter((planned) => !planned.holidayName).length;
-      const skipConfirmed = window.confirm(
-        `${selectedPatient.fullName} already has an appointment on:\n  • ${duplicateDates.map((planned) => formatUsDateFromIso(planned.dateIso)).join("\n  • ")}\n\nSkip ${duplicateDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${nonDupActiveCount} appointment${nonDupActiveCount === 1 ? "" : "s"}?`,
-      );
+      const skipConfirmed = (await appConfirm(`${selectedPatient.fullName} already has an appointment on:\n  • ${duplicateDates.map((planned) => formatUsDateFromIso(planned.dateIso)).join("\n  • ")}\n\nSkip ${duplicateDates.length === 1 ? "this date" : "these dates"} and schedule the remaining ${nonDupActiveCount} appointment${nonDupActiveCount === 1 ? "" : "s"}?`));
       if (!skipConfirmed) return;
 
       scheduleEntries = nonDupDates;
@@ -1310,6 +1300,7 @@ export function NewAppointmentModal({
       const outsideOfficeHoursDate = scheduleEntries.find(
         (planned) =>
           !planned.holidayName &&
+          planned.closedReason === undefined &&
           !isAppointmentWithinOfficeHours(
             scheduleSettings,
             planned.dateIso,
@@ -1351,16 +1342,24 @@ export function NewAppointmentModal({
       // Holiday dates use the app's ordinary "Canceled" status (the same
       // value the schedule's status menu sets), with the holiday recorded
       // in the note since appointments have no separate cancel-reason field.
-      status: planned.holidayName ? "Canceled" : "Scheduled",
+      status: planned.holidayName || planned.closedReason !== undefined ? "Canceled" : "Scheduled",
       note: planned.holidayName
         ? [`Holiday: ${planned.holidayName}`, sanitizedDraft.note.trim()].filter(Boolean).join(" — ")
-        : sanitizedDraft.note.trim(),
+        : planned.closedReason !== undefined
+          ? closedDateNote(planned.closedReason, sanitizedDraft.note.trim())
+          : sanitizedDraft.note.trim(),
       overrideOfficeHours: Boolean(sanitizedDraft.overrideOfficeHours),
       recurringSeriesId: planned.seriesId,
     }));
 
     addAppointments(records);
     onSaved?.(records);
+    const closedHits = scheduleEntries.flatMap((planned) =>
+      planned.closedReason === undefined ? [] : [{ dateIso: planned.dateIso, reason: planned.closedReason }],
+    );
+    if (closedHits.length > 0) {
+      await appAlert(closedDateNotice(closedHits), { title: "Scheduled on a closed day" });
+    }
 
     if (sanitizedDraft.isRecurring) {
       // Save the holiday choices as Key Dates, automatically (no prompt),
@@ -1389,9 +1388,7 @@ export function NewAppointmentModal({
           .then(() => queryClient.invalidateQueries({ queryKey: cloudKeyDatesQueryKey }))
           .catch((keyDateError: unknown) => {
             console.error("[new-appointment] adding holiday key dates failed", keyDateError);
-            window.alert(
-              "The appointments were saved, but the holidays could not be added to Key Dates. Please add them on the Key Dates page.",
-            );
+            void appAlert("The appointments were saved, but the holidays could not be added to Key Dates. Please add them on the Key Dates page.");
           });
       }
     }
@@ -1410,7 +1407,7 @@ export function NewAppointmentModal({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
+    <div className="modal-overlay fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-[rgba(15,46,70,0.45)] px-4 py-8">
       <ScrollLock />
       <section className="w-full max-w-5xl rounded-2xl border border-[var(--line-soft)] bg-white p-5 shadow-[0_18px_46px_rgba(14,41,62,0.25)]">
         <div className="flex items-start justify-between gap-3">
@@ -1421,7 +1418,7 @@ export function NewAppointmentModal({
             </p>
           </div>
           <button
-            className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold"
+            className="btn btn-secondary btn-sm"
             onClick={onClose}
             type="button"
           >
@@ -1454,7 +1451,7 @@ export function NewAppointmentModal({
                   filteredPatientSuggestions.map((patient) => (
                     <button
                       key={`new-appointment-patient-${patient.id}`}
-                      className="flex w-full items-start justify-between gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-left last:border-b-0 hover:bg-[rgba(13,121,191,0.08)]"
+                      className="flex w-full items-start justify-between gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-left last:border-b-0 hover:bg-[color-mix(in_srgb,var(--brand-primary)_8%,transparent)]"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => handleSelectPatient(patient)}
                       type="button"
@@ -1473,7 +1470,7 @@ export function NewAppointmentModal({
           </label>
 
           {showQuickNewPatient && !lockedPatientId && (
-            <div className="rounded-xl border border-dashed border-[var(--brand-primary)] bg-[rgba(13,121,191,0.05)] p-3 sm:col-span-2 lg:order-1 lg:col-span-3">
+            <div className="rounded-xl border border-dashed border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_5%,transparent)] p-3 sm:col-span-2 lg:order-1 lg:col-span-3">
               <div className="flex items-center justify-between gap-2">
                 <h5 className="text-sm font-semibold">Quick New Patient</h5>
                 <span className="text-xs text-[var(--text-muted)]">
@@ -1565,14 +1562,14 @@ export function NewAppointmentModal({
               )}
               <div className="mt-3 flex justify-end gap-2">
                 <button
-                  className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold"
+                  className="btn btn-secondary btn-sm"
                   onClick={resetQuickNewPatientPanel}
                   type="button"
                 >
                   Cancel
                 </button>
                 <button
-                  className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-sm font-semibold text-white"
+                  className="btn btn-primary btn-sm"
                   onClick={handleCreateQuickPatient}
                   type="button"
                 >
@@ -1705,7 +1702,7 @@ export function NewAppointmentModal({
           <button
             className={`rounded-xl border px-4 py-3 text-left font-semibold ${
               !draft.isRecurring
-                ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
+                ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)]"
                 : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
             }`}
             onClick={() => setDraft((current) => ({ ...current, isRecurring: false }))}
@@ -1716,7 +1713,7 @@ export function NewAppointmentModal({
           <button
             className={`rounded-xl border px-4 py-3 text-left font-semibold ${
               draft.isRecurring
-                ? "border-[var(--brand-primary)] bg-[rgba(13,121,191,0.1)]"
+                ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)]"
                 : "border-[var(--line-soft)] bg-[var(--bg-soft)]"
             }`}
             onClick={() =>
@@ -1981,8 +1978,8 @@ export function NewAppointmentModal({
             )}
             {recurrenceProjection && recurrenceProjection.closedCount > 0 && (
               <p className="mt-2 text-xs text-amber-700">
-                {recurrenceProjection.closedCount} date{recurrenceProjection.closedCount === 1 ? "" : "s"} land on a closed key date and will be skipped
-                {draft.recurrenceEndMode === "visits" ? ", so fewer visits get booked" : ""}.
+                {recurrenceProjection.closedCount} date{recurrenceProjection.closedCount === 1 ? "" : "s"} land on a closed key date and will be scheduled as Canceled
+                {draft.recurrenceEndMode === "visits" ? " (they don't count toward the visit total)" : ""}.
               </p>
             )}
 
@@ -2260,14 +2257,14 @@ export function NewAppointmentModal({
 
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
-            className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold transition-all active:scale-[0.97] active:shadow-inner"
+            className="btn btn-secondary"
             onClick={onClose}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
+            className="btn btn-primary"
             onClick={handleSubmit}
             type="button"
           >
@@ -2452,7 +2449,7 @@ function SeriesEditor({
           {lastDate ? ` · to ${formatUsDateFromIso(lastDate)}` : ""}
         </span>
         <button
-          className="rounded-lg border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold"
+          className="btn btn-secondary btn-sm"
           onClick={() => setOpen((value) => !value)}
           type="button"
         >
@@ -2515,26 +2512,30 @@ function SeriesEditor({
               )}
             </span>
           </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1">
-              <span className="text-xs font-semibold text-[var(--text-muted)]">Starts</span>
-              <input
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
-                onChange={(event) => onChange({ ...series, startDateOverride: event.target.value })}
-                type="date"
-                value={series.startDateOverride || startsOn}
-              />
-              <span className="text-[10px] text-[var(--text-muted)]">
+          {/* items-start: the helper sits under Starts only, so it must not
+              stretch the row and drop the Time box. Both inputs are h-9. */}
+          <div className="grid items-start gap-3 sm:grid-cols-2">
+            <div className="min-w-0">
+              <label className="grid gap-1">
+                <span className="text-xs font-semibold text-[var(--text-muted)]">Starts</span>
+                <input
+                  className="h-9 rounded-lg border border-[var(--line-soft)] bg-white px-2 text-sm"
+                  onChange={(event) => onChange({ ...series, startDateOverride: event.target.value })}
+                  type="date"
+                  value={series.startDateOverride || startsOn}
+                />
+              </label>
+              <p className="mt-1 text-[10px] text-[var(--text-muted)]">
                 {series.startDateOverride
                   ? "Your own start date."
                   : `Follows ${index === 0 ? "Series 1" : `Series ${index + 1}`} — the day after its last visit.`}
-              </span>
-            </label>
-            <label className="grid gap-1">
+              </p>
+            </div>
+            <label className="grid content-start gap-1 self-start">
               <span className="text-xs font-semibold text-[var(--text-muted)]">Time</span>
               <TimeInput12h
                 smart
-                inputClassName="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5 text-sm"
+                inputClassName="h-9 rounded-lg border border-[var(--line-soft)] bg-white px-2 text-sm"
                 onChange={(v) => onChange({ ...series, startTime: v })}
                 value={series.startTime || mainStartTime}
               />

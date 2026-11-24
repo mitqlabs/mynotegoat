@@ -43,7 +43,7 @@ export function QuestionnaireInsertBanner({
           </span>
           <span className="flex gap-2">
             <button
-              className="rounded-lg bg-[var(--brand-primary)] px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+              className="btn btn-primary btn-sm disabled:opacity-50"
               disabled={busy === r.id}
               onClick={async () => {
                 setBusy(r.id);
@@ -58,7 +58,7 @@ export function QuestionnaireInsertBanner({
               {busy === r.id ? "Inserting…" : "Insert into Objective"}
             </button>
             <button
-              className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 font-semibold"
+              className="btn btn-secondary btn-sm"
               onClick={() => setHidden((s) => new Set(s).add(r.id))}
               title="Hide for now. Review or dismiss it from the patient file."
               type="button"

@@ -180,7 +180,7 @@ export function goatTurn(raw: string, st0: DialogState, ctx: DialogCtx): { reply
   // 3. Move / cancel an existing appointment: not done from chat yet — say where.
   if (MOVE_OR_CANCEL.test(msg) && cmd !== "addNote" && cmd !== "tell") {
     const p = one ?? byId(st.lastPatientId);
-    return { reply: { kind: "unsupported", patientId: p?.id ?? null, say: `I can't move or cancel appointments from chat yet. Open ${p ? `${p.fullName}'s` : "the"} appointment on the Schedule and change it there.` }, state: remember(p?.id ?? null, raw) };
+    return { reply: { kind: "unsupported", patientId: p?.id ?? null, say: `I can't do that yet. Open ${p ? `${p.fullName}'s` : "the"} appointment on the Schedule and change it there.` }, state: remember(p?.id ?? null, raw) };
   }
 
   if (cmd === "addNote") {

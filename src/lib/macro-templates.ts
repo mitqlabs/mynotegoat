@@ -1,3 +1,13 @@
+import {
+  answersOmittingHidden,
+  isMacroQuestionVisible,
+  questionsHaveShowIf,
+  readMacroShowIf,
+  sanitizeMacroShowIf,
+  templateOmittingHidden,
+  type MacroShowIf,
+} from "@/lib/macro-show-if";
+
 export const macroSections = [
   "subjective",
   "objective",
@@ -51,7 +61,14 @@ export interface MacroQuestion {
    * than a fuzzy match that could silently bill the wrong code.
    */
   optionCharges?: Record<string, MacroLinkedCharge>;
+  /**
+   * Show this question only when an earlier question's answer is one of
+   * `answers`. Omitted on older macros: those questions always show.
+   */
+  showIf?: MacroShowIf;
 }
+
+export type { MacroShowIf };
 
 /**
  * Optional encounter charge attached to a specific answer option within a
@@ -306,6 +323,8 @@ function normalizeQuestion(value: unknown): MacroQuestion | null {
   if (Object.keys(optionCharges).length) {
     result.optionCharges = optionCharges;
   }
+  const showIf = readMacroShowIf(row.showIf);
+  if (showIf) result.showIf = showIf;
   return result;
 }
 
@@ -346,9 +365,11 @@ function normalizeTemplate(value: unknown): MacroTemplate | null {
   if (!id || !buttonName || !body || !section || !macroSections.includes(section)) {
     return null;
   }
-  const questions = Array.isArray(row.questions)
-    ? row.questions.map(normalizeQuestion).filter((item): item is MacroQuestion => Boolean(item))
-    : [];
+  const questions = sanitizeMacroShowIf(
+    Array.isArray(row.questions)
+      ? row.questions.map(normalizeQuestion).filter((item): item is MacroQuestion => Boolean(item))
+      : [],
+  );
   const folder = typeof row.folder === "string" && row.folder.trim() ? row.folder.trim() : undefined;
   return {
     id,
@@ -575,6 +596,78 @@ export function renderMacroTemplateWithPromptSpans(
     .replace(/^(<p>\s*<\/p>\s*)+/gi, "")
     .replace(/(<p>\s*<\/p>\s*)+$/gi, "")
     .trim();
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Body and answers passed to the existing renderers. No rules: the same values. */
+export function macroInsertParts(
+  template: string,
+  questions: MacroQuestion[],
+  answers: MacroAnswerMap,
+): { template: string; answers: MacroAnswerMap } {
+  if (!questionsHaveShowIf(questions)) return { template, answers };
+  return {
+    template: templateOmittingHidden(template, questions, answers),
+    answers: answersOmittingHidden(questions, answers),
+  };
+}
+
+function promptSpanPattern(runId: string, promptId: string) {
+  return new RegExp(
+    `<span[^>]*data-macro-run-id=["']${escapeRegExp(runId)}["'][^>]*data-prompt-id=["']${escapeRegExp(promptId)}["'][^>]*>[\\s\\S]*?</span>`,
+    "i",
+  );
+}
+
+/** Remove one answer pill. If it was the only thing in a paragraph, remove that paragraph too. */
+export function removeHiddenPromptSpan(html: string, runId: string, promptId: string): string {
+  const span = `<span[^>]*data-macro-run-id=["']${escapeRegExp(runId)}["'][^>]*data-prompt-id=["']${escapeRegExp(promptId)}["'][^>]*>[\\s\\S]*?</span>`;
+  const wrapped = new RegExp(`<(p|div)>\\s*${span}\\s*</\\1>`, "gi");
+  const withoutBlock = html.replace(wrapped, "");
+  if (withoutBlock !== html) return withoutBlock;
+  return html.replace(new RegExp(span, "gi"), "");
+}
+
+/**
+ * A question that was hidden on the last insert has no pill yet. When it
+ * becomes visible, put its pill next to a sibling pill from the same run.
+ */
+export function insertMissingVisibleMacroSpans(
+  html: string,
+  runId: string,
+  questions: MacroQuestion[],
+  answers: MacroAnswerMap,
+): string {
+  let next = html;
+  const indexById = new Map(questions.map((question, index) => [question.id, index]));
+  for (const question of questions) {
+    if (!isMacroQuestionVisible(question, questions, answers)) continue;
+    if (promptSpanPattern(runId, question.id).test(next)) continue;
+    const span = renderMacroPromptSpan(runId, question.id, formatMacroAnswerValue(answers[question.id]));
+    const index = indexById.get(question.id) ?? -1;
+    let placed = false;
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      const previous = promptSpanPattern(runId, questions[cursor].id).exec(next);
+      if (!previous) continue;
+      const at = previous.index + previous[0].length;
+      next = `${next.slice(0, at)} ${span}${next.slice(at)}`;
+      placed = true;
+      break;
+    }
+    if (placed) continue;
+    for (let cursor = index + 1; cursor < questions.length; cursor += 1) {
+      const following = promptSpanPattern(runId, questions[cursor].id).exec(next);
+      if (!following) continue;
+      next = `${next.slice(0, following.index)}${span} ${next.slice(following.index)}`;
+      placed = true;
+      break;
+    }
+    if (!placed) next = next.trim() ? `${next} ${span}` : span;
+  }
+  return next;
 }
 
 export function createEmptyMacro(section: MacroSection, folder?: string): MacroTemplate {

@@ -10,8 +10,11 @@ import { useEffect, useState } from "react";
 import { useOfficeSettings } from "@/hooks/use-office-settings";
 import { getCurrentMembershipSync } from "@/lib/workspace-membership";
 import {
+  getAppliedMain,
   getSelectedLocationId,
   hasStoredLocationChoice,
+  markMainApplied,
+  resolveLoginLocation,
   LOCATION_VIEW_EVENT,
   setSelectedLocationId,
 } from "@/lib/location-view";
@@ -28,16 +31,25 @@ export function useLocationView() {
 
   const [selectedId, setSelectedId] = useState<string>(() => getSelectedLocationId());
 
-  // On first load with no explicit choice, default to the member's main
-  // location (owners have none → All).
+  // At login, start on the member's main location (owners have none → All). They can switch
+  // freely afterwards; a changed main location is applied once on their next load.
   useEffect(() => {
     if (!multiLocation) return;
-    if (hasStoredLocationChoice()) return;
-    const main = getCurrentMembershipSync()?.permissions.mainLocationId ?? "";
-    if (main && locations.some((l) => l.id === main)) {
-      setSelectedLocationId(main);
-      setSelectedId(main);
+    const membership = getCurrentMembershipSync();
+    const main = membership?.permissions.mainLocationId ?? "";
+    const userId = membership?.userId ?? "";
+    const target = resolveLoginLocation({
+      userId,
+      main,
+      locationIds: locations.map((l) => l.id),
+      stored: hasStoredLocationChoice() ? getSelectedLocationId() : null,
+      applied: getAppliedMain(),
+    });
+    if (target !== null) {
+      setSelectedLocationId(target);
+      setSelectedId(target);
     }
+    if (main && userId) markMainApplied(userId, main);
   }, [multiLocation, locations]);
 
   // Keep in sync with other components / tabs.

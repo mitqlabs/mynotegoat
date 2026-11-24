@@ -5,9 +5,20 @@ import { nameSearchMatches } from "@/lib/patient-name-match";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
-import { checkIntakeAppointment, intakeTime, mdyToIso, newPatientVisitType, scheduleCaseLabel, takeNewPatientPrefill } from "@/lib/new-patient-intake";
+import { mdyToIso, reviewCasePopup, scheduleCaseLabel, takeNewPatientPrefill, type CasePopupConflict, type CasePopupDraft } from "@/lib/new-patient-intake";
+import { NewPatientCasePopup, type CaseAttorneyOption } from "@/components/new-patient-case-popup";
+import { isSelfRepresentedAttorney, SELF_ATTORNEY_VALUE } from "@/lib/attorney-picker";
+import { isoToUsDate } from "@/components/us-date-input";
+import { isInNewPatientIntake } from "@/lib/patient-list-intake";
+import { findDuplicateCases } from "@/lib/patient-duplicate";
+import { DuplicateCaseWarning } from "@/components/duplicate-case-warning";
+import { ReturningPatientBanner } from "@/components/returning-patient-banner";
+import { demographicsFromPatient, fillEmptyDemographics, findReturningPatients, returningNameKey } from "@/lib/returning-patient";
+import { QuickFillBox } from "@/components/quick-fill-box";
+import type { QuickFillResult } from "@/lib/quick-fill";
+import { NewPatientIntakeSection } from "@/components/new-patient-intake-section";
+import { onLocalChange } from "@/lib/local-sync";
 import { createAppointmentId, type ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
-import { to12hLabel } from "@/lib/time-12h";
 import { ensureDeleteAllowed } from "@/lib/delete-guard";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -21,21 +32,36 @@ import {
   reviewStatusTone,
 } from "@/lib/review-status";
 import { useCaseStatuses } from "@/hooks/use-case-statuses";
+import { useComplianceOptions } from "@/hooks/use-compliance-options";
+import { ColorPillMenu } from "@/components/color-pill-menu";
 import { useContactDirectory } from "@/hooks/use-contact-directory";
 import { useDashboardWorkspaceSettings } from "@/hooks/use-dashboard-workspace-settings";
 import { usePatientFollowUpOverrides } from "@/hooks/use-patient-follow-up-overrides";
 import { useTasks } from "@/hooks/use-tasks";
 import { loadDashboardWorkspaceSettings } from "@/lib/dashboard-workspace-settings";
 import { formatUsDateFromIso, type TaskPriority, type TaskRecord } from "@/lib/tasks";
-import { getContrastTextColor, withAlpha } from "@/lib/color-utils";
+import { softPillStyle } from "@/lib/color-utils";
 import {
-  buildCaseNumber,
+  caseNumberOf,
   buildFollowUpItems,
   formatLeadingDateDisplay,
   formatUsDateDisplay,
   type FollowUpCategory,
 } from "@/lib/follow-up-queue";
-import { createPatientRecord, patients, updatePatientRecordById, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
+import {
+  COMPLIANCE_NOT_SET,
+  COMPLIANCE_NOT_SET_LABEL,
+  complianceAccess,
+  complianceLabel,
+  complianceDisplay,
+  complianceRank,
+  resolveComplianceOption,
+  matchesComplianceFilter,
+  normalizeCompliance,
+} from "@/lib/compliance";
+import { createPatientRecord, patients, PATIENTS_STORAGE_KEY, updatePatientRecordById, type PatientMatrixField, type PatientRecord } from "@/lib/mock-data";
+import { patientFoldersEnabled } from "@/lib/patient-folder-flag";
+import { PatientFolderListPage } from "@/components/patient-folder-live";
 import { useLocationView } from "@/hooks/use-location-view";
 import { locationLabel } from "@/lib/office-settings";
 import { formatUsPhoneInput } from "@/lib/phone-format";
@@ -44,6 +70,7 @@ import { OfficeCellMenu } from "@/components/office-cell-menu";
 import { useWorkspaceAccess } from "@/lib/workspace-access-context";
 import { useWorkspacePeople } from "@/hooks/use-workspace-people";
 import { loadOfficeSettings } from "@/lib/office-settings";
+import { caseNumberStampFor, renderCaseNumber } from "@/lib/case-number";
 import { UsDateInput } from "@/components/us-date-input";
 import { TimeInput12h } from "@/components/time-input-12h";
 
@@ -59,6 +86,7 @@ import { loadPatientListSort, nextSort, savePatientListSort } from "@/lib/patien
 import { useClearedTasks } from "@/hooks/use-cleared-tasks";
 import { caseFlowOptions } from "@/lib/case-flow-options";
 import { followUpClearId, taskClearId, type ClearedRecord } from "@/lib/cleared-tasks";
+import { appConfirm } from "@/components/app-dialog";
 
 /** The Initial Exam box as the patient page shows it: the saved value (as
  *  stored, so existing rows display exactly as before), else the earliest
@@ -81,8 +109,8 @@ function splitFullName(fullName: string): { firstName: string; lastName: string 
 }
 
 const COLUMN_ORDER_KEY = "casemate.patient-column-order.v1";
-type ListColumnId = "patient" | "initialExam" | "dateOfLoss" | "attorney" | "status" | "review";
-const defaultColumnOrder: ListColumnId[] = ["patient", "initialExam", "dateOfLoss", "attorney", "status", "review"];
+type ListColumnId = "patient" | "initialExam" | "dateOfLoss" | "attorney" | "status" | "compliance" | "review";
+const defaultColumnOrder: ListColumnId[] = ["patient", "initialExam", "dateOfLoss", "attorney", "status", "compliance", "review"];
 
 // Case Flow columns
 const CF_COLUMN_ORDER_KEY = "casemate.cf-column-order.v1";
@@ -260,6 +288,7 @@ const columnLabels: Record<ListColumnId, string> = {
   dateOfLoss: "Date Of Injury",
   attorney: "Attorney",
   status: "Status",
+  compliance: "Compliance",
   review: "Review",
 };
 
@@ -274,7 +303,15 @@ function loadColumnOrder(): ListColumnId[] {
     if (known.length === 0) return defaultColumnOrder;
     // Keep a saved custom order, and append any column added since it was
     // saved (e.g. Review) instead of throwing the whole order away.
-    return [...known, ...defaultColumnOrder.filter((id) => !known.includes(id))];
+    const withNew = [...known];
+    for (const id of defaultColumnOrder) {
+      if (withNew.includes(id)) continue;
+      // Compliance sits right after Status, even in a saved custom order.
+      const after = id === "compliance" ? withNew.indexOf("status") : -1;
+      if (after >= 0) withNew.splice(after + 1, 0, id);
+      else withNew.push(id);
+    }
+    return withNew;
   } catch { return defaultColumnOrder; }
 }
 
@@ -305,6 +342,7 @@ type NewPatientDraft = {
   addressCity: string;
   addressState: string;
   addressZip: string;
+  email: string;
   notes: string;
   isCashPatient: boolean;
   locationId: string;
@@ -401,6 +439,21 @@ function buildCaseNumberPreview(dateOfLoss: string, lastName: string, firstName:
     return "";
   }
 
+  const stamp = caseNumberStampFor(
+    loadOfficeSettings().caseNumberFormat,
+    patients.map((existing) => existing.matrix?.caseSeq),
+  );
+  if (stamp.caseNumberFormat) {
+    return renderCaseNumber(stamp.caseNumberFormat, {
+      mm: dateDigits.slice(0, 2),
+      dd: dateDigits.slice(2, 4),
+      yyyy: dateDigits.slice(4, 8),
+      lastName,
+      firstName,
+      seq: parseInt(stamp.caseSeq ?? "", 10) || undefined,
+    });
+  }
+
   const lastInitials = lastName.replace(/[^a-z]/gi, "").toUpperCase().slice(0, 2);
   const firstInitials = firstName.replace(/[^a-z]/gi, "").toUpperCase().slice(0, 2);
   const mmddyy = `${dateDigits.slice(0, 2)}${dateDigits.slice(2, 4)}${dateDigits.slice(6, 8)}`;
@@ -420,15 +473,15 @@ function composePatientAddress(street: string, unit: string, city: string, state
 
 function getFollowUpBadgeClass(category: FollowUpCategory) {
   if (category === "X-Ray") {
-    return "bg-[rgba(13,121,191,0.14)] text-[#0d79bf]";
+    return "bg-[color-mix(in_srgb,var(--brand-primary)_16%,var(--bg-panel))] text-[var(--text-main)]";
   }
   if (category === "MRI / CT") {
-    return "bg-[rgba(97,73,179,0.14)] text-[#4d3d8f]";
+    return "bg-[color-mix(in_srgb,#6149b3_20%,var(--bg-panel))] text-[var(--text-main)]";
   }
   if (category === "Lien / LOP") {
-    return "bg-[rgba(90,119,168,0.16)] text-[#35537b]";
+    return "bg-[color-mix(in_srgb,#5a77a8_20%,var(--bg-panel))] text-[var(--text-main)]";
   }
-  return "bg-[rgba(238,139,42,0.16)] text-[#9a5a00]";
+  return "tone-warn";
 }
 
 // Extra columns the Print "Include" picker can add (even if not on screen).
@@ -473,15 +526,15 @@ function getAgePillClass(days: number | null, staleDaysThreshold: number) {
     return "bg-[var(--bg-soft)] text-[var(--text-muted)]";
   }
   if (days >= staleDaysThreshold) {
-    return "bg-[rgba(201,66,58,0.15)] text-[#b43b34]";
+    return "tone-alert";
   }
   if (days >= warningThreshold) {
-    return "bg-[rgba(238,139,42,0.16)] text-[#9a5a00]";
+    return "tone-warn";
   }
   if (days >= 0) {
-    return "bg-[rgba(25,109,58,0.12)] text-[#196d3a]";
+    return "tone-ok";
   }
-  return "bg-[rgba(13,121,191,0.14)] text-[#0d79bf]";
+  return "bg-[color-mix(in_srgb,var(--brand-primary)_16%,var(--bg-panel))] text-[var(--text-main)]";
 }
 
 function getDetailValue(patient: PatientRecord, key: DetailRow["key"], dischargeIso: string, initialExam: string) {
@@ -516,6 +569,12 @@ function getDetailValue(patient: PatientRecord, key: DetailRow["key"], discharge
 }
 
 export default function PatientsPage() {
+  // Folder preview replaces this list with one row per person. The switch
+  // defaults off, so production still renders the case list below.
+  return <LegacyPatientsPage folderList={patientFoldersEnabled()} />;
+}
+
+export function LegacyPatientsPage({ mode = "patients", folderList = false }: { mode?: "patients" | "cases"; folderList?: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // When a patient page navigates here via Save & Close, it appends
@@ -538,8 +597,11 @@ export default function PatientsPage() {
     const timeoutId = window.setTimeout(() => setSavedBanner(null), 5000);
     return () => window.clearTimeout(timeoutId);
   }, [savedFromQuery]);
+  const [listVersion, setListVersion] = useState(0);
+  useEffect(() => onLocalChange(PATIENTS_STORAGE_KEY, () => setListVersion((v) => v + 1)), []);
 
-  const { caseStatuses, lienLabel, lienOptions } = useCaseStatuses();
+  const { caseStatuses, lienLabel, lienOptions, complianceEnabled } = useCaseStatuses();
+  const { allOptions: allComplianceOptions, options: complianceOptions, shownOptions: complianceShownOptions } = useComplianceOptions();
   const { scheduleAppointments, addAppointments } = useScheduleAppointments();
   const { appointmentTypes } = useScheduleAppointmentTypes();
   const { scheduleSettings: globalScheduleSettings } = useScheduleSettings();
@@ -547,6 +609,7 @@ export default function PatientsPage() {
   const [newPatientBookingIssue, setNewPatientBookingIssue] = useState<{ patientId: string; name: string; reason: string } | null>(null);
   /** G.O.A.T. /new: things to double-check on the prefilled form. */
   const [newPatientAsk, setNewPatientAsk] = useState<string[]>([]);
+  const [returningDismissed, setReturningDismissed] = useState("");
   // Discharge dates as the patient page's Discharge box shows them.
   const dischargeIndex = useMemo(() => buildDischargeIndex(scheduleAppointments), [scheduleAppointments]);
   // Initial Exam dates as the patient page's Initial Exam box shows them.
@@ -559,8 +622,8 @@ export default function PatientsPage() {
   const { clearedIds, clearedList, clear: clearTaskId, restore: restoreTaskId } = useClearedTasks();
   const [showClearedCf, setShowClearedCf] = useState(false);
   const [showClearedTodo, setShowClearedTodo] = useState(false);
-  const confirmClear = (id: string, label: string) => {
-    if (window.confirm(`Clear "${label}"? It stops showing in Case Flow, To-Do and G.O.A.T. and won't come back for this case. Restore it any time under "Show cleared".`)) clearTaskId(id, label);
+  const confirmClear = async (id: string, label: string) => {
+    if ((await appConfirm(`Clear "${label}"? It stops showing in Case Flow, To-Do and G.O.A.T. and won't come back for this case. Restore it any time under "Show cleared".`))) clearTaskId(id, label);
   };
   const { getRecord: getPatientBillingRecord } = usePatientBilling();
   // Print "Include" picker: which view it's for, and the remembered extras.
@@ -627,9 +690,12 @@ export default function PatientsPage() {
   const [status, setStatus] = useState("ALL");
   // Review follow-up filter (Not Requested / Requested / Received).
   const [reviewFilter, setReviewFilter] = useState("ALL");
+  // Compliance filter — only exists while the Compliance column is switched on.
+  const [complianceFilter, setComplianceFilter] = useState("ALL");
   // Review changes made from this list, applied on top of the patient record
   // so the row and the filter update instantly.
   const [reviewOverrides, setReviewOverrides] = useState<Record<string, string>>({});
+  const [complianceOverrides, setComplianceOverrides] = useState<Record<string, string>>({});
   // Multi-location: filter the list by the shared "current location" view.
   const { multiLocation, locations, selectedLocationId, setLocation } = useLocationView();
   // Office changes made from this list's office cell; bumps the list memo so
@@ -676,8 +742,15 @@ export default function PatientsPage() {
   const [dragColumnId, setDragColumnId] = useState<ListColumnId | null>(null);
 
   const [showNewPatientModal, setShowNewPatientModal] = useState(false);
-  const [showNewPatientCase, setShowNewPatientCase] = useState(false);
+  const [newPatientFromAddCase, setNewPatientFromAddCase] = useState(false);
+  const [casePopup, setCasePopup] = useState<null | { source: "new" } | { source: "intake"; patientId: string } | { source: "add" }>(null);
+  const [addCasePatientId, setAddCasePatientId] = useState("");
+  const [caseMessage, setCaseMessage] = useState("");
+  const [caseConflict, setCaseConflict] = useState<CasePopupConflict | null>(null);
   const [newPatientMessage, setNewPatientMessage] = useState("");
+  // Taken / outside-hours first visit: the open times as buttons + "Book anyway".
+  // Both belong to one date + time + office; changing any of them clears them.
+  const [newPatientBookAnyway, setNewPatientBookAnyway] = useState("");
   const [newPatientDraft, setNewPatientDraft] = useState<NewPatientDraft>({
     lastName: "",
     firstName: "",
@@ -693,6 +766,7 @@ export default function PatientsPage() {
     addressCity: "",
     addressState: "",
     addressZip: "",
+    email: "",
     notes: "",
     isCashPatient: false,
     locationId: "",
@@ -718,6 +792,7 @@ export default function PatientsPage() {
       addressCity: "",
       addressState: "",
       addressZip: "",
+      email: "",
       notes: "",
       isCashPatient: false,
       locationId: "",
@@ -728,12 +803,17 @@ export default function PatientsPage() {
     });
   };
 
-  const openNewPatientModal = () => {
+  const openNewPatientModal = (fromAddCase = false) => {
+    setNewPatientFromAddCase(fromAddCase === true);
     setNewPatientMessage("");
+    setNewPatientBookAnyway("");
     setNewPatientBookingIssue(null);
     setNewPatientAsk([]);
+    setReturningDismissed("");
     resetNewPatientDraft();
-    setShowNewPatientCase(false);
+    setCasePopup(null);
+    setCaseMessage("");
+    setCaseConflict(null);
     const office = loadOfficeSettings();
     setNewPatientDraft((c) => ({ ...c, locationId: c.locationId || (selectedLocationId && selectedLocationId !== NO_OFFICE_FILTER ? selectedLocationId : ""), evalProvider: office.doctorName?.trim() ?? "", evalLocation: office.officeName?.trim() ?? "" }));
     setShowNewPatientModal(true);
@@ -766,7 +846,9 @@ export default function PatientsPage() {
 
   const closeNewPatientModal = () => {
     setShowNewPatientModal(false);
+    setNewPatientFromAddCase(false);
     setNewPatientMessage("");
+    setNewPatientBookAnyway("");
   };
 
   const attorneyContacts = useMemo(() => {
@@ -784,6 +866,7 @@ export default function PatientsPage() {
     return Array.from(deduped.values());
   }, [contacts]);
 
+  const newPatientSlotKey = `${newPatientDraft.evalDate}|${newPatientDraft.evalTime}|${newPatientDraft.locationId}`;
   const createNewPatient = () => {
     const firstName = newPatientDraft.firstName.trim();
     const lastName = newPatientDraft.lastName.trim();
@@ -802,38 +885,33 @@ export default function PatientsPage() {
       return;
     }
 
-    // New Patient Evaluation → the first appointment. Checked BEFORE the
+    // + Case exam date/time → the first appointment. Checked BEFORE the
     // patient is created so a bad date/time or a full slot is fixed first.
-    let firstVisit: { iso: string; time: string; type: string; durationMin: number; settings: typeof globalScheduleSettings } | null = null;
-    if (newPatientDraft.evalDate.trim() || newPatientDraft.evalTime.trim()) {
-      const iso = mdyToIso(newPatientDraft.evalDate);
-      if (!iso) {
-        setNewPatientMessage("New Patient Evaluation date must be MM/DD/YYYY.");
-        return;
-      }
-      const loc = locations.find((l) => l.id === newPatientDraft.locationId) ?? (locations.length === 1 ? locations[0] : null);
-      const settings = loc?.officeHours ? { ...globalScheduleSettings, officeHours: loc.officeHours } : globalScheduleSettings;
-      const t = intakeTime(newPatientDraft.evalTime, iso, settings);
-      if (!t) {
-        setNewPatientMessage("Add the New Patient Evaluation time (e.g. 3:00 PM).");
-        return;
-      }
-      const type = newPatientVisitType(appointmentTypes);
-      if (!type) {
-        setNewPatientMessage("No appointment types are set up (Settings → Schedule).");
-        return;
-      }
-      const check = checkIntakeAppointment({ apptDate: iso, apptTime: t.time, appointmentType: type.name, durationMin: type.durationMin }, scheduleAppointments, settings);
-      if (check.outsideHours && settings.enforceOfficeHours) {
-        setNewPatientMessage(`${to12hLabel(t.time)} is outside office hours that day.${check.suggestions.length ? ` Open: ${check.suggestions.map(to12hLabel).join(", ")}.` : ""}`);
-        return;
-      }
-      if (check.taken) {
-        setNewPatientMessage(`${to12hLabel(t.time)} is taken.${check.suggestions.length ? ` Open nearby: ${check.suggestions.map(to12hLabel).join(", ")}.` : ""}`);
-        return;
-      }
-      firstVisit = { iso, time: t.time, type: type.name, durationMin: type.durationMin, settings };
+    const loc = locations.find((l) => l.id === newPatientDraft.locationId) ?? (locations.length === 1 ? locations[0] : null);
+    const settings = loc?.officeHours ? { ...globalScheduleSettings, officeHours: loc.officeHours } : globalScheduleSettings;
+    const reviewed = reviewCasePopup(
+      {
+        attorney: newPatientDraft.attorney,
+        attorneyPhone: newPatientDraft.attorneyPhone,
+        dateOfLoss: newPatientDraft.dateOfLoss,
+        evalDate: newPatientDraft.evalDate,
+        evalTime: newPatientDraft.evalTime,
+      },
+      {
+        bookAnyway: newPatientBookAnyway === newPatientSlotKey,
+        appointments: scheduleAppointments,
+        settings,
+        types: appointmentTypes,
+      },
+    );
+    if (!reviewed.ok) {
+      setNewPatientMessage(reviewed.message);
+      setCaseMessage(reviewed.message);
+      setCaseConflict(reviewed.conflict ?? null);
+      setCasePopup({ source: "new" });
+      return;
     }
+    const firstVisit = reviewed.visit;
 
     const attorneyName = newPatientDraft.isCashPatient
       ? "Self"
@@ -841,7 +919,7 @@ export default function PatientsPage() {
     const attorneyPhone = newPatientDraft.isCashPatient
       ? ""
       : formatUsPhoneInput(newPatientDraft.attorneyPhone);
-    if (!newPatientDraft.isCashPatient && normalizeAttorneyKey(attorneyName) !== "self" && attorneyPhone) {
+    if (!newPatientDraft.isCashPatient && !isSelfRepresentedAttorney(attorneyName) && attorneyPhone) {
       const attorneyExists = contacts.some(
         (contact) =>
           normalizeAttorneyKey(contact.category) === "attorney" &&
@@ -871,11 +949,11 @@ export default function PatientsPage() {
       attorney: attorneyName,
       dob: newPatientDraft.dob,
       dateOfLoss: newPatientDraft.isCashPatient ? "" : newPatientDraft.dateOfLoss,
-      // Never saved from a booking: while the box is blank, every reader shows the
-      // New Patient visit's date and follows it if it moves or is canceled.
-      initialExam: "",
+      // + Case with an exam date stores that date as the Initial Exam. Left
+      // blank, every reader still shows the New Patient visit's date.
+      initialExam: newPatientDraft.isCashPatient ? "" : reviewed.initialExamIso,
       phone: formatUsPhoneInput(newPatientDraft.phone),
-      email: "",
+      email: newPatientDraft.email.trim(),
       address: composePatientAddress(
         newPatientDraft.addressStreet,
         newPatientDraft.addressUnit,
@@ -917,7 +995,8 @@ export default function PatientsPage() {
         durationMin: firstVisit.durationMin,
         status: "Scheduled",
         note: "",
-        overrideOfficeHours: false,
+        // "Book anyway" = the Schedule's override (same flag the Schedule and G.O.A.T. save).
+        overrideOfficeHours: firstVisit.override,
       };
       try {
         addAppointments([record]);
@@ -930,7 +1009,8 @@ export default function PatientsPage() {
 
     setShowNewPatientModal(false);
     setNewPatientMessage("");
-    router.push(`/patients/${createdPatient.id}`);
+    // ?addContact=1 asks the case file to offer "Add to Contacts?" once.
+    router.push(`/patients/${createdPatient.id}?addContact=1`);
   };
 
   const newPatientCaseNumberPreview = useMemo(
@@ -1035,6 +1115,24 @@ export default function PatientsPage() {
     [reviewOverrides],
   );
 
+  // Compliance as shown now: a just-picked value wins until the saved patient catches up.
+  const complianceOf = useCallback(
+    (patient: PatientRecord): string => complianceOverrides[patient.id] ?? patient.compliance ?? "",
+    [complianceOverrides],
+  );
+
+  const complianceCanEdit = complianceAccess(complianceEnabled, canEdit("patients")).canEdit;
+  const handleListComplianceChange = (patient: PatientRecord, next: string) => {
+    if (!complianceCanEdit) return;
+    setComplianceOverrides((current) => ({ ...current, [patient.id]: next }));
+    try {
+      // "" clears it (written as null); only this one field is patched.
+      updatePatientRecordById(patient.id, { compliance: normalizeCompliance(next) ?? "" });
+    } catch (err) {
+      console.error("[patients] compliance update failed:", err);
+    }
+  };
+
   const handleListReviewChange = (patient: PatientRecord, next: string) => {
     setReviewOverrides((current) => ({ ...current, [patient.id]: next }));
     try {
@@ -1048,8 +1146,13 @@ export default function PatientsPage() {
   // The Review column only appears while filtering by a review status, so the
   // everyday list stays uncluttered and review follow-up still has its pills.
   const visibleColumns = useMemo(
-    () => columnOrder.filter((colId) => colId !== "review" || reviewFilter !== "ALL"),
-    [columnOrder, reviewFilter],
+    () =>
+      columnOrder.filter(
+        (colId) =>
+          (colId !== "review" || reviewFilter !== "ALL") &&
+          (colId !== "compliance" || complianceEnabled),
+      ),
+    [columnOrder, reviewFilter, complianceEnabled],
   );
 
   const filteredPatients = useMemo(() => {
@@ -1100,6 +1203,9 @@ export default function PatientsPage() {
         normalizeAttorneyKey(patient.attorney) === normalizeAttorneyKey(attorney);
 
       const matchesStatus = status === "ALL" || patient.caseStatus === status;
+      // Switching the column off also switches its filter off.
+      const matchesCompliance =
+        !complianceEnabled || matchesComplianceFilter(complianceOf(patient), complianceFilter, complianceOptions);
       const matchesReview =
         reviewFilter === "ALL" ||
         // "Request" means ready to ask: still at Request, and the case isn't
@@ -1118,7 +1224,7 @@ export default function PatientsPage() {
       // the list opens on, not a wall around what can be found.
       const withinDates = q ? true : matchesYear && matchesMonthRange;
       return (
-        matchesSearch && withinDates && matchesAttorney && matchesStatus && matchesReview && matchesLocation
+        matchesSearch && withinDates && matchesAttorney && matchesStatus && matchesCompliance && matchesReview && matchesLocation
       );
     });
 
@@ -1184,6 +1290,8 @@ export default function PatientsPage() {
         datesNeutral = true;
       } else if (sortColumn === "status") {
         cmp = a.caseStatus.localeCompare(b.caseStatus);
+      } else if (sortColumn === "compliance") {
+        cmp = complianceRank(complianceOf(a), complianceOptions) - complianceRank(complianceOf(b), complianceOptions);
       } else if (sortColumn === "review") {
         cmp = reviewOf(a).localeCompare(reviewOf(b));
       }
@@ -1208,7 +1316,294 @@ export default function PatientsPage() {
 
     return sorted;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- officeOverrides re-runs the filter after an office-cell save (the patient list is module-level)
-  }, [attorney, searchDraft, status, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex, officeOverrides]);
+  }, [attorney, searchDraft, status, complianceEnabled, complianceFilter, complianceOf, complianceOptions, reviewFilter, reviewOf, year, fromMon, toMon, sortColumn, sortAsc, section, multiLocation, selectedLocationId, locations, initialExamIndex, officeOverrides, listVersion]);
+
+  const intakePatients = useMemo(
+    () => filteredPatients.filter((patient) => isInNewPatientIntake(patient, initialExamIndex)),
+    [filteredPatients, initialExamIndex],
+  );
+  const listedPatients = useMemo(
+    () => filteredPatients.filter((patient) => !isInNewPatientIntake(patient, initialExamIndex)),
+    [filteredPatients, initialExamIndex],
+  );
+  const caseAttorneyOptions = useMemo<CaseAttorneyOption[]>(
+    () =>
+      attorneyContacts.map((contact) => ({
+        id: contact.id,
+        name: contact.name,
+        phone: contact.phone,
+      })),
+    [attorneyContacts],
+  );
+
+  const openCasePopup = (next: { source: "new" } | { source: "intake"; patientId: string } | { source: "add" }) => {
+    setCaseMessage("");
+    setCaseConflict(null);
+    if (next.source === "add") setAddCasePatientId("");
+    setCasePopup(next);
+  };
+
+  const casePopupNames = () => {
+    if (casePopup?.source === "intake") {
+      const patient = patients.find((row) => row.id === casePopup.patientId);
+      return patient ? splitFullName(patient.fullName) : { firstName: "", lastName: "" };
+    }
+    if (casePopup?.source === "add") {
+      const patient = patients.find((row) => row.id === addCasePatientId);
+      return patient ? splitFullName(patient.fullName) : { firstName: "", lastName: "" };
+    }
+    return { firstName: newPatientDraft.firstName, lastName: newPatientDraft.lastName };
+  };
+
+  const casePopupInitial = (): CasePopupDraft => {
+    if (casePopup?.source === "intake") {
+      const patient = patients.find((row) => row.id === casePopup.patientId);
+      // "Self" / "pro se" stay on the draft so the dropdown selects SELF
+      // instead of looking blank or like a name someone typed.
+      const attorney = patient?.attorney ?? "";
+      const matched = !isSelfRepresentedAttorney(attorney)
+        ? attorneyContacts.find((contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(attorney))
+        : undefined;
+      const doi = patient?.dateOfLoss ?? "";
+      return {
+        attorney,
+        attorneyPhone: matched ? formatUsPhoneInput(matched.phone) : "",
+        dateOfLoss: isoToUsDate(doi) || (/^\d{2}\/\d{2}\/\d{4}$/.test(doi) ? doi : ""),
+        evalDate: "",
+        evalTime: "",
+      };
+    }
+    return {
+      attorney: newPatientDraft.attorney,
+      attorneyPhone: isSelfRepresentedAttorney(newPatientDraft.attorney) ? "" : newPatientDraft.attorneyPhone,
+      dateOfLoss: newPatientDraft.dateOfLoss,
+      evalDate: newPatientDraft.evalDate,
+      evalTime: newPatientDraft.evalTime,
+    };
+  };
+
+  const rememberAttorney = (name: string, phone: string) => {
+    const attorneyName = cleanAttorneyLabel(name);
+    const attorneyPhone = formatUsPhoneInput(phone);
+    if (!attorneyName || isSelfRepresentedAttorney(attorneyName) || !attorneyPhone) return true;
+    const attorneyExists = contacts.some(
+      (contact) =>
+        normalizeAttorneyKey(contact.category) === "attorney" &&
+        normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(attorneyName),
+    );
+    if (attorneyExists) return true;
+    const contactResult = addContact({
+      name: attorneyName,
+      category: "Attorney",
+      phone: attorneyPhone,
+      email: "",
+      fax: "",
+      address: "",
+    });
+    return contactResult.added || Boolean(contactResult.contact);
+  };
+
+  const settingsForLocation = (locationId: string) => {
+    const loc = locations.find((l) => l.id === locationId) ?? (locations.length === 1 ? locations[0] : null);
+    return loc?.officeHours ? { ...globalScheduleSettings, officeHours: loc.officeHours } : globalScheduleSettings;
+  };
+
+  const saveCasePopup = (draft: CasePopupDraft, bookAnyway: boolean) => {
+    const intakeId = casePopup?.source === "intake" ? casePopup.patientId : "";
+    const locationId = intakeId
+      ? patients.find((row) => row.id === intakeId)?.locationId || newPatientDraft.locationId
+      : newPatientDraft.locationId;
+    const reviewed = reviewCasePopup(draft, {
+      bookAnyway,
+      appointments: scheduleAppointments,
+      settings: settingsForLocation(locationId),
+      types: appointmentTypes,
+    });
+    if (!reviewed.ok) {
+      setCaseMessage(reviewed.message);
+      setCaseConflict(reviewed.conflict ?? null);
+      return;
+    }
+    if (!intakeId) {
+      setNewPatientDraft((current) => ({
+        ...current,
+        attorney: draft.attorney,
+        attorneyPhone: draft.attorneyPhone,
+        dateOfLoss: draft.dateOfLoss,
+        evalDate: draft.evalDate,
+        evalTime: draft.evalTime,
+      }));
+      const key = `${draft.evalDate}|${draft.evalTime}|${newPatientDraft.locationId}`;
+      setNewPatientBookAnyway(reviewed.visit?.override ? key : "");
+      setCasePopup(null);
+      setCaseMessage("");
+      setCaseConflict(null);
+      return;
+    }
+    const patient = patients.find((row) => row.id === intakeId);
+    if (!patient) {
+      setCasePopup(null);
+      return;
+    }
+    if (!rememberAttorney(draft.attorney, draft.attorneyPhone)) {
+      setCaseMessage("Could not save that attorney.");
+      return;
+    }
+    const attorneyName = isSelfRepresentedAttorney(draft.attorney)
+      ? SELF_ATTORNEY_VALUE
+      : cleanAttorneyLabel(draft.attorney || patient.attorney || "Self");
+    updatePatientRecordById(intakeId, {
+      attorney: attorneyName || "Self",
+      dateOfLoss: reviewed.dateOfLossIso,
+      lastUpdate: new Date().toISOString().slice(0, 10),
+      ...(reviewed.initialExamIso ? { matrix: { initialExam: reviewed.initialExamIso } } : {}),
+    });
+    if (reviewed.visit) {
+      const already = scheduleAppointments.some(
+        (entry) => entry.patientId === intakeId && entry.date === reviewed.visit!.iso && entry.startTime === reviewed.visit!.time && entry.status !== "Canceled",
+      );
+      if (!already) {
+        const office = loadOfficeSettings();
+        try {
+          addAppointments([
+            {
+              id: createAppointmentId(),
+              patientId: intakeId,
+              patientName: patient.fullName,
+              provider: office.doctorName?.trim() ?? "",
+              location: office.officeName?.trim() ?? "",
+              appointmentType: reviewed.visit.type,
+              caseLabel: scheduleCaseLabel(reviewed.dateOfLossIso, patient.fullName),
+              room: "",
+              date: reviewed.visit.iso,
+              startTime: reviewed.visit.time,
+              durationMin: reviewed.visit.durationMin,
+              status: "Scheduled",
+              note: "",
+              overrideOfficeHours: reviewed.visit.override,
+            },
+          ]);
+        } catch (error) {
+          setCaseMessage(error instanceof Error ? error.message : "The schedule couldn't be saved.");
+          return;
+        }
+      }
+    }
+    setCasePopup(null);
+    setCaseMessage("");
+    setCaseConflict(null);
+  };
+
+  const addCasePeople = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { id: string; name: string; dob: string }[] = [];
+    for (const patient of patients) {
+      if (patient.deleted) continue;
+      const key = `${patient.fullName.trim().toLowerCase()}|${patient.dob ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ id: patient.id, name: patient.fullName, dob: patient.dob ?? "" });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name));
+  }, [listVersion]);
+
+  const saveAddedCase = (draft: CasePopupDraft, bookAnyway: boolean) => {
+    const base = patients.find((row) => row.id === addCasePatientId);
+    if (!base) {
+      setCaseMessage("Choose a patient.");
+      return;
+    }
+    const locationId = base.locationId || "";
+    const reviewed = reviewCasePopup(draft, {
+      bookAnyway,
+      appointments: scheduleAppointments,
+      settings: settingsForLocation(locationId),
+      types: appointmentTypes,
+    });
+    if (!reviewed.ok) {
+      setCaseMessage(reviewed.message);
+      setCaseConflict(reviewed.conflict ?? null);
+      return;
+    }
+    if (!rememberAttorney(draft.attorney, draft.attorneyPhone)) {
+      setCaseMessage("Could not save that attorney.");
+      return;
+    }
+    const names = splitFullName(base.fullName);
+    const created = createPatientRecord({
+      firstName: names.firstName,
+      lastName: names.lastName,
+      dob: base.dob,
+      sex: base.sex,
+      maritalStatus: base.maritalStatus,
+      phone: base.phone,
+      email: base.email,
+      address: base.address,
+      attorney: cleanAttorneyLabel(draft.attorney || base.attorney || "Self") || "Self",
+      dateOfLoss: draft.dateOfLoss,
+      initialExam: reviewed.initialExamIso,
+      isCashPatient: base.isCashPatient,
+      locationId,
+    });
+    if (!created) {
+      setCaseMessage("Could not add that case.");
+      return;
+    }
+    if (reviewed.visit) {
+      const office = loadOfficeSettings();
+      try {
+        addAppointments([
+          {
+            id: createAppointmentId(),
+            patientId: created.id,
+            patientName: created.fullName,
+            provider: office.doctorName?.trim() ?? "",
+            location: office.officeName?.trim() ?? "",
+            appointmentType: reviewed.visit.type,
+            caseLabel: scheduleCaseLabel(reviewed.dateOfLossIso, created.fullName),
+            room: "",
+            date: reviewed.visit.iso,
+            startTime: reviewed.visit.time,
+            durationMin: reviewed.visit.durationMin,
+            status: "Scheduled",
+            note: "",
+            overrideOfficeHours: reviewed.visit.override,
+          },
+        ]);
+      } catch (error) {
+        setCaseMessage(error instanceof Error ? error.message : "The schedule couldn't be saved.");
+        return;
+      }
+    }
+    setCasePopup(null);
+    setAddCasePatientId("");
+    setCaseMessage("");
+    setCaseConflict(null);
+  };
+  const returningMatches = useMemo(
+    () =>
+      findReturningPatients(patients, {
+        firstName: newPatientDraft.firstName,
+        lastName: newPatientDraft.lastName,
+      }),
+    [newPatientDraft.firstName, newPatientDraft.lastName, listVersion],
+  );
+  const returningKey = returningNameKey(newPatientDraft.firstName, newPatientDraft.lastName);
+  const fillReturningPatient = (id: string) => {
+    const patient = patients.find((row) => row.id === id);
+    if (!patient) return;
+    setNewPatientDraft((current) => fillEmptyDemographics(current, demographicsFromPatient(patient)));
+    setReturningDismissed(returningKey);
+  };
+  const newPatientDuplicates = useMemo(
+    () =>
+      findDuplicateCases(patients, {
+        firstName: newPatientDraft.firstName,
+        lastName: newPatientDraft.lastName,
+        dateOfLoss: newPatientDraft.dateOfLoss,
+      }),
+    [newPatientDraft.firstName, newPatientDraft.lastName, newPatientDraft.dateOfLoss, listVersion],
+  );
 
   const toggleSort = (col: ListColumnId) => {
     // Remembered per browser (outside the workspace cloud snapshot).
@@ -1410,6 +1805,7 @@ export default function PatientsPage() {
       loc ? `Location: ${locationLabel(loc)}` : multiLocation && selectedLocationId === NO_OFFICE_FILTER ? `Location: ${NO_OFFICE_LABEL}` : "",
       attorney !== "ALL" ? `Attorney: ${cleanAttorneyLabel(attorney)}` : "",
       status !== "ALL" ? `Status: ${status}` : "",
+      complianceEnabled && complianceFilter !== "ALL" ? `Compliance: ${complianceFilter === COMPLIANCE_NOT_SET ? COMPLIANCE_NOT_SET_LABEL : complianceLabel(complianceFilter, complianceOptions) || complianceFilter}` : "",
       reviewFilter !== "ALL" ? `Review: ${reviewFilter}${reviewFilter === REVIEW_REQUEST ? " (ready to ask)" : ""}` : "",
     ].filter(Boolean);
   };
@@ -1417,7 +1813,9 @@ export default function PatientsPage() {
     if (!patient) return "-";
     if (id === "attorneyPhone") {
       const key = normalizeAttorneyKey(patient.attorney);
-      const contact = key && key !== "self" ? attorneyContacts.find((c) => normalizeAttorneyKey(c.name) === key) : undefined;
+      const contact = key && !isSelfRepresentedAttorney(patient.attorney)
+        ? attorneyContacts.find((c) => normalizeAttorneyKey(c.name) === key)
+        : undefined;
       return contact?.phone || "-";
     }
     if (id === "discharge") {
@@ -1463,6 +1861,7 @@ export default function PatientsPage() {
       if (colId === "dateOfLoss") return formatUsDateDisplay(patient.dateOfLoss);
       if (colId === "attorney") return cleanAttorneyLabel(patient.attorney);
       if (colId === "status") return patient.caseStatus;
+      if (colId === "compliance") return normalizeCompliance(complianceOf(patient)) ? complianceDisplay(complianceOf(patient), allComplianceOptions).label : "-";
       if (colId === "review") return reviewOf(patient);
       return "";
     };
@@ -1477,7 +1876,7 @@ export default function PatientsPage() {
       title: "Patients",
       description: [...printFilterParts(), `Sorted by ${sortWords(columnLabels[sortColumn], sortAsc, isDate)}`].join(" · "),
       columns: cols.map((c) => c.label),
-      rows: filteredPatients.map((patient) => cols.map((c) => c.cell(patient))),
+      rows: listedPatients.map((patient) => cols.map((c) => c.cell(patient))),
       printedAt: formatPrintedAt(),
       rowNoun: "patient",
       emptyText: "No patients match the selected filters.",
@@ -1571,10 +1970,10 @@ export default function PatientsPage() {
   }
 
   function priorityBadgeClass(priority: TaskPriority) {
-    if (priority === "Urgent") return "bg-[rgba(201,66,58,0.14)] text-[#b43b34]";
-    if (priority === "High") return "bg-[rgba(238,139,42,0.18)] text-[#9a5a00]";
-    if (priority === "Medium") return "bg-[rgba(21,123,191,0.14)] text-[#0b5c93]";
-    return "bg-[rgba(25,109,58,0.12)] text-[#196d3a]";
+    if (priority === "Urgent") return "tone-alert";
+    if (priority === "High") return "tone-warn";
+    if (priority === "Medium") return "tone-info";
+    return "tone-ok";
   }
 
   const handleAddTask = () => {
@@ -1599,7 +1998,7 @@ export default function PatientsPage() {
     () => patients.map((p) => ({
       id: p.id,
       fullName: p.fullName,
-      caseNumber: buildCaseNumber(p.dateOfLoss, p.fullName),
+      caseNumber: caseNumberOf(p),
     })),
     [],
   );
@@ -1728,8 +2127,14 @@ export default function PatientsPage() {
     return `${fmt(today)} - ${fmt(weekEnd)}, ${weekEnd.getFullYear()}`;
   }, []);
 
+  const openHref = (id: string) => `/patients/${id}`;
+
   return (
     <div className="space-y-5">
+      {folderList ? (
+        <PatientFolderListPage onNewPatient={openNewPatientModal} />
+      ) : (
+      <>
       {printPickerFor && (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 p-4 pt-[15vh]"
@@ -1781,7 +2186,7 @@ export default function PatientsPage() {
                 Cancel
               </button>
               <button
-                className="rounded-lg bg-[var(--brand-primary)] px-4 py-1.5 text-sm font-semibold text-white"
+                className="btn btn-primary btn-sm"
                 onClick={() => {
                   const target = printPickerFor;
                   savePrintExtras(printExtras);
@@ -1799,7 +2204,7 @@ export default function PatientsPage() {
       )}
       {savedBanner && (
         <div
-          className="flex items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-sm"
+          className="tone-ok flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold shadow-sm"
           role="status"
         >
           <span className="text-lg">✓</span>
@@ -1810,18 +2215,18 @@ export default function PatientsPage() {
         </div>
       )}
       <section className="panel-card p-4">
+        {mode !== "cases" && (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-xl font-semibold">All Patients Workspace</h3>
-          <button
-            className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90"
-            onClick={openNewPatientModal}
-            type="button"
-          >
+          <div>
+            <h3 className="text-xl font-semibold">All Patients Workspace</h3>
+          </div>
+          <button className="btn btn-primary" onClick={() => openNewPatientModal()} type="button">
             New Patient
           </button>
         </div>
+        )}
 
-        <div className="mt-4 space-y-2">
+        <div className={`${mode === "cases" ? "" : "mt-4"} space-y-2`}>
           {/* Top row: patient type */}
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1852,6 +2257,11 @@ export default function PatientsPage() {
               <span className="text-base leading-none">&#127874;</span>
               Birthdays
             </button>
+            {mode === "cases" && (
+              <button className="btn btn-primary ml-auto" onClick={() => openCasePopup({ source: "add" })} type="button">
+                Add Case
+              </button>
+            )}
           </div>
           {/* PI sub-tabs (only in the Personal Injury section) */}
           {section === "pi" && (
@@ -1907,7 +2317,7 @@ export default function PatientsPage() {
           )}
         </div>
 
-        <div className="mt-4 space-y-3 rounded-xl border border-[var(--line-soft)] bg-white p-3">
+        <div className="theme-surface mt-4 space-y-3 rounded-xl border border-[var(--line-soft)] p-3">
           <label className="grid gap-1">
             <span className="text-sm font-semibold text-[var(--text-muted)]">Search</span>
             <input
@@ -1918,7 +2328,11 @@ export default function PatientsPage() {
             />
           </label>
 
-          <div className={`grid gap-3 md:grid-cols-2 ${multiLocation ? "xl:grid-cols-[minmax(0,1fr)_12rem_16rem_11rem_11rem]" : "xl:grid-cols-[minmax(0,1fr)_16rem_11rem_11rem]"}`}>
+          <div className={`grid gap-3 md:grid-cols-2 ${
+            multiLocation
+              ? complianceEnabled ? "xl:grid-cols-[minmax(0,1fr)_12rem_16rem_11rem_11rem_11rem]" : "xl:grid-cols-[minmax(0,1fr)_12rem_16rem_11rem_11rem]"
+              : complianceEnabled ? "xl:grid-cols-[minmax(0,1fr)_16rem_11rem_11rem_11rem]" : "xl:grid-cols-[minmax(0,1fr)_16rem_11rem_11rem]"
+          }`}>
             <div className="grid gap-1 text-sm font-semibold text-[var(--text-muted)]">
               <span className="flex flex-wrap items-center gap-2">
                 Initial Exam — year / months
@@ -2038,6 +2452,25 @@ export default function PatientsPage() {
               </select>
             </label>
 
+            {complianceEnabled && (
+              <label className="grid min-w-0 gap-1 text-sm font-semibold text-[var(--text-muted)]">
+                Compliance
+                <select
+                  className="w-full min-w-0 truncate rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 font-normal text-[var(--text-primary)]"
+                  onChange={(event) => setComplianceFilter(event.target.value)}
+                  value={complianceFilter}
+                >
+                  <option value="ALL">ALL</option>
+                  {complianceOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                  <option value={COMPLIANCE_NOT_SET}>{COMPLIANCE_NOT_SET_LABEL}</option>
+                </select>
+              </label>
+            )}
+
             <label className="grid min-w-0 gap-1 text-sm font-semibold text-[var(--text-muted)]">
               Review
               <select
@@ -2057,18 +2490,23 @@ export default function PatientsPage() {
         </div>
       </section>
 
+      <NewPatientIntakeSection onAddCase={(patientId) => openCasePopup({ source: "intake", patientId })} patients={intakePatients} />
+
       {activeView === "list" && (
         <section className="panel-card overflow-hidden">
           {/* How many patients the current filters match — e.g. Review:
               Received → "7 patients". */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--line-soft)] px-4 py-2.5 text-sm">
             <span className="font-semibold">
-              {filteredPatients.length} patient{filteredPatients.length === 1 ? "" : "s"}
+              {listedPatients.length} patient{listedPatients.length === 1 ? "" : "s"}
             </span>
             {(() => {
               const active = [
                 attorney !== "ALL" ? `Attorney: ${cleanAttorneyLabel(attorney)}` : "",
                 status !== "ALL" ? `Status: ${status}` : "",
+                complianceEnabled && complianceFilter !== "ALL"
+                  ? `Compliance: ${complianceFilter === COMPLIANCE_NOT_SET ? COMPLIANCE_NOT_SET_LABEL : complianceLabel(complianceFilter, complianceOptions) || complianceFilter}`
+                  : "",
                 reviewFilter !== "ALL"
                   ? `Review: ${reviewFilter}${reviewFilter === REVIEW_REQUEST ? " (ready to ask)" : ""}`
                   : "",
@@ -2084,7 +2522,7 @@ export default function PatientsPage() {
               ) : null;
             })()}
             <button
-              className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-main)] hover:bg-[rgba(13,121,191,0.06)]"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-main)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)]"
               onClick={() => setPrintPickerFor("list")}
               title="Print this list — same filters, sort and columns, every matching patient"
               type="button"
@@ -2095,11 +2533,11 @@ export default function PatientsPage() {
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
               <thead>
-                <tr className="bg-[var(--bg-soft)] text-left text-sm">
+                <tr className="bg-[var(--bg-soft)] text-left text-sm text-[var(--text-main)]">
                   {visibleColumns.map((colId) => (
                     <th
                       key={colId}
-                      className={`cursor-pointer select-none px-4 py-3 transition-colors hover:bg-[rgba(13,121,191,0.06)] ${dragColumnId === colId ? "opacity-50" : ""}`}
+                      className={`cursor-pointer select-none px-4 py-3 text-[var(--text-main)] transition-colors hover:bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)] ${sortColumn === colId ? "bg-[color-mix(in_srgb,var(--brand-primary)_22%,var(--bg-soft))]" : ""} ${dragColumnId === colId ? "opacity-50" : ""}`}
                       draggable
                       onClick={() => toggleSort(colId)}
                       onDragEnd={handleColumnDragEnd}
@@ -2117,27 +2555,33 @@ export default function PatientsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredPatients.map((patient) => (
+                {listedPatients.map((patient) => (
                   <tr key={patient.id} className="border-t border-[var(--line-soft)]">
                     {visibleColumns.map((colId) => {
+                      const sortedCell = sortColumn === colId ? "bg-[color-mix(in_srgb,var(--brand-primary)_10%,transparent)]" : "";
                       if (colId === "patient") {
                         return (
-                          <td key={colId} className="px-4 py-3">
-                            <Link
-                              href={`/patients/${patient.id}`}
-                              className="font-semibold text-[var(--brand-primary)] underline"
-                            >
-                              {patient.fullName}
-                            </Link>
-                            {multiLocation && (
-                              <OfficeCellMenu
-                                locationId={patient.locationId}
-                                locations={locations}
-                                onSaved={(id) => setOfficeOverrides((cur) => ({ ...cur, [patient.id]: id }))}
-                                patientId={patient.id}
-                                readOnly={!canEdit("patients")}
-                              />
-                            )}
+                          <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>
+                            <div className="flex items-center gap-2">
+                              <Link
+                                href={openHref(patient.id)}
+                                className={`min-w-0 font-semibold text-[var(--text)] underline ${
+                                  multiLocation ? "block w-40 shrink-0 truncate sm:w-56" : ""
+                                }`}
+                                title={patient.fullName}
+                              >
+                                {patient.fullName}
+                              </Link>
+                              {multiLocation && (
+                                <OfficeCellMenu
+                                  locationId={patient.locationId}
+                                  locations={locations}
+                                  onSaved={(id) => setOfficeOverrides((cur) => ({ ...cur, [patient.id]: id }))}
+                                  patientId={patient.id}
+                                  readOnly={!canEdit("patients")}
+                                />
+                              )}
+                            </div>
                             {patient.phone && (
                               <p className="text-sm text-[var(--text-muted)]">
                                 <SmsSendMenu
@@ -2155,31 +2599,44 @@ export default function PatientsPage() {
                         );
                       }
                       if (colId === "initialExam") {
-                        return <td key={colId} className="px-4 py-3">{formatLeadingDateDisplay(initialExamOf(patient, initialExamIndex) || "-")}</td>;
+                        return <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>{formatLeadingDateDisplay(initialExamOf(patient, initialExamIndex) || "-")}</td>;
                       }
                       if (colId === "dateOfLoss") {
-                        return <td key={colId} className="px-4 py-3">{formatUsDateDisplay(patient.dateOfLoss)}</td>;
+                        return <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>{formatUsDateDisplay(patient.dateOfLoss)}</td>;
                       }
                       if (colId === "attorney") {
-                        return <td key={colId} className="px-4 py-3">{cleanAttorneyLabel(patient.attorney)}</td>;
+                        return <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>{cleanAttorneyLabel(patient.attorney)}</td>;
                       }
                       if (colId === "status") {
                         return (
-                          <td key={colId} className="px-4 py-3">
+                          <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>
                             <span
                               className="status-pill"
-                              style={{
-                                backgroundColor: withAlpha(
-                                  statusConfigByName.get(patient.caseStatus.toLowerCase())?.color ?? "#0d79bf",
-                                  0.2,
-                                ),
-                                color: getContrastTextColor(
-                                  statusConfigByName.get(patient.caseStatus.toLowerCase())?.color ?? "#0d79bf",
-                                ),
-                              }}
+                              style={softPillStyle(statusConfigByName.get(patient.caseStatus.toLowerCase())?.color ?? "#0d79bf")}
                             >
                               {patient.caseStatus}
                             </span>
+                          </td>
+                        );
+                      }
+                      if (colId === "compliance") {
+                        // Same soft pill as Case Status; click to pick from a menu of colored options.
+                        const shown = complianceDisplay(complianceOf(patient), allComplianceOptions);
+                        // Options switched off in Settings are no longer offered, but a patient that has one still shows it.
+                        const rowOptions = shown.option && !shown.option.show ? [...complianceShownOptions, shown.option] : complianceShownOptions;
+                        return (
+                          <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>
+                            <ColorPillMenu
+                              ariaLabel={`Compliance for ${patient.fullName}`}
+                              choices={rowOptions}
+                              onChange={(next) => handleListComplianceChange(patient, next)}
+                              readOnly={!complianceCanEdit}
+                              shownColor={shown.option?.color}
+                              shownLabel={shown.label}
+                              title={complianceCanEdit ? "Change compliance — saves immediately" : "You have view-only access"}
+                              unsetLabel={COMPLIANCE_NOT_SET_LABEL}
+                              value={shown.option?.id ?? ""}
+                            />
                           </td>
                         );
                       }
@@ -2188,7 +2645,7 @@ export default function PatientsPage() {
                         const tone = reviewStatusTone(current);
                         const options = reviewSelectOptionsFor(current);
                         return (
-                          <td key={colId} className="px-4 py-3">
+                          <td key={colId} className={`px-4 py-3 text-[var(--text-main)] ${sortedCell}`}>
                             <select
                               className={`rounded-full border px-2.5 py-1 text-sm font-semibold ${tone}`}
                               onChange={(event) => handleListReviewChange(patient, event.target.value)}
@@ -2208,7 +2665,7 @@ export default function PatientsPage() {
                     })}
                   </tr>
                 ))}
-                {filteredPatients.length === 0 && (
+                {listedPatients.length === 0 && (
                   <tr className="border-t border-[var(--line-soft)]">
                     <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={visibleColumns.length}>
                       No patients match the selected filters.
@@ -2236,7 +2693,7 @@ export default function PatientsPage() {
                   <th className="w-[220px] border-r border-[var(--line-soft)] px-4 py-3 text-left">
                     Patient
                   </th>
-                  {filteredPatients.map((patient) => (
+                  {listedPatients.map((patient) => (
                     <th key={`name-${patient.id}`} className="border-r border-[var(--line-soft)] px-4 py-3 text-left">
                       {patient.fullName}
                     </th>
@@ -2247,14 +2704,14 @@ export default function PatientsPage() {
                     <td className="border-r border-[var(--line-soft)] bg-[var(--bg-soft)] px-4 py-3 font-semibold">
                       {row.label}
                     </td>
-                    {filteredPatients.map((patient) => (
+                    {listedPatients.map((patient) => (
                       <td key={`${row.label}-${patient.id}`} className="border-r border-[var(--line-soft)] px-4 py-3">
                         {getDetailValue(patient, row.key, patientDischargeIso(patient, dischargeIndex), initialExamOf(patient, initialExamIndex))}
                       </td>
                     ))}
                   </tr>
                 ))}
-                {filteredPatients.length === 0 && (
+                {listedPatients.length === 0 && (
                   <tr className="border-t border-[var(--line-soft)]">
                     <td className="px-4 py-5 text-sm text-[var(--text-muted)]" colSpan={2}>
                       No patients match the selected filters.
@@ -2280,7 +2737,7 @@ export default function PatientsPage() {
               </div>
               <div className="grid justify-items-end gap-1 text-right text-sm">
                 <button
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-main)] hover:bg-[rgba(13,121,191,0.06)]"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-main)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)]"
                   onClick={() => setPrintPickerFor("caseFlow")}
                   title="Print the Case Flow rows shown — same categories, sort and columns"
                   type="button"
@@ -2349,7 +2806,7 @@ export default function PatientsPage() {
                   </select>
                   <button
                     type="button"
-                    className="rounded-md border border-[var(--line-soft)] bg-white px-2 py-1 text-sm hover:bg-[rgba(13,121,191,0.06)]"
+                    className="btn btn-secondary btn-sm"
                     onClick={() => updateCfSortLevel(index, { asc: !level.asc })}
                     title="Toggle direction"
                   >
@@ -2372,7 +2829,7 @@ export default function PatientsPage() {
                 <div className="ml-24">
                   <button
                     type="button"
-                    className="rounded-md border border-dashed border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[rgba(13,121,191,0.06)]"
+                    className="rounded-md border border-dashed border-[var(--line-soft)] bg-white px-2 py-1 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[color-mix(in_srgb,var(--brand-primary)_6%,transparent)]"
                     onClick={addCfSortLevel}
                   >
                     + Add sort level
@@ -2420,7 +2877,7 @@ export default function PatientsPage() {
                       if (colId === "patient") {
                         return (
                           <td key={colId} className="px-4 py-3">
-                            <Link href={`/patients/${item.patientId}`} className="font-semibold text-[var(--brand-primary)] underline">
+                            <Link href={openHref(item.patientId)} className="font-semibold text-[var(--text)] underline">
                               {item.patientName}
                             </Link>
                             {item.note && <p className="text-xs text-[var(--text-muted)]">{item.note}</p>}
@@ -2479,15 +2936,7 @@ export default function PatientsPage() {
                         <td key={colId} className="px-4 py-3">
                           <span
                             className="status-pill"
-                            style={{
-                              backgroundColor: withAlpha(
-                                statusConfigByName.get(item.caseStatus.toLowerCase())?.color ?? "#0d79bf",
-                                0.2,
-                              ),
-                              color: getContrastTextColor(
-                                statusConfigByName.get(item.caseStatus.toLowerCase())?.color ?? "#0d79bf",
-                              ),
-                            }}
+                            style={softPillStyle(statusConfigByName.get(item.caseStatus.toLowerCase())?.color ?? "#0d79bf")}
                           >
                             {item.caseStatus}
                           </span>
@@ -2590,7 +3039,7 @@ export default function PatientsPage() {
                 />
               </label>
               <div className="flex items-end md:col-span-2">
-                <button className="w-full rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white transition-all active:scale-[0.97] active:brightness-90" onClick={handleAddTask} type="button">Add</button>
+                <button className="btn btn-primary w-full" onClick={handleAddTask} type="button">Add</button>
               </div>
             </div>
             {taskMessage && <p className="mt-3 text-sm font-semibold text-[var(--text-muted)]">{taskMessage}</p>}
@@ -2600,8 +3049,8 @@ export default function PatientsPage() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h4 className="text-lg font-semibold">Tasks</h4>
               <div className="flex items-center gap-3 text-sm">
-                <span className="rounded-full bg-[rgba(21,123,191,0.12)] px-3 py-1 font-semibold text-[#0b5c93]">{taskOpenCount} Open</span>
-                <span className="rounded-full bg-[rgba(25,109,58,0.12)] px-3 py-1 font-semibold text-[#196d3a]">{taskDoneCount} Done</span>
+                <span className="tone-info rounded-full px-3 py-1 font-semibold">{taskOpenCount} Open</span>
+                <span className="tone-ok rounded-full px-3 py-1 font-semibold">{taskDoneCount} Done</span>
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-12">
@@ -2622,14 +3071,14 @@ export default function PatientsPage() {
                 </select>
               </label>
               <div className="flex items-end md:col-span-1">
-                <button className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold" onClick={() => { if (window.confirm("Clear all completed tasks?")) clearCompleted(); }} type="button">Clear Done</button>
+                <button className="btn btn-secondary w-full" onClick={async () => { if ((await appConfirm("Clear all completed tasks?"))) clearCompleted(); }} type="button">Clear Done</button>
                 <ClearedToggle list={clearedList.filter((r) => r.id.startsWith("task:"))} onRestore={restoreTaskId} open={showClearedTodo} setOpen={setShowClearedTodo} />
               </div>
             </div>
 
             <div className="mt-4 space-y-2">
               {filteredTasks.map((task) => (
-                <article className={`rounded-xl border px-3 py-3 ${task.done ? "border-[var(--line-soft)] bg-[var(--bg-soft)]" : "border-[var(--line-soft)] bg-white"} ${highlightTaskId === task.id ? "ring-2 ring-[var(--brand-primary)]" : ""}`} id={`task-${task.id}`} key={task.id}>
+                <article className={`rounded-xl border border-[var(--line-soft)] px-3 py-3 ${task.done ? "bg-[var(--bg-soft)]" : "theme-surface"} ${highlightTaskId === task.id ? "ring-2 ring-[var(--brand-primary)]" : ""}`} id={`task-${task.id}`} key={task.id}>
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="flex items-start gap-3">
                       <input checked={task.done} className="mt-1" onChange={() => toggleTaskDone(task.id)} type="checkbox" />
@@ -2652,8 +3101,8 @@ export default function PatientsPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       {editingTaskId === task.id ? (
                         <>
-                          <button className="rounded-lg bg-[var(--brand-primary)] px-3 py-1 text-sm font-semibold text-white" onClick={() => saveEditingTask(task.id)} type="button">Save</button>
-                          <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={cancelEditingTask} type="button">Cancel</button>
+                          <button className="btn btn-primary btn-sm" onClick={() => saveEditingTask(task.id)} type="button">Save</button>
+                          <button className="btn btn-secondary btn-sm" onClick={cancelEditingTask} type="button">Cancel</button>
                         </>
                       ) : (
                         <>
@@ -2675,17 +3124,17 @@ export default function PatientsPage() {
                           <select className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-sm" onChange={(e) => updateTask(task.id, { priority: e.target.value as TaskPriority })} value={task.priority}>
                             <option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Urgent">Urgent</option>
                           </select>
-                          <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={() => startEditingTask(task)} type="button">Edit</button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => startEditingTask(task)} type="button">Edit</button>
                         </>
                       )}
                       {!task.done && <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold text-[var(--text-muted)]" onClick={() => confirmClear(taskClearId(task.id), task.title)} title="Clear (ignore) — not Done. Restore under Show cleared." type="button">Clear task</button>}
-                      <button className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1 text-sm font-semibold" onClick={() => { void (async () => { if (!window.confirm("Remove this task?")) return; if (!(await ensureDeleteAllowed("tasks"))) return; if (editingTaskId === task.id) cancelEditingTask(); removeTask(task.id); })(); }} type="button">Remove</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => { void (async () => { if (!(await appConfirm("Remove this task?"))) return; if (!(await ensureDeleteAllowed("tasks"))) return; if (editingTaskId === task.id) cancelEditingTask(); removeTask(task.id); })(); }} type="button">Remove</button>
                     </div>
                   </div>
                 </article>
               ))}
               {filteredTasks.length === 0 && (
-                <p className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-4 text-sm text-[var(--text-muted)]">No tasks found.</p>
+                <p className="theme-surface rounded-xl border border-[var(--line-soft)] px-3 py-4 text-sm text-[var(--text-muted)]">No tasks found.</p>
               )}
             </div>
           </section>
@@ -2725,7 +3174,7 @@ export default function PatientsPage() {
                     className={`panel-card overflow-hidden ${entry.isToday ? "ring-2 ring-amber-400" : ""}`}
                   >
                     {entry.isToday && (
-                      <div className="bg-amber-400 px-3 py-1 text-center text-xs font-bold text-amber-900">
+                      <div className="tone-warn px-3 py-1 text-center text-xs font-bold">
                         🎉 Today!
                       </div>
                     )}
@@ -2734,7 +3183,7 @@ export default function PatientsPage() {
                       <div className="min-w-0 flex-1">
                         <Link
                           className="text-base font-bold text-[var(--brand-primary)] hover:underline"
-                          href={`/patients/${entry.id}`}
+                          href={openHref(entry.id)}
                         >
                           {entry.fullName}
                         </Link>
@@ -2769,30 +3218,74 @@ export default function PatientsPage() {
         </div>
       )}
 
+      </>
+      )}
+
       {showNewPatientModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 px-4 py-8">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
           <ScrollLock />
-          {/* Quick add: patient info only (from a text: name + phone is enough).
-              Case info (attorney, DOI, case #, initial exam) is added later on
-              the patient page; the first visit is booked from New Appointment. */}
+          {/* Quick add: name and phone are enough. + Case opens a popup for
+              attorney, date of injury, case number, and an optional first exam. */}
           <form className="panel-card mx-auto w-full max-w-3xl overflow-hidden p-0" data-testid="new-patient-modal" onSubmit={(e) => { e.preventDefault(); createNewPatient(); }}>
             <div className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-5 py-4">
               <div>
+                {newPatientFromAddCase && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    <button
+                      className="rounded-full bg-[var(--bg-soft)] px-4 py-1.5 text-sm font-semibold"
+                      onClick={() => {
+                        setShowNewPatientModal(false);
+                        setNewPatientFromAddCase(false);
+                        setCasePopup({ source: "add" });
+                      }}
+                      type="button"
+                    >
+                      Existing
+                    </button>
+                    <button className="rounded-full bg-[var(--brand-primary)] px-4 py-1.5 text-sm font-semibold text-white" type="button">
+                      New
+                    </button>
+                  </div>
+                )}
                 <h3 className="text-xl font-semibold">New Patient</h3>
-                <p className="text-sm text-[var(--text-muted)]">Name and phone are enough. Add case info on their page later.</p>
+                <p className="text-sm text-[var(--text-muted)]">Name and phone are enough. + Case adds the attorney, date of injury, and first exam.</p>
               </div>
-              <button aria-label="Close" className="rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm font-semibold" onClick={closeNewPatientModal} type="button">
+              <button aria-label="Close" className="btn btn-secondary btn-sm" onClick={closeNewPatientModal} type="button">
                 Close
               </button>
             </div>
 
             <div className="space-y-5 px-5 py-4">
+              <QuickFillBox
+                attorneys={attorneyContacts.map((contact) => contact.name)}
+                onFill={(result: QuickFillResult) => {
+                  setNewPatientDraft((current) => ({
+                    ...current,
+                    ...(result.firstName ? { firstName: result.firstName } : {}),
+                    ...(result.lastName ? { lastName: result.lastName } : {}),
+                    ...(result.phone ? { phone: result.phone } : {}),
+                    ...(result.dob ? { dob: result.dob } : {}),
+                    ...(result.dateOfLoss ? { dateOfLoss: result.dateOfLoss } : {}),
+                    ...(result.attorney ? { attorney: result.attorney } : {}),
+                    ...(result.addressStreet ? { addressStreet: result.addressStreet } : {}),
+                    ...(result.addressUnit ? { addressUnit: result.addressUnit } : {}),
+                    ...(result.addressCity ? { addressCity: result.addressCity } : {}),
+                    ...(result.addressState ? { addressState: result.addressState } : {}),
+                    ...(result.addressZip ? { addressZip: result.addressZip } : {}),
+                    ...(result.evalDate ? { evalDate: result.evalDate } : {}),
+                    ...(result.evalTime ? { evalTime: result.evalTime } : {}),
+                  }));
+                  if (result.ask.length > 0) setNewPatientAsk(result.ask);
+                }}
+                todayIso={new Date().toISOString().slice(0, 10)}
+              />
               {newPatientAsk.length > 0 && (
-                <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="new-patient-ask">
+                <div className="tone-warn rounded-lg px-3 py-2 text-sm" data-testid="new-patient-ask">
                   <p className="font-semibold">Filled in by G.O.A.T. — please check:</p>
                   <ul className="ml-4 list-disc">{newPatientAsk.map((q) => <li key={q}>{q}</li>)}</ul>
                 </div>
               )}
+              <DuplicateCaseWarning matches={newPatientDuplicates} />
 
               <section>
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Patient</h4>
@@ -2826,6 +3319,15 @@ export default function PatientsPage() {
                     value={newPatientDraft.phone}
                   />
                 </label>
+                {returningMatches.length > 0 && returningDismissed !== returningKey && (
+                  <div className="sm:col-span-3">
+                    <ReturningPatientBanner
+                      matches={returningMatches}
+                      onDismiss={() => setReturningDismissed(returningKey)}
+                      onFill={fillReturningPatient}
+                    />
+                  </div>
+                )}
                 <label className="grid min-w-0 gap-1">
                   <span className="text-sm font-semibold text-[var(--text-muted)]">DOB</span>
                   <input
@@ -2968,132 +3470,88 @@ export default function PatientsPage() {
 
               {!newPatientDraft.isCashPatient && (
                 <section data-row="new-patient-case">
-                  {!showNewPatientCase && !newPatientDraft.attorney.trim() && !newPatientDraft.dateOfLoss.trim() && !newPatientDraft.evalDate.trim() ? (
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       className="rounded-lg border border-dashed border-[var(--line-soft)] px-3 py-1.5 text-sm font-semibold text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]"
                       data-testid="new-patient-add-case"
-                      onClick={() => setShowNewPatientCase(true)}
+                      onClick={() => openCasePopup({ source: "new" })}
                       type="button"
                     >
                       + Case
                     </button>
-                  ) : (
-                    <>
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">Case (optional)</h4>
-                        <button
-                          className="text-xs font-semibold text-[var(--text-muted)] hover:underline"
-                          onClick={() => {
-                            setShowNewPatientCase(false);
-                            setNewPatientDraft((c) => ({ ...c, attorney: "", attorneyPhone: "", dateOfLoss: "", evalDate: "", evalTime: "" }));
-                          }}
-                          type="button"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-row="new-patient-case-fields">
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney</span>
-                          <input
-                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            list="new-patient-attorney-options"
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              const matched = attorneyContacts.find((contact) => normalizeAttorneyKey(contact.name) === normalizeAttorneyKey(value));
-                              setNewPatientDraft((current) => ({ ...current, attorney: value, attorneyPhone: matched ? formatUsPhoneInput(matched.phone) : value.trim() ? current.attorneyPhone : "" }));
-                            }}
-                            placeholder="Law firm"
-                            value={newPatientDraft.attorney}
-                          />
-                        </label>
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Attorney Phone</span>
-                          <input
-                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            inputMode="numeric"
-                            maxLength={12}
-                            onChange={(event) => setNewPatientDraft((current) => ({ ...current, attorneyPhone: formatUsPhoneInput(event.target.value) }))}
-                            placeholder="From Contacts"
-                            value={newPatientDraft.attorneyPhone}
-                          />
-                        </label>
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Date of Injury</span>
-                          <input
-                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            inputMode="numeric"
-                            maxLength={10}
-                            onChange={(event) => setNewPatientDraft((current) => ({ ...current, dateOfLoss: formatUsDateInput(event.target.value) }))}
-                            placeholder="MM/DD/YYYY"
-                            value={newPatientDraft.dateOfLoss}
-                          />
-                        </label>
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Case #</span>
-                          <input
-                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-[rgba(242,247,252,0.65)] px-3 py-2 font-semibold tracking-[0.04em]"
-                            placeholder="From DOI + name"
-                            readOnly
-                            title="MMDDYY + first 2 letters of last and first name"
-                            value={newPatientCaseNumberPreview}
-                          />
-                        </label>
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Appt Date <span className="font-normal">(optional)</span></span>
-                          <UsDateInput
-                            className="w-full min-w-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            onChange={(formatted) => { setNewPatientDraft((current) => ({ ...current, evalDate: formatted })); }}
-                            placeholder="MM/DD/YYYY"
-                            value={newPatientDraft.evalDate}
-                          />
-                        </label>
-                        <label className="grid min-w-0 gap-1">
-                          <span className="text-sm font-semibold text-[var(--text-muted)]">Time</span>
-                          <TimeInput12h
-                            allowEmpty
-                            ariaLabel="Appointment time"
-                            dateIso={mdyIso(newPatientDraft.evalDate)}
-                            inputClassName="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            onChange={(v) => { setNewPatientDraft((current) => ({ ...current, evalTime: v })); }}
-                            placeholder=""
-                            smart
-                            value={newPatientDraft.evalTime}
-                          />
-                        </label>
-                      </div>
-                      {newPatientDraft.evalDate.trim() && (
-                        <p className="mt-1.5 text-xs text-[var(--text-muted)]">Save books a New Patient visit on the Schedule (office hours and open times are checked first).</p>
-                      )}
-                      <datalist id="new-patient-attorney-options">
-                        {attorneyContacts.map((contact) => (
-                          <option key={contact.id} value={contact.name} />
-                        ))}
-                      </datalist>
-                    </>
-                  )}
+                    {(newPatientDraft.attorney.trim() || newPatientDraft.dateOfLoss.trim() || newPatientDraft.evalDate.trim()) && (
+                      <p className="text-sm text-[var(--text-muted)]" data-testid="new-patient-case-summary">
+                        {[
+                          newPatientDraft.attorney.trim(),
+                          newPatientDraft.dateOfLoss.trim() && `DOI ${newPatientDraft.dateOfLoss.trim()}`,
+                          newPatientCaseNumberPreview && `Case # ${newPatientCaseNumberPreview}`,
+                          newPatientDraft.evalDate.trim() && `Exam ${newPatientDraft.evalDate.trim()}${newPatientDraft.evalTime.trim() ? ` ${newPatientDraft.evalTime.trim()}` : ""}`,
+                        ].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
+                    {(newPatientDraft.attorney.trim() || newPatientDraft.dateOfLoss.trim() || newPatientDraft.evalDate.trim() || newPatientDraft.evalTime.trim()) && (
+                      <button
+                        className="text-xs font-semibold text-[var(--text-muted)] hover:underline"
+                        onClick={() => setNewPatientDraft((c) => ({ ...c, attorney: "", attorneyPhone: "", dateOfLoss: "", evalDate: "", evalTime: "" }))}
+                        type="button"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </section>
               )}
 
               {newPatientBookingIssue && (
-                <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800" role="alert">
+                <div className="tone-warn rounded-lg px-3 py-2 text-sm font-semibold" role="alert">
                   {newPatientBookingIssue.name} was saved, but the first visit wasn&apos;t booked ({newPatientBookingIssue.reason}). Book it from the Schedule.{" "}
-                  <Link className="text-[var(--brand-primary)] underline" href={`/patients/${newPatientBookingIssue.patientId}`}>Open patient</Link>
+                  <Link className="text-[var(--brand-primary)] underline" href={openHref(newPatientBookingIssue.patientId)}>Open patient</Link>
                 </div>
               )}
               {newPatientMessage && <p className="text-sm font-semibold text-[#b43b34]">{newPatientMessage}</p>}
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-[var(--line-soft)] bg-[var(--bg-soft)] px-5 py-3">
-              <button className="rounded-xl border border-[var(--line-soft)] bg-white px-4 py-2 font-semibold" onClick={closeNewPatientModal} type="button">
+              <button className="btn btn-secondary" onClick={closeNewPatientModal} type="button">
                 Cancel
               </button>
-              <button className="rounded-xl bg-[var(--brand-primary)] px-4 py-2 font-semibold text-white" type="submit">
+              <button className="btn btn-primary" type="submit">
                 Create Patient
               </button>
             </div>
           </form>
         </div>
+      )}
+
+      {casePopup && (
+        <NewPatientCasePopup
+          attorneys={caseAttorneyOptions}
+          conflict={caseConflict}
+          initial={casePopupInitial()}
+          key={casePopup.source === "intake" ? casePopup.patientId : casePopup.source}
+          message={caseMessage}
+          onCaseNumber={(dateOfLoss) => {
+            const names = casePopupNames();
+            return buildCaseNumberPreview(dateOfLoss, names.lastName, names.firstName);
+          }}
+          onClose={() => {
+            setCasePopup(null);
+            setAddCasePatientId("");
+            setCaseMessage("");
+            setCaseConflict(null);
+          }}
+          onDismissIssue={() => {
+            setCaseMessage("");
+            setCaseConflict(null);
+          }}
+          onSave={casePopup.source === "add" ? saveAddedCase : saveCasePopup}
+          purpose={casePopup.source === "intake" ? "intake" : "new"}
+          showPatientPicker={casePopup.source === "add"}
+          people={addCasePeople}
+          attachedId={addCasePatientId}
+          onAttach={setAddCasePatientId}
+          onNewPatient={() => openNewPatientModal(true)}
+        />
       )}
 
     </div>

@@ -13,6 +13,7 @@ import {
   type MacroSection,
   type MacroTemplate,
 } from "@/lib/macro-templates";
+import { sanitizeMacroShowIf } from "@/lib/macro-show-if";
 
 export function useMacroTemplates() {
   const [macroLibrary, setMacroLibrary] = useState<MacroLibraryConfig>(() => loadMacroLibrary());
@@ -79,7 +80,12 @@ export function useMacroTemplates() {
           if (template.id !== macroId) {
             return template;
           }
-          return updater(template);
+          const next = updater(template);
+          const questions = sanitizeMacroShowIf(next.questions);
+          const same =
+            questions.length === next.questions.length &&
+            questions.every((question, index) => question === next.questions[index]);
+          return same ? next : { ...next, questions };
         }),
       }));
     },

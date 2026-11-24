@@ -2,7 +2,7 @@
 
 import type { CaseStatusConfig } from "@/lib/case-statuses";
 import type { PatientRecord } from "@/lib/mock-data";
-import { buildCaseNumber, toUsDateCanonical } from "@/lib/follow-up-queue";
+import { caseNumberOf, toUsDateCanonical } from "@/lib/follow-up-queue";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -531,7 +531,7 @@ function extractYearFromDate(dateStr: string): string {
 }
 
 function buildPatientFolderName(patient: PatientRecord): string {
-  const caseNumber = buildCaseNumber(patient.dateOfLoss, patient.fullName);
+  const caseNumber = caseNumberOf(patient);
   // fullName is "LASTNAME, FIRSTNAME"
   const [lastName = "", firstName = ""] = patient.fullName.split(",").map((s) => s.trim());
   return `${caseNumber} ${lastName}, ${firstName}`.trim();
@@ -652,7 +652,7 @@ export function syncPatientFolders(
     }
 
     const expectedName = buildPatientFolderName(patient);
-    const expectedCaseNumber = buildCaseNumber(patient.dateOfLoss, patient.fullName);
+    const expectedCaseNumber = caseNumberOf(patient);
 
     // 3a. Gather EVERY system folder that belongs to this patient. The April
     //     re-import re-created many patients under brand-new ids while their

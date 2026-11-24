@@ -15,6 +15,8 @@
  * canonical phrase the existing G.O.A.T. paths already handle (each ends on
  * one confirm card), or one short question when a required detail is missing.
  */
+import { parseApptStats } from "@/lib/goat-appt-stats";
+import { acceptHits, isNeverName, isShortTypo, matchNameToken, type TokenHit } from "@/lib/goat-name-guard";
 import { normalizeCasual } from "@/lib/goat-assistant";
 
 // The catalog and the reviewed phrase list live in one data file (G.O.A.T. Library → Built in).
@@ -99,16 +101,9 @@ const NOT_NAMES = new Set(["the", "a", "an", "to", "for", "and", "at", "on", "in
 
 const tokenize = (t: string) => [...t.matchAll(/[A-Za-z][A-Za-z'-]*/g)].map((m) => ({ w: m[0].toLowerCase().replace(/'s$|s'$/, ""), raw: m[0], at: m.index ?? 0 }));
 
+/** Typo-tolerant name match: the shared rules in goat-name-guard (never an everyday word, never a short token). */
 function close(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b || a === `${b}s`) return true;
-  // Sound-alike first letters: kara/cara, katie/catie, phil/fil.
-  const snd = (w: string) => w.replace(/^c(?=[aou])/, "k").replace(/^ph/, "f");
-  if (a[0] !== b[0] && snd(a)[0] === snd(b)[0]) return close(snd(a), snd(b));
-  if (a[0] !== b[0]) return false;
-  if (a.length < 4 || b.length < 4) return Math.min(a.length, b.length) >= 3 && a.slice(0, 2) === b.slice(0, 2) && editDistance(a, b) <= 1;
-  const d = editDistance(a, b);
-  return d <= (Math.min(a.length, b.length) >= 7 ? 2 : 1);
+  return matchNameToken(a, b) !== null;
 }
 
 export interface PatientHit {
@@ -118,30 +113,45 @@ export interface PatientHit {
   /** The words that named the patient (removed from the rest). */
   span: [number, number] | null;
   viaPronoun: boolean;
+  /** The one match was a typo, so the reply should name the record used. */
+  typo: boolean;
 }
 
 const PRONOUN_RE = /\b(?:him|her|them|his|their|he|she|this patient|same patient|that patient|the patient)\b/i;
 
 export function findPatient(text: string, patients: UPatient[], lastPatientId?: string | null): PatientHit {
-  const toks = tokenize(text).filter((t) => !NOT_NAMES.has(t.w));
-  const scored: Array<{ p: UPatient; score: number; span: [number, number] }> = [];
+  const toks = tokenize(text).filter((t) => !NOT_NAMES.has(t.w) && !isNeverName(t.w));
+  const scored: Array<{ p: UPatient; score: number; span: [number, number]; typo: boolean }> = [];
   for (const p of patients) {
     const { first, last } = nameParts(p.fullName);
     const fl = first.toLowerCase();
     const ll = last.toLowerCase();
+    const hitOf = (t: (typeof toks)[number], part: string, which: "first" | "last", index: number): TokenHit | null => {
+      const m = matchNameToken(t.w, part);
+      if (m) return { index: t.at === 0 ? 0 : index + 1, raw: t.raw, kind: m === "exact" ? "exact" : "fuzzy", part: which };
+      return isShortTypo(t.w, part) ? { index: t.at === 0 ? 0 : index + 1, raw: t.raw, kind: "short", part: which } : null;
+    };
     let fi = -1;
     let li = -1;
+    const hits: TokenHit[] = [];
     toks.forEach((t, i) => {
-      if (fi < 0 && close(t.w, fl)) fi = i;
-      if (li < 0 && close(t.w, ll)) li = i;
+      const f = fi < 0 ? hitOf(t, fl, "first", i) : null;
+      if (f) { fi = i; hits.push(f); }
+      const l = li < 0 ? hitOf(t, ll, "last", i) : null;
+      if (l) { li = i; hits.push(l); }
     });
+    // Context rules: ambiguous words (may/will) and lone typo hits need more than one weak token.
+    const keep = acceptHits(hits);
+    if (fi >= 0 && !keep.some((h) => h.part === "first")) fi = -1;
+    if (li >= 0 && !keep.some((h) => h.part === "last")) li = -1;
     if (fi < 0 && li < 0) continue;
     const exact = (i: number, n: string) => (i >= 0 && toks[i].w === n ? 0.25 : 0);
     const score = (fi >= 0 ? 1 : 0) + (li >= 0 ? 1.2 : 0) + exact(fi, fl) + exact(li, ll) + (fi >= 0 && li >= 0 && Math.abs(fi - li) === 1 ? 0.5 : 0) + (/active/i.test(p.caseStatus ?? "Active") ? 0.05 : 0);
     const idx = [fi, li].filter((i) => i >= 0);
     const a = toks[Math.min(...idx)];
     const b = toks[Math.max(...idx)];
-    scored.push({ p, score, span: [a.at, b.at + b.raw.length] });
+    const typo = hits.some((h) => h.kind === "fuzzy" || h.kind === "short");
+    scored.push({ p, score, span: [a.at, b.at + b.raw.length] as [number, number], typo });
   }
   scored.sort((x, y) => y.score - x.score);
   if (scored.length) {
@@ -149,18 +159,19 @@ export function findPatient(text: string, patients: UPatient[], lastPatientId?: 
     const ties = scored.filter((s) => top.score - s.score < 0.3);
     if (ties.length === 1 || top.score >= 2) {
       const same = ties.filter((s) => s.score === top.score);
-      if (same.length === 1) return { patient: top.p, ambiguous: [], span: top.span, viaPronoun: false };
+      // A name typed in the request wins. The open chart is only used for a pronoun, below.
+      if (same.length === 1) return { patient: top.p, ambiguous: [], span: top.span, viaPronoun: false, typo: top.typo };
     }
-    return { patient: null, ambiguous: ties.map((s) => s.p), span: top.span, viaPronoun: false };
+    return { patient: null, ambiguous: ties.map((s) => s.p), span: top.span, viaPronoun: false, typo: false };
   }
   if (lastPatientId && PRONOUN_RE.test(text)) {
     const p = patients.find((x) => x.id === lastPatientId) ?? null;
     if (p) {
       const m = PRONOUN_RE.exec(text)!;
-      return { patient: p, ambiguous: [], span: [m.index, m.index + m[0].length], viaPronoun: true };
+      return { patient: p, ambiguous: [], span: [m.index, m.index + m[0].length], viaPronoun: true, typo: false };
     }
   }
-  return { patient: null, ambiguous: [], span: null, viaPronoun: false };
+  return { patient: null, ambiguous: [], span: null, viaPronoun: false, typo: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +359,8 @@ export interface Understood {
   template: string;
   /** Reschedule "from thursday to friday": the visit being moved. */
   fromDate?: string;
+  /** The one match was a typo. Say which record was used. */
+  typo?: boolean;
 }
 
 const STATUS: Array<[RegExp, string]> = [
@@ -404,6 +417,9 @@ function pickAction(t: string, hasPatient: boolean, attorneys: string[] = []): A
 
 export function understand(raw: string, ctx: UContext): Understood | null {
   if (!raw.trim() || raw.trim().startsWith("/") || raw.trim().startsWith("@")) return null;
+  // Intent first: an office-wide count/list by status ("how many canceled appts do we have")
+  // is a schedule question, never "cancel <patient>" and never a patient lookup.
+  if (parseApptStats(raw, ctx.today, ctx.patients.map((p) => p.fullName))) return null;
   const t = normalizeForIntent(raw);
   const template = phraseTemplate(raw, ctx.patients, ctx.today, [...(ctx.names ?? []), ...(ctx.attorneys ?? [])]);
   const hit = findPatient(t, ctx.patients, ctx.lastPatientId);
@@ -438,7 +454,7 @@ export function understand(raw: string, ctx: UContext): Understood | null {
     }
   }
   const def = GOAT_ACTIONS.find((a) => a.id === action);
-  const out: Understood = { action, patient: hit.patient, ambiguous: hit.ambiguous, date, time, text: "", attorney: "", status: "", canonical: null, ask: null, learned: Boolean(learnedAction), template, fromDate };
+  const out: Understood = { action, patient: hit.patient, ambiguous: hit.ambiguous, date, time, text: "", attorney: "", status: "", canonical: null, ask: null, learned: Boolean(learnedAction), template, fromDate, typo: Boolean(hit.patient && hit.typo) };
   const who = hit.patient ? nameParts(hit.patient.fullName).display : "";
   const rest = cut(t, [hit.viaPronoun ? null : hit.span, date?.span, time?.span]);
 
@@ -495,7 +511,8 @@ export function understand(raw: string, ctx: UContext): Understood | null {
 
   // One short question for the first missing required detail.
   if (!out.patient && def?.required.includes("patient")) {
-    out.ask = out.ambiguous.length ? `Which ${nameParts(out.ambiguous[0].fullName).last || "one"} — ${out.ambiguous.slice(0, 3).map((p) => nameParts(p.fullName).display).join(", or ")}?` : def.ask?.patient ?? "Which patient?";
+    const lookedLikeName = tokenize(t).some((tok) => tok.w.length >= 3 && !isNeverName(tok.w) && !NOT_NAMES.has(tok.w));
+    out.ask = out.ambiguous.length ? "Which patient?" : lookedLikeName ? "No match" : def.ask?.patient ?? "Which patient?";
   } else if (action === "reschedule" && !date && !time) out.ask = def?.ask?.date ?? null;
   else if (action === "doi" && !date) out.ask = def?.ask?.date ?? null;
   else if (action === "note" && !out.text) out.ask = def?.ask?.text ?? null;

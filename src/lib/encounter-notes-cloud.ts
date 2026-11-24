@@ -182,6 +182,104 @@ export async function fetchEncounterNotesForPatient(
   return all.map(rowToNote);
 }
 
+/**
+ * Fast boot: the tiny (id, server updated_at, record updatedAt) list for every
+ * note — ~80 bytes a row instead of ~45 KB. Pages are fetched in parallel.
+ * Returns null when the cloud can't be asked (caller falls back to a full load).
+ */
+export async function fetchEncounterNoteMeta(): Promise<
+  Array<{ id: string; updatedAt: string; recordUpdatedAt: string }> | null
+> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return null;
+  const workspaceId = getActiveWorkspaceOrNull();
+  if (!workspaceId) return null;
+  const pageSize = 1000;
+  type MetaRow = { id: string; updated_at: string | null; updated_at_record: string | null };
+  const page = (from: number, withCount: boolean) =>
+    supabase
+      .from("encounter_notes")
+      .select("id,updated_at,updated_at_record", withCount ? { count: "exact" } : undefined)
+      .eq("workspace_id", workspaceId)
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+  const first = await page(0, true);
+  if (first.error) {
+    console.error("[encounter-notes-cloud] fetchMeta failed:", first.error.message);
+    return null;
+  }
+  const all: MetaRow[] = [...((first.data ?? []) as MetaRow[])];
+  if (all.length === pageSize) {
+    const total = typeof first.count === "number" ? first.count : 0;
+    const starts: number[] = [];
+    for (let from = pageSize; from < total; from += pageSize) starts.push(from);
+    // A 20,000-note office is ~20 pages. Fetch a few at a time so the
+    // database isn't hit with every page at once.
+    const { runPool } = await import("@/lib/boot-progress");
+    const rest = await runPool(
+      starts.map((from) => async () => {
+        const r = await page(from, false);
+        if (r.error) {
+          console.error("[encounter-notes-cloud] fetchMeta failed:", r.error.message);
+          return null;
+        }
+        return (r.data ?? []) as MetaRow[];
+      }),
+      4,
+    );
+    if (rest === null) return null;
+    for (const rows of rest) all.push(...rows);
+    // Rows added between requests: keep paging until a short page.
+    let from = pageSize * (starts.length + 1);
+    while (all.length === from) {
+      const r = await page(from, false);
+      if (r.error) return null;
+      const rows = (r.data ?? []) as MetaRow[];
+      all.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+  }
+  return all.map((r) => ({
+    id: r.id,
+    updatedAt: r.updated_at ?? "",
+    recordUpdatedAt: r.updated_at_record ?? "",
+  }));
+}
+
+/** Same as fetchEncounterNotesByIds but the 100-id chunks run in parallel. */
+/** Max encounter_notes chunk requests in flight at once during boot. */
+export const NOTES_FETCH_CONCURRENCY = 5;
+
+/**
+ * Fetch notes by id in 100-id chunks, at most NOTES_FETCH_CONCURRENCY at a
+ * time (was: every chunk at once, which piled ~30 big requests onto the DB
+ * per boot). `onChunk` runs after each chunk lands (for progress + resume).
+ */
+export async function fetchEncounterNotesByIdsParallel(
+  ids: string[],
+  onChunk?: (rows: EncounterNoteRecord[], done: number, total: number) => void | Promise<void>,
+): Promise<EncounterNoteRecord[] | null> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (unique.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += 100) chunks.push(unique.slice(i, i + 100));
+  const { runPool } = await import("@/lib/boot-progress");
+  let fetchedCount = 0;
+  const results = await runPool(
+    chunks.map((c) => async () => {
+      const rows = await fetchEncounterNotesByIds(c);
+      if (rows === null) return null;
+      fetchedCount += c.length;
+      await onChunk?.(rows, fetchedCount, unique.length);
+      return rows;
+    }),
+    NOTES_FETCH_CONCURRENCY,
+  );
+  if (results === null) return null;
+  return results.flat();
+}
+
 export async function fetchAllEncounterNotesFromTable(): Promise<EncounterNoteRecord[] | null> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return null;
@@ -209,6 +307,8 @@ export async function fetchAllEncounterNotesFromTable(): Promise<EncounterNoteRe
     }
     const rows = (data ?? []) as EncounterNoteRow[];
     all.push(...rows);
+    // Each page counts as progress for the boot no-progress watchdog.
+    void import("@/lib/boot-progress").then((bp) => bp.emitBootProgress({ phase: "notes", done: all.length, total: all.length }));
     if (rows.length < pageSize) break;
     from += pageSize;
   }

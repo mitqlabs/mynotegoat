@@ -16,11 +16,18 @@ export type CloudBacking = "workspace" | "table" | "user" | "system";
 export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   // workspace_kv rows
   "casemate.office-settings.v1": "workspace",
+  // Office theme (NoteGoat Blue, Sunset, …). Light/Dark is per person, below.
+  "casemate.brand.v1": "workspace",
   "casemate.key-dates.v1": "workspace",
   "casemate.schedule-settings.v1": "workspace",
   "casemate.sms-templates.v1": "workspace",
   "casemate.patient-forms.v1": "workspace",
   "casemate.sms-reminders.v1": "workspace",
+  // Per-shortcut last run. The queue writes this. The Text Reminders page reads it.
+  "casemate.shortcut-runs.v1": "system",
+  // Sealed device code for named shortcuts. Server only. Not the live device row.
+  "casemate.reminder-shortcut-seal.": "system",
+  "casemate.reminder-shortcut-hash.": "system",
   "casemate.contact-directory.v1": "workspace",
   "casemate.contact-categories.v1": "workspace",
   "casemate.contact-subcategories.v1": "workspace",
@@ -39,17 +46,23 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.quick-stats-settings.v1": "workspace",
   "casemate.patient-page-prefs.v1": "workspace",
   "casemate.patient-diagnoses.v1": "workspace",
+  "casemate.dx-suggestion-ignores.v1": "workspace",
   "casemate.patient-billing.v1": "workspace",
   "casemate.email-settings.v1": "workspace",
   "casemate.dashboard-workspace-settings.v1": "workspace",
   "casemate.dashboard-priority-rules.v1": "workspace",
   "casemate.case-statuses.v1": "workspace",
+  "casemate.compliance-options.v1": "workspace", // editable Compliance options (id/label/color), union-merged
   "casemate.case-notes.v1": "workspace",
+  "casemate.case-note-entries.v1": "workspace", // patient Notes log (quick notes), union-merged by id
+  // Patient-folder preview: person edits, General Notes, general to-dos. Not case notes.
+  "casemate.patient-folders.v1": "workspace",
   "casemate.treatment-plans.v1": "workspace",
   "casemate.treatment-plan-settings.v1": "workspace",
   "casemate.module-visibility.v1": "workspace",
   "casemate.marketing.v1": "workspace",
   "casemate.marketing-settings.v1": "workspace",
+  "casemate.marketing-reps.v1": "workspace", // Marketing "Our Rep" dropdown list (id/name), union-merged
   "casemate.holiday-keydate-prompts.v1": "workspace",
   "casemate.goat-settings.v1": "workspace",
   "casemate.goat-answer-prefs.v1": "workspace",
@@ -57,16 +70,34 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.goat-learned.v1": "workspace",
   // G.O.A.T. opening brief hidden (per person).
   "casemate.goat-brief-hidden.v1": "user",
+  // GOAT Page briefing-board layout (per person, cloud-mirrored).
+  "casemate.goat-board-layout.v1": "user",
+  // Office-wide starting layout for the GOAT Page. A person's own board wins.
+  "casemate.goat-page-office-default.v1": "workspace",
   "casemate.cash-payments.v1": "workspace",
   "casemate.patient-packages.v1": "workspace",
   "casemate.key-date-dismissals.v1": "workspace",
   "casemate.cleared-tasks.v1": "workspace",
+  // GOAT Page untouched reminders marked handled (union-merged by id).
+  "casemate.goat-untouched.v1": "workspace",
+  // GOAT Mail triage answers (which message, which category, which new patient). Union-merged by id.
+  "casemate.goat-mail.v1": "workspace",
+  // Folders GOAT Mail reads. The mail API writes this row; Inbox is the default when it is empty.
+  "casemate.goat-mail-folders.v1": "workspace",
+  // Optional Microsoft app-secret expiry for GOAT Mail. The mail API writes this row.
+  "casemate.goat-mail-secret.v1": "workspace",
+  // GOAT Mail buckets and keywords. The mail API writes this row. Missing means the built-in buckets.
+  "casemate.goat-mail-buckets.v1": "workspace",
   "casemate.duplicate-dismissals.v1": "workspace",
   "casemate.attorney-not-same.v1": "workspace",
   "casemate.team-settings.v1": "workspace",
   "casemate.team-member-order.v1": "workspace",
   "casemate.onboarding.v1": "workspace",
+  // Bumped when the demo office is reseeded so this browser drops yesterday's edits.
+  "casemate.demo-generation.v1": "workspace",
   "casemate.admin-access.v1": "workspace",
+  // Role definitions (Settings → Roles & Permissions). Writes are limited to the owner by a database trigger.
+  "casemate.role-settings.v1": "workspace",
   "casemate.activity-log-settings.v1": "workspace",
   // dedicated tables
   "casemate.patients.v2": "table",
@@ -79,13 +110,22 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "casemate.contacts-sort.v1": "user",
   "casemate.scanner-camera.v1": "user",
   "casemate.referral-drill-sort.v1": "user",
+  "casemate.dashboard.location-mode.v1": "user",
   "casemate.sidebar-collapsed": "user",
+  // Light or Dark for this person. The old per-device keys are read-only fallbacks.
+  "casemate.theme-tone.v1": "user",
+  // This person's sidebar page order. Settings is not stored; it stays last.
+  "casemate.sidebar-order.v1": "user",
   // G.O.A.T. home-screen install tip dismissed (stays dismissed on every device).
   "casemate.goat-install-tip.v1": "user",
   // G.O.A.T. memory: last patient/action, and hidden heads-ups (follow you to every device).
   "casemate.goat-recall.v1": "user",
   "casemate.goat-nudges-dismissed.v1": "user",
   "casemate.soap-split-height.v1": "user",
+  "casemate.soap-split-bottom-height.v1": "user",
+  "casemate.soap-split-columns.v1": "user",
+  // Diagnosis box: Suggested from MRI / X-ray collapsed (per person, cloud-mirrored).
+  "casemate.dx-suggestions-collapsed.v1": "user",
   "casemate.quick-glance.open.v1": "user",
   "casemate.files-view-mode": "user",
   "casemate.dashboard.sections-open.v1": "user",
@@ -117,7 +157,14 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   "notegoat.goat-plus-intro.v1": "user",
   "notegoat.goat-plus-removed.v1": "user",
   // system: sync bookkeeping, crash-recovery drafts, caches of cloud data
+  "notegoat.access-hint.v1": "system", // boot speed hint (access + team), re-verified every open
+  "notegoat.boot-delta.v1.": "system", // boot delta cursors/stamps (cache of cloud data)
+  "notegoat-boot-cache": "system", // IndexedDB resume cache of cloud note rows (cleared after a full boot)
+  "notegoat-boot-": "system", // BroadcastChannel name: boot progress relay between tabs
+  "notegoat-boot-notes-": "system", // Web Lock name: one tab downloads notes at a time
   "casemate.active-workspace-id.v1": "system",
+  "casemate.location-view-main-applied.v1": "system", // per-device marker: which Main location was last applied at login
+  "casemate.local-cache-workspace.v1": "system", // which workspace the local cache belongs to
   "casemate.__safety-backup__.v1": "system",
   "casemate.cloud-sync-at": "system",
   "casemate.cloud-sync-at.": "system",
@@ -126,8 +173,13 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   // cloud only when the user saves the form (patients / appointments are cloud-backed).
   "casemate.new-patient-prefill.v1": "system",
   "casemate.new-appointment-prefill.v1": "system",
+  // Per-tab flag (sessionStorage only): this tab already did its first navigation.
+  // Not practice data and not copied to the cloud.
+  "casemate.sidebar-launch.v1": "system",
   "casemate.cache.v1.": "system",
   "casemate.feature-flag.": "system",
+  "casemate.theme": "system", // legacy Light/Dark, read only, never written
+  "notegoat.theme": "system", // legacy Light/Dark, read only, never written
   "casemate.user-prefs-mirror.v1": "system",
   "notegoat.unsynced-notes.v1": "system",
   // the cloud rows themselves (realtime may echo them into localStorage)

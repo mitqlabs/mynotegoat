@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminClient, authenticateDevice } from "@/lib/reminder-server";
+import { DEVICE_SETUP_AGAIN } from "@/lib/device-token";
+import { DEMO_NOT_SENT, isDemoWorkspaceId } from "@/lib/demo-office";
+import { decodeQueueItemId } from "@/lib/reminder-automation";
+import { runSummary } from "@/lib/reminder-format";
+import { ackBirthday, ackBroadcast, adminClient, authenticateDevice } from "@/lib/reminder-server";
 
 export const dynamic = "force-dynamic";
 
@@ -8,14 +12,16 @@ type AckResult = { id?: unknown; status?: unknown; error?: unknown };
 /**
  * POST /api/reminders/ack — the device reports what it sent.
  * Body: { visitDate: "YYYY-MM-DD", results: [{ id, status: "sent"|"failed"|"dry-run", error? }] }
- * Only appointment ids that exist in this workspace on that date are logged.
+ * Ids: plain = appointment on visitDate; "r:<date>:<id>" = reminder for that
+ * date; "b:<id>" = a Message-patients text; "bd:<year>:<patient id>" = a birthday text. Only ids in this workspace count.
  * A second "sent" for the same appointment + date is ignored (unique index).
  */
 export async function POST(request: NextRequest) {
   const admin = adminClient();
   if (!admin) return NextResponse.json({ error: "Server not configured." }, { status: 500 });
   const device = await authenticateDevice(admin, request.headers.get("authorization"));
-  if (!device) return NextResponse.json({ error: "Invalid or revoked device token." }, { status: 401 });
+  if (!device) return NextResponse.json({ error: DEVICE_SETUP_AGAIN, message: DEVICE_SETUP_AGAIN, send: "no" }, { status: 401 });
+  if (isDemoWorkspaceId(device.workspace_id)) return NextResponse.json({ ok: true, demo: true, message: DEMO_NOT_SENT });
 
   const body = (await request.json().catch(() => ({}))) as {
     visitDate?: unknown;
@@ -32,19 +38,22 @@ export async function POST(request: NextRequest) {
     : body.id !== undefined
       ? [{ id: body.id, status: body.status, error: body.error }]
       : [];
-  if (!visitDate) return NextResponse.json({ error: "Missing visitDate." }, { status: 400 });
+  const refs = results.map((r) => decodeQueueItemId(typeof r.id === "string" ? r.id : "", visitDate));
+  const hasPlain = results.some((r) => typeof r.id === "string" && !/^(b|bd|r):/.test(r.id));
+  if (!visitDate && (hasPlain || !results.length)) return NextResponse.json({ error: "Missing visitDate." }, { status: 400 });
 
-  const ids = Array.from(new Set(results.map((r) => (typeof r.id === "string" ? r.id : "")).filter(Boolean)));
-  const { data: appts } = ids.length
+  const apptIds = Array.from(
+    new Set(refs.flatMap((ref) => (ref?.kind === "reminder" ? [ref.appointmentId] : []))),
+  );
+  const { data: appts } = apptIds.length
     ? await admin
         .from("schedule_appointments")
-        .select("id, patient_id")
+        .select("id, patient_id, date")
         .eq("workspace_id", device.workspace_id)
-        .eq("date", visitDate)
-        .in("id", ids)
-    : { data: [] as { id: string; patient_id: string }[] };
-  const patientByAppt = new Map((appts ?? []).map((a) => [a.id as string, a.patient_id as string]));
-  const patientIds = Array.from(new Set(patientByAppt.values()));
+        .in("id", apptIds)
+    : { data: [] as { id: string; patient_id: string; date: string }[] };
+  const apptById = new Map((appts ?? []).map((a) => [a.id as string, { patientId: a.patient_id as string, date: a.date as string }]));
+  const patientIds = Array.from(new Set(Array.from(apptById.values()).map((a) => a.patientId)));
   const { data: pts } = patientIds.length
     ? await admin.from("patients").select("id, phone").eq("workspace_id", device.workspace_id).in("id", patientIds)
     : { data: [] as { id: string; phone: string }[] };
@@ -53,22 +62,45 @@ export async function POST(request: NextRequest) {
   let logged = 0;
   let duplicates = 0;
   let ignored = 0;
+  let reminderResults = 0;
   const counts: Record<string, number> = { sent: 0, failed: 0, "dry-run": 0 };
-  for (const result of results) {
-    const id = typeof result.id === "string" ? result.id : "";
+  for (let i = 0; i < results.length; i += 1) {
+    const result = results[i];
+    const ref = refs[i];
     const status = result.status === "sent" || result.status === "failed" || result.status === "dry-run" ? result.status : "";
-    if (!id || !status || !patientByAppt.has(id)) {
+    const errorText = typeof result.error === "string" ? result.error.slice(0, 300) : null;
+    if (!ref || !status) {
       ignored += 1;
       continue;
     }
+    if (ref.kind === "birthday") {
+      if (await ackBirthday(admin, device, ref.year, ref.patientId, status, errorText)) {
+        logged += 1;
+        counts[status] += 1;
+      } else duplicates += 1;
+      continue;
+    }
+    if (ref.kind === "broadcast") {
+      if (await ackBroadcast(admin, device, ref.recipientId, status, errorText)) {
+        logged += 1;
+        counts[status] += 1;
+      } else duplicates += 1;
+      continue;
+    }
+    const appt = apptById.get(ref.appointmentId);
+    if (!appt || appt.date !== ref.visitDate) {
+      ignored += 1;
+      continue;
+    }
+    reminderResults += 1;
     const { error } = await admin.from("reminder_log").insert({
       workspace_id: device.workspace_id,
       device_id: device.id,
-      appointment_id: id,
-      visit_date: visitDate,
-      phone_last4: last4.get(patientByAppt.get(id) ?? "") ?? "",
+      appointment_id: ref.appointmentId,
+      visit_date: ref.visitDate,
+      phone_last4: last4.get(appt.patientId) ?? "",
       status,
-      error: typeof result.error === "string" ? result.error.slice(0, 300) : null,
+      error: errorText,
     });
     if (error) {
       if (error.code === "23505") duplicates += 1;
@@ -78,8 +110,23 @@ export async function POST(request: NextRequest) {
     logged += 1;
     counts[status] += 1;
   }
-  const summary = `${visitDate}: ${counts.sent} sent, ${counts.failed} failed, ${counts["dry-run"]} dry-run`;
-  await admin
+  // Running totals for the day from the send log, not just this call: the iPhone acks one text per call.
+  let summary = runSummary(visitDate, { sent: counts.sent, failed: counts.failed, dryRun: counts["dry-run"] });
+  if (reminderResults > 0 && visitDate) {
+    const total = async (status: string) => {
+      const { count } = await admin
+        .from("reminder_log")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", device.workspace_id)
+        .eq("visit_date", visitDate)
+        .eq("status", status);
+      return count ?? 0;
+    };
+    const [sent, failed, dryRun] = await Promise.all([total("sent"), total("failed"), total("dry-run")]);
+    summary = runSummary(visitDate, { sent, failed, dryRun });
+  }
+  // Broadcast-only acks don't count as the day's reminder run.
+  if (reminderResults > 0) await admin
     .from("reminder_devices")
     .update({ last_run_at: new Date().toISOString(), last_run_summary: summary, run_requested_until: null })
     .eq("id", device.id);

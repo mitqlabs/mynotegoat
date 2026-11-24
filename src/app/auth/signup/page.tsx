@@ -137,8 +137,8 @@ export default function SignupPage() {
                   onClick={() => setSelectedPeriod(option.period)}
                   className={`relative rounded-[14px] border-2 px-4 py-3 text-left transition ${
                     isSelected
-                      ? "border-[var(--brand-primary)] bg-[#ecf4fa]"
-                      : "border-[var(--line-strong)] bg-white hover:border-[#9ab8cc]"
+                      ? "border-[var(--brand-primary)] bg-[var(--bg-soft)]"
+                      : "border-[var(--line-strong)] bg-white hover:border-[color-mix(in_srgb,var(--brand-primary)_40%,var(--line-soft))]"
                   }`}
                 >
                   {isSelected && (
