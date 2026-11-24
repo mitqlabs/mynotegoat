@@ -22,9 +22,17 @@ export function setGlobalGoatOpen(open: boolean) {
 let pendingAsk: string | null = null;
 /** Open the global G.O.A.T. chat and send `text` there, as if typed. On a
  *  patient page its "him / her / this patient" is that page's patient. */
-export function askGlobalGoat(text: string) {
+export function askGlobalGoat(text: string, patientId?: string | null) {
   pendingAsk = text;
+  pendingAskPatient = patientId ?? null;
   setGlobalGoatOpen(true);
+}
+/** The patient whose page handed off the pending ask (that patient is the default for it). */
+let pendingAskPatient: string | null = null;
+export function takePendingAskPatient(): string | null {
+  const p = pendingAskPatient;
+  pendingAskPatient = null;
+  return p;
 }
 export function takePendingAsk(): string | null {
   const t = pendingAsk;
