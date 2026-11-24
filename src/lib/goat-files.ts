@@ -259,6 +259,11 @@ function scheduleOcrShutdown() {
   }, 60_000);
 }
 
+/** OCR one picture in this browser. Used by Patient Files and by ID scan. Nothing is sent out. */
+export async function ocrImage(canvas: HTMLCanvasElement | Blob, onProgress: (p: number) => void = () => {}): Promise<string> {
+  return ocrCanvas(canvas, onProgress);
+}
+
 async function ocrCanvas(canvas: HTMLCanvasElement | Blob, onProgress: (p: number) => void): Promise<string> {
   const worker = await ocr();
   ocrPageProgress = onProgress;

@@ -1884,6 +1884,8 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     }
     return synced;
   });
+  // ID scan (and any other save that notifies) lands in this list without a reload.
+  useEffect(() => onLocalChange("casemate.files.v1", () => setFileManagerState(loadFileManagerState())), []);
   // Look up the patient's folder by its patientId field instead of
   // constructing the ID — after orphan-folder recovery the folder ID may
   // not follow the SYSTEM-PATIENT-<id> pattern.

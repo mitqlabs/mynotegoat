@@ -1,9 +1,13 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { patients as patientList, type PatientRecord } from "@/lib/mock-data";
+import { patients as patientList, updatePatientRecordById, type PatientRecord } from "@/lib/mock-data";
+import { stashIdScanPrefill } from "@/lib/id-scan";
+import { clearHeldIdImage, holdIdImage, saveIdImageToPatient } from "@/lib/id-scan-save";
+import type { IdScanResult } from "@/components/id-scan-modal";
 import { askGoat, type GoatContext, type GoatResult } from "@/lib/goat";
 import {
   choiceLabel,
@@ -24,6 +28,8 @@ import { isAdminTier } from "@/lib/admin-access";
 import { useGoatPatientContext } from "@/hooks/use-goat-patient-context";
 import type { GoatFilesController } from "@/hooks/use-goat-files";
 import { GoatAvatar } from "@/components/goat-avatar";
+
+const IdScanModal = dynamic(() => import("@/components/id-scan-modal").then((m) => ({ default: m.IdScanModal })), { ssr: false });
 import { GoatStatusLine, type GoatStatus } from "@/components/goat-smart";
 import { CopyButton } from "@/components/copy-button";
 import { useGoatAnswerPrefs } from "@/hooks/use-goat-answer-prefs";
@@ -53,7 +59,6 @@ import { dismissNudge, readDismissed, readRecall, recallLine, saveRecall } from 
 import { detectCorrection, findDate, findTime, normalizeForIntent, GOAT_ACTIONS, nameParts, phraseTemplate, understand, type ActionId, type Understood } from "@/lib/goat-understand";
 import { planQuick, type QuickPlan } from "@/lib/goat-quick";
 import { learnedMap, loadLearned, safeTemplate, saveLearned, withMiss, withPhrase } from "@/lib/goat-learned";
-import { updatePatientRecordById } from "@/lib/mock-data";
 import { cardDate, carryPatient, dailyBrief, normalizeCasual, nudges, splitSteps } from "@/lib/goat-assistant";
 import { categoryPlural, clarifyFor, correctionReply, editNoteLine, followUpFor, importUndoText, recatAsk, recatConfirmText, withNoteDate, withNoteText, type LastAct } from "@/lib/goat-memory";
 import { isClearFileQuestion } from "@/lib/goat-dialog";
@@ -364,6 +369,7 @@ export function GlobalGoatPopup({
   const [chat, setChat] = useState<ChatState>(() => loadChat());
   // /goat?q=… prefills the box (the user still taps Send). The portal only renders after auth on the client, so no SSR mismatch.
   const [input, setInput] = useState(() => (fullScreen && typeof window !== "undefined" ? goatQueryPrefill(window.location.search) : ""));
+  const [idScanOpen, setIdScanOpen] = useState(false);
   // Home-screen install hint: iPhone Safari → Share → Add to Home Screen tip; Android/Chrome → a real Install button.
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installDismissed, setInstallDismissed] = useState(() => {
@@ -3042,12 +3048,46 @@ export function GlobalGoatPopup({
                   </div>
                 )}
               </div>
+              <button className={fullScreen ? "h-11 shrink-0 rounded-2xl border border-[var(--line-soft)] bg-white px-3 text-sm font-semibold" : "shrink-0 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm font-semibold"} data-testid="goat-scan-id" onClick={() => setIdScanOpen(true)} type="button">
+                Scan ID
+              </button>
               <button style={{ fontSize: fullScreen ? 15 : 14 }} className={fullScreen ? "h-11 shrink-0 rounded-2xl bg-[var(--brand-primary)] px-4 font-semibold text-white disabled:opacity-40" : "shrink-0 rounded-xl bg-[var(--brand-primary)] px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"} disabled={!input.trim()} type="submit">
                 Send
               </button>
             </form>
           </div>
         </section>
+      )}
+      {idScanOpen && (
+        <IdScanModal
+          allowMatch={!openPatientId}
+          onClose={() => setIdScanOpen(false)}
+          onConfirm={(result: IdScanResult) => {
+            setIdScanOpen(false);
+            if (result.update) {
+              const patch = result.update.patch;
+              const changed = Object.entries(patch).some(([, v]) => v !== undefined && v !== "");
+              if (changed) updatePatientRecordById(result.update.patientId, patch);
+              const who = displayName(result.update.patientName);
+              const finish = (fileNote: string) => {
+                push({ role: "goat", text: `${changed ? "Updated" : "Kept what's on file for"} ${who}.${fileNote}`, patientName: who });
+              };
+              if (result.saveImage && result.file) {
+                void saveIdImageToPatient(result.update.patientId, result.file).then((saved) => {
+                  finish(saved.ok ? " The ID image is in Files." : ` The ID image did not save (${saved.error}).`);
+                });
+              } else finish("");
+              return;
+            }
+            stashIdScanPrefill(result.values);
+            if (result.saveImage && result.file) holdIdImage(result.file);
+            else clearHeldIdImage();
+            formRouter.push("/patients?new=1");
+          }}
+          open
+          patient={openPatientId ? patientById(openPatientId) : null}
+          patients={allPatients()}
+        />
       )}
     </>
   );

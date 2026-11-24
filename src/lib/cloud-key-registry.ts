@@ -172,6 +172,9 @@ export const CLOUD_KEY_REGISTRY: Record<string, CloudBacking> = {
   // G.O.A.T. → form handoffs (sessionStorage, read once, 10-min expiry). The data lands in the
   // cloud only when the user saves the form (patients / appointments are cloud-backed).
   "casemate.new-patient-prefill.v1": "system",
+  // ID scan → New Patient form (sessionStorage, read once, 10-min expiry). The image stays in
+  // memory until Create Patient; the fields land on the patient row only when the person saves.
+  "casemate.id-scan-prefill.v1": "system",
   "casemate.new-appointment-prefill.v1": "system",
   // Per-tab flag (sessionStorage only): this tab already did its first navigation.
   // Not practice data and not copied to the cloud.

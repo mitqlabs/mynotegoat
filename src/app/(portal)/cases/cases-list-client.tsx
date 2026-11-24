@@ -1,6 +1,6 @@
 "use client";
 
-import { LegacyPatientsPage } from "@/app/(portal)/patients/page";
+import { LegacyPatientsPage } from "@/app/(portal)/patients/patients-screen";
 
 export function CasesListClient() {
   return <LegacyPatientsPage mode="cases" />;

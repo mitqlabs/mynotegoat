@@ -22,7 +22,8 @@
     "react-dom": "19.2.3",
     "react-grid-layout": "^1.5.4",
     "stripe": "^21.0.1",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "zxing-wasm": "^3.1.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
