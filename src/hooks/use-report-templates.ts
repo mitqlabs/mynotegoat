@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { mergeNarrativeInputDefaults, RECOMMEND_DECOMPRESSION_TOKEN } from "@/lib/narrative-inputs";
 import {
   createPromptTokenFromLabel,
   getDefaultNarrativeReportLibrary,
   loadNarrativeReportLibrary,
   saveNarrativeReportLibrary,
+  type NarrativePromptInput,
+  type NarrativePromptShowWhen,
   type NarrativeReportLibrary,
   type NarrativeReportPrompt,
   type NarrativeReportTemplate,
@@ -21,16 +24,18 @@ function createPromptId() {
   return `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function readLibrary() {
+  return mergeNarrativeInputDefaults(loadNarrativeReportLibrary());
+}
+
 export function useReportTemplates() {
-  const [reportTemplates, setReportTemplates] = useState<NarrativeReportLibrary>(() =>
-    loadNarrativeReportLibrary(),
-  );
+  const [reportTemplates, setReportTemplates] = useState<NarrativeReportLibrary>(() => readLibrary());
 
   // Re-read when the cloud fallback writes the template data
   useEffect(() => {
     const handler = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY) {
-        setReportTemplates(loadNarrativeReportLibrary());
+        setReportTemplates(readLibrary());
       }
     };
     window.addEventListener("storage", handler);
@@ -120,7 +125,7 @@ export function useReportTemplates() {
   );
 
   const addPrompt = useCallback(
-    (templateId: string, labelDraft: string, options: string[], required: boolean) => {
+    (templateId: string, labelDraft: string, options: string[], required: boolean, input?: NarrativePromptInput) => {
       const label = labelDraft.trim();
       if (!label) {
         return false;
@@ -145,8 +150,9 @@ export function useReportTemplates() {
             id: createPromptId(),
             label,
             token,
-            options,
+            options: input === "yesno" && options.length === 0 ? ["Yes", "No"] : options,
             required,
+            ...(input ? { input } : {}),
           };
 
           return {
@@ -164,7 +170,9 @@ export function useReportTemplates() {
     (
       templateId: string,
       promptId: string,
-      patch: Partial<Pick<NarrativeReportPrompt, "label" | "required" | "options">>,
+      patch: Partial<Pick<NarrativeReportPrompt, "label" | "required" | "options" | "input">> & {
+        showWhen?: NarrativePromptShowWhen | null;
+      },
     ) => {
       updateLibrary((current) => ({
         ...current,
@@ -172,20 +180,61 @@ export function useReportTemplates() {
           if (template.id !== templateId) {
             return template;
           }
+          const prior = template.prompts.find((prompt) => prompt.id === promptId);
+          const nextOptions = patch.options ?? prior?.options ?? [];
+          const renames = new Map<string, string>();
+          const renamedOptions = patch.options;
+          if (renamedOptions && prior && prior.options.length === renamedOptions.length) {
+            prior.options.forEach((old, index) => {
+              const next = renamedOptions[index];
+              if (old && next && old !== next) renames.set(old, next);
+            });
+          }
           return {
             ...template,
             prompts: template.prompts.map((prompt) => {
-              if (prompt.id !== promptId) {
-                return prompt;
+              if (prompt.id === promptId) {
+                const next: NarrativeReportPrompt = {
+                  ...prompt,
+                  label: patch.label === undefined ? prompt.label : patch.label,
+                  required: patch.required === undefined ? prompt.required : patch.required,
+                  options: patch.options === undefined ? prompt.options : patch.options,
+                };
+                if (patch.input) next.input = patch.input;
+                if (patch.showWhen === null) delete next.showWhen;
+                else if (patch.showWhen) next.showWhen = patch.showWhen;
+                return next;
               }
-              return {
-                ...prompt,
-                label: patch.label === undefined ? prompt.label : patch.label,
-                required: patch.required === undefined ? prompt.required : patch.required,
-                options: patch.options === undefined ? prompt.options : patch.options,
-              };
+              if (!patch.options || prompt.showWhen?.promptId !== promptId) return prompt;
+              const answers = prompt.showWhen.answers
+                .map((answer) => renames.get(answer) ?? answer)
+                .filter((answer) => nextOptions.includes(answer));
+              if (!answers.length) {
+                const { showWhen: _dropped, ...rest } = prompt;
+                return rest;
+              }
+              return { ...prompt, showWhen: { promptId, answers } };
             }),
           };
+        }),
+      }));
+    },
+    [updateLibrary],
+  );
+
+  const movePrompt = useCallback(
+    (templateId: string, promptId: string, direction: -1 | 1) => {
+      updateLibrary((current) => ({
+        ...current,
+        templates: current.templates.map((template) => {
+          if (template.id !== templateId) return template;
+          const index = template.prompts.findIndex((prompt) => prompt.id === promptId);
+          const nextIndex = index + direction;
+          if (index < 0 || nextIndex < 0 || nextIndex >= template.prompts.length) return template;
+          const prompts = [...template.prompts];
+          const [row] = prompts.splice(index, 1);
+          prompts.splice(nextIndex, 0, row);
+          return { ...template, prompts };
         }),
       }));
     },
@@ -200,9 +249,21 @@ export function useReportTemplates() {
           if (template.id !== templateId) {
             return template;
           }
+          const removed = template.prompts.find((prompt) => prompt.id === promptId);
+          const skipped =
+            removed?.token === RECOMMEND_DECOMPRESSION_TOKEN
+              ? Array.from(new Set([...(template.skippedDefaultTokens ?? []), removed.token]))
+              : template.skippedDefaultTokens;
           return {
             ...template,
-            prompts: template.prompts.filter((prompt) => prompt.id !== promptId),
+            ...(skipped?.length ? { skippedDefaultTokens: skipped } : {}),
+            prompts: template.prompts
+              .filter((prompt) => prompt.id !== promptId)
+              .map((prompt) => {
+                if (prompt.showWhen?.promptId !== promptId) return prompt;
+                const { showWhen: _dropped, ...rest } = prompt;
+                return rest;
+              }),
           };
         }),
       }));
@@ -223,6 +284,7 @@ export function useReportTemplates() {
     removeTemplate,
     addPrompt,
     updatePrompt,
+    movePrompt,
     removePrompt,
     resetToDefaults,
   };

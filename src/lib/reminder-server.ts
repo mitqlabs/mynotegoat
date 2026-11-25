@@ -5,7 +5,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { PatientRecord } from "@/lib/mock-data";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
-import { broadcastTimeOk, hashDeviceToken, isStopTest, leaseCanTake, matchPatientByName, parseOptOutReply, phoneMatchKey, splitPatientName, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
+import { broadcastStillDue, broadcastTimeOk, hashDeviceToken, isStopTest, leaseCanTake, matchPatientByName, parseOptOutReply, phoneMatchKey, splitPatientName, STOP_TEST_PATIENT_ID, UNMATCHED_PREFIX, withOptOutLine, type OfficeHoursDay, type ReminderOffice } from "@/lib/reminder-automation";
 import { expandTokens } from "@/lib/sms-render";
 import { keyDateHoursForDate, keyDateHasHours, normalizeKeyDates, type KeyDateHours } from "@/lib/key-dates";
 import { normalizeSmsTemplates, type SmsTemplate } from "@/lib/sms-template-core";
@@ -365,9 +365,10 @@ export interface BroadcastQueueRow {
 
 /**
  * Queued "Message patients" texts for this workspace: not canceled, not
- * opted out, and not leased to another device. A send day that already
- * passed is still due. A closed office day does not drop these. The phone
- * is read from the patient record at send time.
+ * opted out, and not leased to another device. Today and yesterday are
+ * still due, so a phone that was off overnight can catch up. Anything
+ * older has expired and is left out. A closed office day does not drop
+ * these. The phone is read from the patient record at send time.
  */
 export async function loadBroadcastQueue(
   admin: SupabaseClient,
@@ -433,6 +434,7 @@ export async function loadBroadcastQueue(
   const out: BroadcastQueueRow[] = [];
   for (const r of rows) {
     const b = Array.isArray(r.reminder_broadcasts) ? r.reminder_broadcasts[0] : r.reminder_broadcasts;
+    if (b?.target_date && !broadcastStillDue(b.target_date, todayIso)) continue;
     const time = r.appointment_id ? timeByAppt.get(r.appointment_id) : undefined;
     if (r.appointment_id && time === undefined) continue; // visit deleted
     if (
