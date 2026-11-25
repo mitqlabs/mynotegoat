@@ -659,7 +659,7 @@ export function MessagingSetupFlow({
         <ol className="grid gap-4">
           <li className="flex items-start gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">1</span>
-            <button className={primary} data-testid="messaging-test-now" onClick={runTest} type="button">
+            <button className={primary} data-testid="messaging-test-now" onClick={() => runTest()} type="button">
               {since && !check.ok ? "Waiting for this Device…" : "Test it now"}
             </button>
           </li>
