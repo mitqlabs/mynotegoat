@@ -30,11 +30,11 @@ export function CollapsibleSection({
   const card = variant === "card";
   return (
     <section
-      className={card ? "rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-soft)]/40" : ""}
+      className={card ? "w-full min-w-0 max-w-full overflow-x-clip rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-panel)]" : "w-full min-w-0 max-w-full"}
       data-open={open ? "true" : "false"}
       data-testid={testId}
     >
-      <div className={`flex items-center justify-between gap-2 ${card ? "px-4 py-3" : "py-1"}`}>
+      <div className={`flex min-w-0 flex-wrap items-center justify-between gap-2 ${card ? "px-4 py-3" : "py-1"}`}>
         <button
           aria-controls={`${testId}-body`}
           aria-expanded={open}
@@ -53,7 +53,7 @@ export function CollapsibleSection({
             {hint && card && <span className="block text-sm font-normal text-[var(--text-muted)]">{hint}</span>}
           </span>
         </button>
-        {actions}
+        {actions ? <div className="min-w-0 max-w-full">{actions}</div> : null}
       </div>
       {open && (
         <div className={card ? "space-y-5 border-t border-[var(--line-soft)] px-4 py-4" : "pt-1"} id={`${testId}-body`}>

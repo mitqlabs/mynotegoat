@@ -20,6 +20,7 @@ import { OfficeLocationsDoctorsSection } from "@/components/office-locations-doc
 import { PackageBuilderSettingsPanel } from "@/components/package-builder-settings-panel";
 import { TreatmentPlanSettingsSection } from "@/components/treatment-plan-settings-section";
 import { ReportTemplateSettingsPanel } from "@/components/report-template-settings-panel";
+import { ReminderSettingsPanel } from "@/components/reminder-settings-panel";
 import { SmsTemplateSettingsPanel } from "@/components/sms-template-settings-panel";
 import { PatientFormsSettingsPanel } from "@/components/patient-forms-settings-panel";
 import { TextRemindersSettingsPanel } from "@/components/text-reminders-settings-panel";
@@ -956,11 +957,11 @@ function CollapsibleSection({
 }: CollapsibleSectionProps) {
   if (hidden) return null;
   return (
-    <section className="panel-card w-full min-w-0 max-w-full p-4" id={id}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="panel-card w-full min-w-0 max-w-full overflow-x-clip p-4" id={id}>
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <button
           aria-expanded={isOpen}
-          className="group flex flex-1 items-start justify-between gap-3 text-left rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)]"
+          className="group flex min-w-0 flex-1 items-start justify-between gap-3 text-left rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-primary)]"
           onClick={onToggle}
           type="button"
         >
@@ -977,7 +978,7 @@ function CollapsibleSection({
             ⌄
           </span>
         </button>
-        {actions ? <div className="shrink-0">{actions}</div> : null}
+        {actions ? <div className="min-w-0 max-w-full [&_.btn]:max-w-full [&_.btn]:whitespace-normal">{actions}</div> : null}
       </div>
       {isOpen ? <div className="mt-3 w-full min-w-0 max-w-full">{children}</div> : null}
     </section>
@@ -3232,7 +3233,7 @@ export default function SettingsPage() {
   const defaultAppointmentTypeId = appointmentTypes.find((entry) => entry.isDefault)?.id ?? "";
 
   return (
-    <div className="space-y-5">
+    <div className="w-full min-w-0 max-w-full space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -4098,444 +4099,46 @@ export default function SettingsPage() {
             </button>
           </div>
         }
-        description="Configure Case Flow rules, To Do preferences, and case status display."
         hidden={!showSection("dashboard")}
         isOpen={sectionIsOpen("dashboard")}
         onToggle={() => toggleSection("dashboard")}
         title="Reminders"
       >
-        <div className="grid gap-4 xl:grid-cols-3">
-          <article className="rounded-xl border border-[var(--line-soft)] bg-white p-4">
-            <h4 className="text-lg font-semibold">To Do</h4>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              Controls default behavior for the To Do task list.
-            </p>
-            <div className="mt-3 space-y-3">
-              <label className="inline-flex items-center gap-2 text-sm font-semibold">
-                <input
-                  checked={dashboardWorkspaceSettings.myTasks.openOnly}
-                  onChange={(event) => setTasksOpenOnly(event.target.checked)}
-                  type="checkbox"
-                />
-                Default to Open tasks only
-              </label>
-            </div>
-          </article>
-
-          <article className="xl:col-span-2 rounded-xl border border-[var(--line-soft)] bg-white p-4">
-            <h4 className="text-lg font-semibold">Case Flow</h4>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              Configure when each category appears and clears in the Case Flow on Statistics.
-            </p>
-
-            <div className="mt-4 space-y-4">
-              <label className="inline-flex items-center gap-2 text-sm font-semibold">
-                <input
-                  checked={dashboardWorkspaceSettings.patientFollowUp.showOnDashboard}
-                  onChange={(event) => setFollowUpShowOnDashboard(event.target.checked)}
-                  type="checkbox"
-                />
-                Enable Case Flow
-              </label>
-
-              {/* X-Ray rules */}
-              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-4">
-                <div className="flex items-center gap-3">
-                  <input
-                    checked={dashboardWorkspaceSettings.patientFollowUp.includeXray}
-                    onChange={(event) => setFollowUpIncludeXray(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <p className="text-sm font-bold">X-Ray</p>
-                </div>
-                <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-1 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Appear</span>
-                    <label className="inline-flex items-center gap-2 text-sm font-medium">
-                      <input
-                        checked={dashboardWorkspaceSettings.patientFollowUp.xrayAppearAuto}
-                        onChange={(event) => setXrayAppearAuto(event.target.checked)}
-                        type="checkbox"
-                      />
-                      Auto (on case creation)
-                    </label>
-                  </div>
-                  <div className="grid gap-2 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared From Case Flow When:</span>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
-                      {([
-                        ["patientRefused", "Patient Refused"],
-                        ["completedPriorCare", "Completed Prior Care"],
-                        ["noXray", "No X-Ray"],
-                      ] as const).map(([val, label]) => (
-                        <label key={val} className="inline-flex items-center gap-1.5 text-sm">
-                          <input
-                            checked={dashboardWorkspaceSettings.patientFollowUp.xrayClearedBy.includes(val)}
-                            onChange={(event) => toggleXrayClearedBy(val, event.target.checked)}
-                            type="checkbox"
-                          />
-                          {label}
-                        </label>
-                      ))}
-                      {caseStatuses.map((status) => (
-                        <label key={`xray-clear-${status.name}`} className="inline-flex items-center gap-1.5 text-sm">
-                          <input
-                            checked={dashboardWorkspaceSettings.patientFollowUp.xrayClearStatuses.includes(status.name)}
-                            onChange={(event) => {
-                              const current = dashboardWorkspaceSettings.patientFollowUp.xrayClearStatuses;
-                              const next = event.target.checked
-                                ? [...current, status.name]
-                                : current.filter((n) => n !== status.name);
-                              setFollowUpXrayClearStatuses(next);
-                            }}
-                            type="checkbox"
-                          />
-                          {status.name}
-                        </label>
-                      ))}
-                    </div>
-                    <span className="text-[10px] text-[var(--text-muted)]">
-                      Patients matching any of these conditions won&apos;t show X-Ray reminders.
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* MRI rules */}
-              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-4">
-                <div className="flex items-center gap-3">
-                  <input
-                    checked={dashboardWorkspaceSettings.patientFollowUp.includeMriCt}
-                    onChange={(event) => setFollowUpIncludeMriCt(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <p className="text-sm font-bold">MRI / CT</p>
-                </div>
-                <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-1">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Appear</span>
-                    <label className="inline-flex items-center gap-2 text-sm font-medium">
-                      <input
-                        checked={dashboardWorkspaceSettings.patientFollowUp.mriAppearMode === "auto"}
-                        name="mri-appear-mode"
-                        onChange={() => setMriAppearMode("auto")}
-                        type="radio"
-                      />
-                      Auto (on case creation)
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <label className="inline-flex items-center gap-2 text-sm font-medium">
-                        <input
-                          checked={dashboardWorkspaceSettings.patientFollowUp.mriAppearMode === "days_from_initial"}
-                          name="mri-appear-mode"
-                          onChange={() => setMriAppearMode("days_from_initial")}
-                          type="radio"
-                        />
-                        After
-                      </label>
-                      <NumberInput
-                        className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                        disabled={dashboardWorkspaceSettings.patientFollowUp.mriAppearMode !== "days_from_initial"}
-                        min={1}
-                        onChange={(n) => setMriAppearDays(n)}
-                        fallback={1}
-                        value={dashboardWorkspaceSettings.patientFollowUp.mriAppearDays}
-                      />
-                      <span className="text-sm text-[var(--text-muted)]">days from initial</span>
-                    </div>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Appt Not Scheduled — grace period</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">Warn after</span>
-                      <NumberInput
-                        className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                        min={0}
-                        onChange={(n) => setMriNoScheduleWarningDays(n)}
-                        fallback={0}
-                        value={dashboardWorkspaceSettings.patientFollowUp.mriNoScheduleWarningDays}
-                      />
-                      <span className="text-sm text-[var(--text-muted)]">days from sent date</span>
-                    </div>
-                  </div>
-                  <div className="grid gap-2 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared From Case Flow When:</span>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
-                      {([
-                        ["patientRefused", "Patient Refused"],
-                        ["completedPriorCare", "Completed Prior Care"],
-                        ["noMri", "No MRI"],
-                      ] as const).map(([val, label]) => (
-                        <label key={val} className="inline-flex items-center gap-1.5 text-sm">
-                          <input
-                            checked={dashboardWorkspaceSettings.patientFollowUp.mriCtClearedBy.includes(val)}
-                            onChange={(event) => toggleMriCtClearedBy(val, event.target.checked)}
-                            type="checkbox"
-                          />
-                          {label}
-                        </label>
-                      ))}
-                      {caseStatuses.map((status) => (
-                        <label key={`mri-clear-${status.name}`} className="inline-flex items-center gap-1.5 text-sm">
-                          <input
-                            checked={dashboardWorkspaceSettings.patientFollowUp.mriCtClearStatuses.includes(status.name)}
-                            onChange={(event) => {
-                              const current = dashboardWorkspaceSettings.patientFollowUp.mriCtClearStatuses;
-                              const next = event.target.checked
-                                ? [...current, status.name]
-                                : current.filter((n) => n !== status.name);
-                              setFollowUpMriCtClearStatuses(next);
-                            }}
-                            type="checkbox"
-                          />
-                          {status.name}
-                        </label>
-                      ))}
-                    </div>
-                    <span className="text-[10px] text-[var(--text-muted)]">
-                      Patients matching any of these conditions won&apos;t show MRI / CT reminders.
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Specialist rules */}
-              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-4">
-                <div className="flex items-center gap-3">
-                  <input
-                    checked={dashboardWorkspaceSettings.patientFollowUp.includeSpecialist}
-                    onChange={(event) => setFollowUpIncludeSpecialist(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <p className="text-sm font-bold">Specialist</p>
-                </div>
-                <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <div className="grid gap-1">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Appear</span>
-                    <label className="inline-flex items-center gap-2 text-sm font-medium">
-                      <input
-                        checked={dashboardWorkspaceSettings.patientFollowUp.specialistAppearWhen === "auto"}
-                        name="specialist-appear-mode"
-                        onChange={() => setSpecialistAppearWhen("auto")}
-                        type="radio"
-                      />
-                      Auto (on case creation)
-                    </label>
-                    <label className="inline-flex items-center gap-2 text-sm font-medium">
-                      <input
-                        checked={dashboardWorkspaceSettings.patientFollowUp.specialistAppearWhen === "mri_sent"}
-                        name="specialist-appear-mode"
-                        onChange={() => setSpecialistAppearWhen("mri_sent")}
-                        type="radio"
-                      />
-                      After MRI Sent
-                    </label>
-                    <label className="inline-flex items-center gap-2 text-sm font-medium">
-                      <input
-                        checked={dashboardWorkspaceSettings.patientFollowUp.specialistAppearWhen === "mri_completed"}
-                        name="specialist-appear-mode"
-                        onChange={() => setSpecialistAppearWhen("mri_completed")}
-                        type="radio"
-                      />
-                      After MRI Completed
-                      <span className="text-xs font-normal text-[var(--text-muted)]">(recommended)</span>
-                    </label>
-                    <label className="inline-flex items-center gap-2 text-sm font-medium">
-                      <input
-                        checked={dashboardWorkspaceSettings.patientFollowUp.specialistAppearWhen === "mri_reviewed"}
-                        name="specialist-appear-mode"
-                        onChange={() => setSpecialistAppearWhen("mri_reviewed")}
-                        type="radio"
-                      />
-                      Once MRI Reviewed
-                    </label>
-                    <p className="text-[11px] text-[var(--text-muted)]">
-                      &quot;Needs Referral&quot; also re-fires once MRI is
-                      Completed if no specialist has been sent on or
-                      after the MRI Completed date — so a pre-MRI
-                      referral (e.g., hand specialist for trauma)
-                      doesn&apos;t hide the post-MRI need (e.g., Pain
-                      Management).
-                    </p>
-                  </div>
-                  <div className="grid gap-1 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Appt Not Scheduled — grace period</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">Warn after</span>
-                      <NumberInput
-                        className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                        min={0}
-                        onChange={(n) => setSpecialistNoScheduleWarningDays(n)}
-                        fallback={0}
-                        value={dashboardWorkspaceSettings.patientFollowUp.specialistNoScheduleWarningDays}
-                      />
-                      <span className="text-sm text-[var(--text-muted)]">days from sent date</span>
-                    </div>
-                  </div>
-                  <div className="grid gap-2 sm:col-span-2">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared From Case Flow When:</span>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
-                      {([
-                        ["patientRefused", "Patient Refused"],
-                        ["completedPriorCare", "Completed Prior Care"],
-                        ["report", "Received"],
-                        ["noPm", "No Spcl"],
-                      ] as const).map(([val, label]) => (
-                        <label key={val} className="inline-flex items-center gap-1.5 text-sm">
-                          <input
-                            checked={dashboardWorkspaceSettings.patientFollowUp.specialistClearedBy.includes(val)}
-                            onChange={(event) => toggleSpecialistClearedBy(val, event.target.checked)}
-                            type="checkbox"
-                          />
-                          {label}
-                        </label>
-                      ))}
-                      {caseStatuses.map((status) => (
-                        <label key={`spec-clear-${status.name}`} className="inline-flex items-center gap-1.5 text-sm">
-                          <input
-                            checked={dashboardWorkspaceSettings.patientFollowUp.specialistClearStatuses.includes(status.name)}
-                            onChange={(event) => {
-                              const current = dashboardWorkspaceSettings.patientFollowUp.specialistClearStatuses;
-                              const next = event.target.checked
-                                ? [...current, status.name]
-                                : current.filter((n) => n !== status.name);
-                              setFollowUpSpecialistClearStatuses(next);
-                            }}
-                            type="checkbox"
-                          />
-                          {status.name}
-                        </label>
-                      ))}
-                    </div>
-                    <span className="text-[10px] text-[var(--text-muted)]">
-                      Patients matching any of these conditions won&apos;t show Specialist reminders.
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Lien rules */}
-              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-4">
-                <div className="flex items-center gap-3">
-                  <input
-                    checked={dashboardWorkspaceSettings.patientFollowUp.includeLienLop}
-                    onChange={(event) => setFollowUpIncludeLienLop(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <p className="text-sm font-bold">{lienLabel}</p>
-                </div>
-                <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <label className="grid gap-1">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-muted)]">Cleared when status is</span>
-                    <select
-                      className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      onChange={(event) => {
-                        const selected = event.target.value;
-                        if (selected) {
-                          setFollowUpLienLopClearStatuses([selected]);
-                        }
-                      }}
-                      value={dashboardWorkspaceSettings.patientFollowUp.lienLopClearStatuses[0] ?? ""}
-                    >
-                      {followUpLienClearStatusOptions.map((statusName) => (
-                        <option key={statusName} value={statusName}>
-                          {statusName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              </div>
-
-              {/* Additional alert rules */}
-              <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-4">
-                <p className="mb-3 text-xs font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">
-                  Additional Alert Rules
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="flex items-center gap-2">
-                    <label className="inline-flex items-center gap-2 text-sm font-medium">
-                      <input
-                        checked={priorityRules.includeNoUpdate}
-                        onChange={(event) => setIncludeNoUpdate(event.target.checked)}
-                        type="checkbox"
-                      />
-                      No Update alert after
-                    </label>
-                    <NumberInput
-                      className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      disabled={!priorityRules.includeNoUpdate}
-                      min={1}
-                      onChange={(n) => setNoUpdateDaysThreshold(n)}
-                      fallback={1}
-                      value={priorityRules.noUpdateDaysThreshold}
-                    />
-                    <span className="text-sm text-[var(--text-muted)]">days</span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <label className="inline-flex items-center gap-2 text-sm font-medium">
-                      <input
-                        checked={priorityRules.includeRbStatusCheck}
-                        onChange={(event) => setIncludeRbStatusCheck(event.target.checked)}
-                        type="checkbox"
-                      />
-                      Payment Status after
-                    </label>
-                    <NumberInput
-                      className="w-20 rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2 text-sm"
-                      disabled={!priorityRules.includeRbStatusCheck}
-                      min={1}
-                      onChange={(n) => setRbStatusCheckDaysThreshold(n)}
-                      fallback={1}
-                      value={priorityRules.rbStatusCheckDaysThreshold}
-                    />
-                    <span className="text-sm text-[var(--text-muted)]">days from report submitted</span>
-                  </div>
-                </div>
-                <p className="mt-2 text-xs text-[var(--text-muted)]">
-                  MRI Due and No Update alerts pause after a case is Discharged or once a report is submitted. Paid/Dropped cases are automatically excluded from Case Flow.
-                </p>
-              </div>
-
-              {/* Thresholds */}
-              <div className="grid gap-4 sm:grid-cols-3">
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Stale after (days)</span>
-                  <NumberInput
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    min={1}
-                    onChange={(n) => setFollowUpStaleDaysThreshold(n)}
-                    fallback={1}
-                    value={dashboardWorkspaceSettings.patientFollowUp.staleDaysThreshold}
-                  />
-                </label>
-
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Max Case Flow rows</span>
-                  <NumberInput
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    min={1}
-                    onChange={(n) => setFollowUpMaxItems(n)}
-                    fallback={1}
-                    value={dashboardWorkspaceSettings.patientFollowUp.maxItems}
-                  />
-                </label>
-
-                <label className="grid gap-1">
-                  <span className="text-sm font-semibold text-[var(--text-muted)]">Max alert items</span>
-                  <NumberInput
-                    className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                    min={1}
-                    onChange={(n) => setMaxItems(n)}
-                    fallback={1}
-                    value={priorityRules.maxItems}
-                  />
-                </label>
-              </div>
-            </div>
-          </article>
-        </div>
+        <ReminderSettingsPanel
+          caseFlowEnabled={dashboardWorkspaceSettings.patientFollowUp.showOnDashboard}
+          caseStatusNames={caseStatuses.map((status) => status.name)}
+          followUp={dashboardWorkspaceSettings.patientFollowUp}
+          lienClearOptions={followUpLienClearStatusOptions}
+          lienLabel={lienLabel}
+          onCaseFlowEnabledChange={setFollowUpShowOnDashboard}
+          onIncludeLien={setFollowUpIncludeLienLop}
+          onIncludeMri={setFollowUpIncludeMriCt}
+          onIncludeNoUpdate={setIncludeNoUpdate}
+          onIncludePaymentStatus={setIncludeRbStatusCheck}
+          onIncludeSpecialist={setFollowUpIncludeSpecialist}
+          onIncludeXray={setFollowUpIncludeXray}
+          onLienClearStatuses={setFollowUpLienLopClearStatuses}
+          onMaxAlertItems={setMaxItems}
+          onMaxCaseFlowRows={setFollowUpMaxItems}
+          onMriAppearDays={setMriAppearDays}
+          onMriAppearMode={setMriAppearMode}
+          onMriClearStatuses={setFollowUpMriCtClearStatuses}
+          onMriNoScheduleWarningDays={setMriNoScheduleWarningDays}
+          onNoUpdateDays={setNoUpdateDaysThreshold}
+          onOpenOnlyChange={setTasksOpenOnly}
+          onPaymentStatusDays={setRbStatusCheckDaysThreshold}
+          onSpecialistAppearWhen={setSpecialistAppearWhen}
+          onSpecialistClearStatuses={setFollowUpSpecialistClearStatuses}
+          onSpecialistNoScheduleWarningDays={setSpecialistNoScheduleWarningDays}
+          onStaleDays={setFollowUpStaleDaysThreshold}
+          onToggleMriClearedBy={toggleMriCtClearedBy}
+          onToggleSpecialistClearedBy={toggleSpecialistClearedBy}
+          onToggleXrayClearedBy={toggleXrayClearedBy}
+          onXrayAppearAuto={setXrayAppearAuto}
+          onXrayClearStatuses={setFollowUpXrayClearStatuses}
+          openOnly={dashboardWorkspaceSettings.myTasks.openOnly}
+          priorityRules={priorityRules}
+        />
       </CollapsibleSection>
 
       {/* Quick Stats settings panel removed — the patient-page Quick

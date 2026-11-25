@@ -65,7 +65,7 @@ export function SmsTemplatesSection({
 
   return (
     <CollapsibleSection onToggle={onToggle} open={open} testId="section-templates" title="SMS Templates">
-      <div className="grid gap-3" data-testid="sms-templates">
+      <div className="grid w-full min-w-0 max-w-full gap-3" data-testid="sms-templates">
         <button className="w-full rounded-xl bg-[var(--brand-primary)] px-4 py-4 text-lg font-bold text-[var(--on-brand)]" data-testid="template-add" onClick={add} type="button">
           New template
         </button>
@@ -74,11 +74,11 @@ export function SmsTemplatesSection({
           const editing = openId === template.id;
           const used = usedBy(template.id);
           return (
-            <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] text-[var(--text-main)]" data-testid="template-card" key={template.id}>
-              <button className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left" onClick={() => setOpenId(editing ? null : template.id)} type="button">
-                <span className="min-w-0">
-                  <span className="block text-lg font-bold">{template.name}</span>
-                  {!editing ? <span className="block truncate text-[var(--text-muted)]">{template.body}</span> : null}
+            <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] text-[var(--text-main)]" data-testid="template-card" key={template.id}>
+              <button className="flex w-full min-w-0 items-center justify-between gap-3 px-4 py-4 text-left" onClick={() => setOpenId(editing ? null : template.id)} type="button">
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words text-lg font-bold">{template.name}</span>
+                  {!editing ? <span className="block truncate text-base text-[var(--text-muted)]">{template.body}</span> : null}
                 </span>
                 <span className="text-[var(--text-muted)]">{editing ? "▾" : "▸"}</span>
               </button>
