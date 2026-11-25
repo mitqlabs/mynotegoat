@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { macSetupSteps, phoneStepsForClocks, readSetupPlatform } from "../../src/lib/iphone-setup";
+import { macSetupSteps, phoneStepsForClocks, pickedIphoneAllowed, readSetupPlatform } from "../../src/lib/iphone-setup";
 import { defaultSmsReminderSettings, normalizeSmsReminderSettings } from "../../src/lib/sms-reminders";
 import { automationClocks, clockWords, dueScope, legacyRules, ruleWhen, withRules } from "../../src/lib/text-rules";
 
@@ -83,6 +83,22 @@ assert.equal(steps.some((step) => step.includes("8:30")), false);
 assert.equal(readSetupPlatform("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)", 0), "iphone");
 assert.equal(readSetupPlatform("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", 0), "mac");
 assert.equal(readSetupPlatform("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", 5), "iphone", "iPadOS reports as a Mac with touch");
+
+const crios = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.73 Mobile/15E148 Safari/604.1";
+const criosDesktop = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.73 Safari/604.1";
+const desktopSite = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
+const androidFold = "Mozilla/5.0 (Linux; Android 14; Pixel Fold) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
+const windows = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+assert.equal(pickedIphoneAllowed(crios, 5), true, "Chrome on iOS");
+assert.equal(pickedIphoneAllowed(criosDesktop, 0), true, "Chrome iOS desktop site still says CriOS");
+assert.equal(readSetupPlatform(criosDesktop, 0), "mac", "old check treats that desktop site as a Mac");
+assert.equal(pickedIphoneAllowed(desktopSite, 5), true, "Request Desktop Website with touch");
+assert.equal(pickedIphoneAllowed(desktopSite, 0), false, "a desktop Mac stays blocked");
+assert.equal(readSetupPlatform(androidFold, 5), "other");
+assert.equal(pickedIphoneAllowed(androidFold, 5), true, "a touch Device the office called an iPhone");
+assert.equal(pickedIphoneAllowed(androidFold, 0), false);
+assert.equal(pickedIphoneAllowed(windows, 0), false, "a Windows desktop stays blocked");
+assert.equal(pickedIphoneAllowed(windows, 5), true, "touch still counts when they picked iPhone");
 const mac = macSetupSteps(clocks);
 const macLines = mac.flatMap((step) => step.lines ?? [step.text]);
 assert.equal(macLines[0], "Click **Add to this Device**.");

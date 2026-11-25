@@ -23,6 +23,18 @@ export function readSetupPlatform(ua: string, touchPoints = 0): SetupPlatform {
   return "other";
 }
 
+/**
+ * The office already picked iPhone.
+ * Allow an iOS browser in any form, and any touch Device.
+ * Block a desktop Mac (no touch, or a single pointer) and a Windows desktop.
+ */
+export function pickedIphoneAllowed(ua: string, touchPoints = 0): boolean {
+  if (/iPhone|iPad|iPod|CriOS|FxiOS|EdgiOS|OPiOS|like Mac OS X|CPU (?:iPhone )?OS/i.test(ua)) return true;
+  if (/Macintosh|Mac OS X/i.test(ua) && touchPoints <= 1) return false;
+  if (/Windows NT|Win64/i.test(ua) && touchPoints <= 0) return false;
+  return touchPoints > 0;
+}
+
 /** Exact words the office follows. **these** are the words on the device screen. */
 export function iphoneSetupSteps(sendHour: number): SetupStep[] {
   const [atSend, atHalf, atNext] = catchUpClockLabels(sendHour);
