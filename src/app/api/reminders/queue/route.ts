@@ -149,11 +149,10 @@ export async function GET(request: NextRequest) {
   groups = openGroups;
   reminderRun = reminderRun && groups.length > 0;
 
-  // Saved texts pick their own hour. Until the office saves that list, the
-  // old send-hour path above is unchanged. A 9 AM birthday does not ride
-  // the 8 AM run. Open days follow office hours and Key Dates.
-  // A named shortcut passes rule= so only that rule's texts go out.
-  // No rule= keeps the old NoteGoat shortcut, which still sends every due rule.
+  // A named shortcut passes rule= and waits for that rule's hour.
+  // The generic NoteGoat shortcut has no rule=. One daily run sends every
+  // saved text once the earliest hour has passed, then loops until the
+  // queue is empty. Open days follow office hours and Key Dates.
   const ruleId = (params.get("rule") ?? "").trim().slice(0, 40);
   const picked = ruleId
     ? pickRuleQueue({
@@ -174,6 +173,7 @@ export async function GET(request: NextRequest) {
           timeZone: settings.timeZone,
           officeHours: config.officeHours,
           closedIsoDates: config.closedIsoDates,
+          allDay: Boolean(shortcut && !ruleId),
         })
       : null;
   const templateBody = picked?.templateBody || config.templateBody;

@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { shortcutWithToken } from "@/lib/shortcut-file";
-import { buildNamedShortcut } from "@/lib/shortcut-plist";
 import { openShortcutToken, saveShortcutToken } from "@/lib/reminder-server";
-import { isDeviceToken, openDeviceToken, sealDeviceToken } from "@/lib/shortcut-ticket";
+import { isDeviceToken, sealDeviceToken } from "@/lib/shortcut-ticket";
+import {
+  buildShortcutLinks,
+  genericShortcutLinks,
+  icloudShortcutUrl,
+  isSignedShortcut,
+  shortcutFileHeaders,
+  shortcutForTicket,
+  UNSIGNED_SHORTCUT_ERROR,
+} from "@/lib/shortcut-import";
 import { DEMO_NOT_SENT, isDemoWorkspaceId } from "@/lib/demo-office";
 
 export const dynamic = "force-dynamic";
@@ -76,43 +83,54 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Bad device code." }, { status: 400 });
   }
 
+  if (!ruleId) {
+    const links = genericShortcutLinks(request.nextUrl.origin, process.env.NOTEGOAT_SHORTCUT_ICLOUD_URL);
+    if (!links.importUrl) {
+      return NextResponse.json({ error: links.error || UNSIGNED_SHORTCUT_ERROR, fileUrl: links.fileUrl }, { status: 422 });
+    }
+    return NextResponse.json({ importUrl: links.importUrl, fileUrl: links.fileUrl });
+  }
+
   const ticket = sealDeviceToken(token, keys.service);
-  const fileUrl = ruleId
-    ? `${request.nextUrl.origin}/api/reminders/shortcut?t=${encodeURIComponent(ticket)}&rule=${encodeURIComponent(ruleId)}&name=${encodeURIComponent(name)}`
-    : `${request.nextUrl.origin}/api/reminders/shortcut?t=${encodeURIComponent(ticket)}`;
-  const importUrl = `shortcuts://import-shortcut?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent(ruleId ? name : "NoteGoat")}`;
-  return NextResponse.json({ importUrl, fileUrl });
+  const shown = ruleId ? name : "NoteGoat";
+  const icloudUrl = process.env.NOTEGOAT_SHORTCUT_ICLOUD_URL;
+  let signed = false;
+  if (!icloudShortcutUrl(icloudUrl)) {
+    const file = shortcutForTicket({
+      ticket,
+      secret: keys.service,
+      ruleId,
+      name: shown,
+      origin: request.nextUrl.origin,
+    });
+    if (!file.ok) return NextResponse.json({ error: file.error }, { status: file.status });
+    signed = isSignedShortcut(file.body);
+  }
+  const links = buildShortcutLinks({
+    origin: request.nextUrl.origin,
+    ticket,
+    name: shown,
+    signed,
+    icloudUrl,
+    ruleId,
+  });
+  if (!links.importUrl) {
+    return NextResponse.json({ error: links.error || UNSIGNED_SHORTCUT_ERROR, fileUrl: links.fileUrl }, { status: 422 });
+  }
+  return NextResponse.json({ importUrl: links.importUrl, fileUrl: links.fileUrl });
 }
 
-/** The Shortcuts app fetches this. The link lasts 24 hours. */
+/** The Shortcuts app fetches this. No login. The link lasts 24 hours. */
 export async function GET(request: NextRequest) {
   const keys = serverKeys();
   if (!keys) return NextResponse.json({ error: "Server not configured." }, { status: 500 });
-  const ticket = request.nextUrl.searchParams.get("t") ?? "";
-  const token = openDeviceToken(ticket, keys.service);
-  if (!token) return NextResponse.json({ error: "This link has expired. Use Add to this Device again." }, { status: 404 });
-  const ruleId = ruleIdOf(request.nextUrl.searchParams.get("rule"));
-  const name = shortcutName(request.nextUrl.searchParams.get("name"));
-  try {
-    if (ruleId) {
-      const xml = buildNamedShortcut({ token, name, ruleId, origin: request.nextUrl.origin });
-      return new NextResponse(xml, {
-        headers: {
-          "Content-Type": "application/octet-stream",
-          "Cache-Control": "no-store",
-          "Content-Disposition": `inline; filename="${name.replace(/[^\w –-]+/g, "") || "NoteGoat"}.shortcut"`,
-        },
-      });
-    }
-    const file = shortcutWithToken(token);
-    return new NextResponse(new Uint8Array(file), {
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Cache-Control": "no-store",
-        "Content-Disposition": "inline; filename=\"NoteGoat.shortcut\"",
-      },
-    });
-  } catch {
-    return NextResponse.json({ error: "Shortcut file is missing." }, { status: 500 });
-  }
+  const file = shortcutForTicket({
+    ticket: request.nextUrl.searchParams.get("t") ?? "",
+    secret: keys.service,
+    ruleId: ruleIdOf(request.nextUrl.searchParams.get("rule")),
+    name: shortcutName(request.nextUrl.searchParams.get("name")),
+    origin: request.nextUrl.origin,
+  });
+  if (!file.ok) return NextResponse.json({ error: file.error }, { status: file.status });
+  return new NextResponse(new Uint8Array(file.body), { headers: shortcutFileHeaders(file.filename) });
 }

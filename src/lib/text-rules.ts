@@ -113,10 +113,17 @@ export function dueScope(input: {
   timeZone: string;
   officeHours: OfficeHoursDay[];
   closedIsoDates: Set<string>;
+  /** One morning run. After the earliest saved hour, every saved text is due. */
+  allDay?: boolean;
 }): DueScope {
   const local = localNow(input.now, input.timeZone);
-  const due = (hour: number) => local.hour >= hour;
-  const on = input.rules.filter((rule) => rule.on && due(rule.hour));
+  const enabled = input.rules.filter((rule) => rule.on);
+  const earliest = enabled.reduce((min, rule) => Math.min(min, rule.hour), 24);
+  const on = input.allDay
+    ? enabled.length > 0 && local.hour >= earliest
+      ? enabled
+      : []
+    : enabled.filter((rule) => local.hour >= rule.hour);
   const has = (kind: TextWhenKind) => on.some((rule) => rule.kind === kind);
   const officeOpen =
     !input.closedIsoDates.has(local.iso) &&

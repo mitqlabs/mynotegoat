@@ -35,21 +35,22 @@ export interface CheckInDevice {
 
 const press = (platform: MessagingPlatform) => (platform === "mac" ? "Click" : "Tap");
 
-/** The steps, in order. Redo adds the start-over screen after the Device choice. */
+/** The steps, in order. The button adds the shortcut. One automation is set by hand. Then test. */
 export function buildMessagingSteps(input: { redo: boolean; ruleIds: string[] }): MessagingStep[] {
   const steps: MessagingStep[] = [{ id: "device", kind: "device" }];
   if (input.redo) steps.push({ id: "start-over", kind: "start-over" });
   steps.push(
-    { id: "add-device", kind: "add-device" },
-    { id: "shortcuts-app", kind: "shortcuts-app" },
     { id: "pick", kind: "pick" },
+    { id: "add-device", kind: "add-device" },
+    { id: "automation", kind: "automation" },
+    { id: "test", kind: "test" },
   );
-  for (const ruleId of input.ruleIds) {
-    steps.push({ id: `shortcut:${ruleId}`, kind: "shortcut", ruleId });
-    steps.push({ id: `automation:${ruleId}`, kind: "automation", ruleId });
-  }
-  steps.push({ id: "test", kind: "test" });
   return steps;
+}
+
+/** Shown once, above the only hand-made automation. */
+export function automationOnceLine(): string {
+  return "Apple requires this one-time setup by hand. After that, texts run automatically.";
 }
 
 /** Picked rules, earliest time first. Unknown ids are dropped. */
@@ -141,10 +142,10 @@ export function shortcutsAppLines(platform: MessagingPlatform): string[] {
   ];
 }
 
-/** What the Device shows after Add to this Device opens the shortcut. */
+/** What the Device shows after Get the NoteGoat shortcut opens Shortcuts. */
 export function shortcutFollowLines(platform: MessagingPlatform): string[] {
   const word = press(platform);
-  const lines = [`${word} **Add Shortcut**.`];
+  const lines = [`${word} **Add Shortcut**. Paste the code if Shortcuts asks.`];
   if (platform === "mac") lines.push("If it does not open, click **Download shortcut**.");
   return lines;
 }
@@ -159,17 +160,11 @@ export function automationGuideLines(platform: MessagingPlatform, name: string, 
   const word = press(platform);
   const day = platform === "mac" ? "Daily" : "Every Day";
   return [
-    "Open **Shortcuts**.",
-    `${word} **Automation**.`,
-    `${word} **+**.`,
-    `${word} **Time of Day**.`,
-    `Set **${time}**.`,
-    `${word} **${day}**.`,
-    `${word} **Run Immediately**.`,
-    "Turn **Notify When Run** off.",
-    `${word} **Next**.`,
-    `${word} **"${name}"**.`,
-    `${word} **Done**.`,
+    `Open **Shortcuts**. ${word} **Automation**.`,
+    `${word} **+**. ${word} **Time of Day**.`,
+    `Set **${time}**. ${word} **${day}**.`,
+    `${word} **Run Immediately**. Turn **Notify When Run** off.`,
+    `${word} **Next**. ${word} **"${name}"**. ${word} **Done**.`,
   ];
 }
 

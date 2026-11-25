@@ -10,10 +10,11 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { generateDeviceToken, hashDeviceToken } from "@/lib/reminder-automation";
-import { pickedIphoneAllowed, readSetupPlatform } from "@/lib/iphone-setup";
+import { pickedIphoneAllowed, readSetupPlatform, stopCatcherLines } from "@/lib/iphone-setup";
 import {
   automationFallbackLines,
   automationGuideLines,
+  automationOnceLine,
   buildMessagingSteps,
   deviceCheckIn,
   messagingSetupComplete,
@@ -42,8 +43,8 @@ const WHEN: { kind: TextWhenKind; label: string }[] = [
 
 const HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 
-const primary = "w-full rounded-xl bg-[var(--brand-primary)] px-4 py-4 text-lg font-bold text-[var(--on-brand)] disabled:opacity-60";
-const choice = "w-full rounded-xl border-2 border-[var(--brand-primary)] bg-[var(--bg-panel)] px-4 py-8 text-2xl font-bold text-[var(--text-main)]";
+const primary = "inline-flex items-center rounded-lg bg-[var(--brand-primary)] px-4 py-2 text-base font-semibold text-[var(--on-brand)] disabled:opacity-60";
+const choice = "inline-flex items-center rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-2 text-base font-semibold text-[var(--text-main)]";
 
 export interface MessagingDevice {
   id: string;
@@ -98,7 +99,7 @@ function Lines({ lines, start = 1 }: { lines: string[]; start?: number }) {
     <>
       {lines.map((line, index) => (
         <li className="flex items-start gap-3" data-testid="messaging-line" key={`${index}-${line}`}>
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">
             {start + index}
           </span>
           <p className="pt-1 text-lg font-semibold leading-relaxed text-[var(--text-main)]">
@@ -134,7 +135,7 @@ export function MessagingSetupFlow({
   onClose: () => void;
   initialRedo?: boolean;
   /** Screenshot harness. No network, no saved progress. */
-  forced?: { platform: MessagingPlatform; stepId: string; redo?: boolean; seen?: boolean; ruleIds?: string[] };
+  forced?: { platform: MessagingPlatform; stepId: string; redo?: boolean; seen?: boolean; ruleIds?: string[]; deviceCode?: string };
 }) {
   const saved = settings.messagingSetup;
   const rules = settings.rules ?? [];
@@ -153,6 +154,8 @@ export function MessagingSetupFlow({
   const [shortcutUrl, setShortcutUrl] = useState("");
   const [iphoneBypass, setIphoneBypass] = useState(false);
   const [showDeletes, setShowDeletes] = useState(false);
+  const [deviceCode, setDeviceCode] = useState(forced?.deviceCode ?? "");
+  const [copied, setCopied] = useState(false);
   const [since, setSince] = useState(forced ? "" : saved.testSince);
   const [live, setLive] = useState<CheckInDevice[] | null>(null);
 
@@ -333,6 +336,8 @@ export function MessagingSetupFlow({
         setNote(saved.error?.message ? `Couldn't add the Device. ${saved.error.message}` : "Couldn't add the Device. Try again.");
         return;
       }
+      setDeviceCode(token);
+      setCopied(false);
       onChanged?.();
       const response = await fetch("/api/reminders/shortcut", {
         method: "POST",
@@ -340,6 +345,7 @@ export function MessagingSetupFlow({
         body: JSON.stringify({ token }),
       });
       const body = (await response.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
+      if (body.fileUrl) setFileUrl(body.fileUrl);
       if (!response.ok || !body.importUrl) {
         setNote(body.error || `Couldn't open the shortcut (${response.status}). Try again.`);
         return;
@@ -404,6 +410,7 @@ export function MessagingSetupFlow({
         response = await send({ deviceId: device.id, ruleId: rule.id, name, token });
       }
       const payload = (await response.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
+      if (payload.fileUrl) setFileUrl(payload.fileUrl);
       if (!response.ok || !payload.importUrl) {
         setNote(payload.error || `Couldn't open the shortcut (${response.status}). Try again.`);
         return;
@@ -455,32 +462,36 @@ export function MessagingSetupFlow({
     body = (
       <div className="grid gap-4" data-testid="messaging-device">
         <h2 className="text-2xl font-bold text-[var(--text-main)]">Are you using an iPhone or a Mac?</h2>
-        <button className={choice} data-testid="choose-iphone" onClick={() => choose("iphone")} type="button">
-          iPhone
-        </button>
-        <button className={choice} data-testid="choose-mac" onClick={() => choose("mac")} type="button">
-          Mac
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button className={choice} data-testid="choose-iphone" onClick={() => choose("iphone")} type="button">
+            iPhone
+          </button>
+          <button className={choice} data-testid="choose-mac" onClick={() => choose("mac")} type="button">
+            Mac
+          </button>
+        </div>
       </div>
     );
   } else if (step.kind === "start-over" && (platform === "iphone" || platform === "mac")) {
     body = (
       <div className="grid gap-4" data-testid="messaging-start-over">
         <h2 className="text-2xl font-bold text-[var(--text-main)]">Do you have existing shortcuts for reminders?</h2>
-        <button className={choice} data-testid="start-over-yes" onClick={() => setShowDeletes(true)} type="button">
-          Yes
-        </button>
-        <button
-          className={choice}
-          data-testid="start-over-no"
-          onClick={() => {
-            setShowDeletes(false);
-            go(1);
-          }}
-          type="button"
-        >
-          No
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button className={choice} data-testid="start-over-yes" onClick={() => setShowDeletes(true)} type="button">
+            Yes
+          </button>
+          <button
+            className={choice}
+            data-testid="start-over-no"
+            onClick={() => {
+              setShowDeletes(false);
+              go(1);
+            }}
+            type="button"
+          >
+            No
+          </button>
+        </div>
         {showDeletes ? (
           <ol className="grid gap-4" data-testid="start-over-steps">
             <Lines lines={startOverLines(platform)} />
@@ -491,16 +502,35 @@ export function MessagingSetupFlow({
   } else if (step.kind === "add-device" && (platform === "iphone" || platform === "mac")) {
     body = (
       <div className="grid gap-4" data-testid="messaging-add-device">
-        <h2 className="text-2xl font-bold text-[var(--text-main)]">Add this Device</h2>
+        <h2 className="text-2xl font-bold text-[var(--text-main)]">Add the shortcut</h2>
+        <p className="text-lg font-semibold text-[var(--text-main)]">This button adds the NoteGoat shortcut for you. The only part you do by hand is one automation.</p>
+        {platform === "iphone" ? <p className="text-lg font-semibold text-[var(--text-main)]">If you do not see Shortcuts, get it from the App Store.</p> : null}
         <ol className="grid gap-4">
           <li className="flex items-start gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">1</span>
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">1</span>
             <button className={primary} data-testid="add-to-iphone" disabled={busy} onClick={() => void addDevice()} type="button">
-              {busy ? "Opening…" : "Add to this Device"}
+              {busy ? "Opening…" : "Add the shortcut"}
             </button>
           </li>
           <Lines lines={shortcutFollowLines(platform)} start={2} />
         </ol>
+        {deviceCode ? (
+          <div className="flex flex-wrap items-center gap-3" data-testid="device-code-row">
+            <code className="select-all break-all font-mono text-sm text-[var(--text-main)]" data-testid="device-code">
+              {deviceCode}
+            </code>
+            <button
+              className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-1.5 text-sm font-semibold text-[var(--text-main)]"
+              data-testid="copy-device-code"
+              onClick={() => {
+                void navigator.clipboard?.writeText(deviceCode).then(() => setCopied(true));
+              }}
+              type="button"
+            >
+              {copied ? "Copied" : "Copy code"}
+            </button>
+          </div>
+        ) : null}
         {platform === "iphone" && shortcutUrl ? (
           <a className={`${primary} block text-center`} data-testid="open-in-shortcuts" href={shortcutUrl}>
             Open in Shortcuts
@@ -613,14 +643,15 @@ export function MessagingSetupFlow({
   } else if ((step.kind === "shortcut" || step.kind === "automation") && (platform === "iphone" || platform === "mac")) {
     const rule = rules.find((item) => item.id === step.ruleId);
     const name = rule ? rule.shortcutName || shortcutName(rule) : "NoteGoat";
-    const time = rule ? clockWords(rule.hour) : "";
+    const hours = (step.ruleId ? rules.filter((item) => item.id === step.ruleId) : rules.filter((item) => picked.includes(item.id))).map((item) => item.hour);
+    const time = clockWords(hours.length ? Math.min(...hours) : 8);
     body =
       step.kind === "shortcut" ? (
         <div className="grid gap-4" data-testid="messaging-shortcut">
           <h2 className="text-2xl font-bold text-[var(--text-main)]">{name}</h2>
           <ol className="grid gap-4">
             <li className="flex items-start gap-3">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">1</span>
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">1</span>
               <button className={primary} data-testid="add-shortcut-device" disabled={busy || !rule} onClick={() => rule && void addRuleShortcut(rule)} type="button">
                 {busy ? "Opening…" : "Add to this Device"}
               </button>
@@ -639,17 +670,41 @@ export function MessagingSetupFlow({
           ) : null}
         </div>
       ) : (
-        <div className="grid gap-4" data-testid="messaging-automation">
-          <h2 className="text-2xl font-bold text-[var(--text-main)]">{name}</h2>
-          <ol className="grid gap-4">
-            <Lines lines={automationGuideLines(platform, name, time)} />
-          </ol>
-          <details data-testid="automation-fallback">
-            <summary className="cursor-pointer text-lg font-bold text-[var(--brand-primary)]">Don't see Automation?</summary>
-            <ol className="mt-4 grid gap-4">
-              <Lines lines={automationFallbackLines(platform, name, time)} />
+        <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1.4fr)_16rem]" data-testid="messaging-after-shortcut">
+          <div className="grid gap-4" data-testid="messaging-automation">
+            <p className="text-lg font-semibold text-[var(--text-main)]" data-testid="automation-once">
+              {automationOnceLine()}
+            </p>
+            <h2 className="text-2xl font-bold text-[var(--text-main)]">One daily automation</h2>
+            <ol className="grid gap-4">
+              <Lines lines={automationGuideLines(platform, "NoteGoat", time || "8:00 AM")} />
             </ol>
-          </details>
+            <div className="grid gap-3" data-testid="section-stop">
+              <h3 className="text-lg font-bold text-[var(--text-main)]">Optional: auto-handle STOP replies</h3>
+              <ol className="grid gap-3">
+                <Lines lines={stopCatcherLines(platform)} />
+              </ol>
+            </div>
+            <details data-testid="automation-fallback">
+              <summary className="cursor-pointer text-lg font-bold text-[var(--brand-primary)]">Don't see Automation?</summary>
+              <ol className="mt-4 grid gap-4">
+                <Lines lines={automationFallbackLines(platform, "NoteGoat", time || "8:00 AM")} />
+              </ol>
+            </details>
+          </div>
+          <div className="grid content-start gap-3">
+            <button className={primary} data-testid="messaging-test-now" onClick={() => runTest()} type="button">
+              {since && !check.ok ? "Waiting for this Device…" : "Test it"}
+            </button>
+            {check.ok ? (
+              <div data-testid="messaging-checked-in">
+                <p className="text-lg font-bold text-[var(--text-main)]">This Device checked in.</p>
+                {check.summary ? <p className="font-semibold text-[var(--text-main)]">{lastRunText(check.summary, null)}</p> : null}
+              </div>
+            ) : (
+              <p className="font-semibold text-[var(--text-main)]">Runs NoteGoat at {time || "8:00 AM"}.</p>
+            )}
+          </div>
         </div>
       );
   } else if (step.kind === "test" && (platform === "iphone" || platform === "mac")) {
@@ -658,7 +713,7 @@ export function MessagingSetupFlow({
         <h2 className="text-2xl font-bold text-[var(--text-main)]">Test it now</h2>
         <ol className="grid gap-4">
           <li className="flex items-start gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">1</span>
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">1</span>
             <button className={primary} data-testid="messaging-test-now" onClick={() => runTest()} type="button">
               {since && !check.ok ? "Waiting for this Device…" : "Test it now"}
             </button>
@@ -681,7 +736,7 @@ export function MessagingSetupFlow({
     (step.kind === "test" && !check.ok);
 
   return (
-    <div className="grid gap-6 text-[var(--text-main)]" data-testid="messaging-setup-flow">
+    <div className="mx-auto grid w-full max-w-3xl gap-6 text-[var(--text-main)]" data-testid="messaging-setup-flow">
       <div data-testid="messaging-progress">
         <p className="text-sm font-bold text-[var(--text-main)]">
           {index + 1} of {steps.length}

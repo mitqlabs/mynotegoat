@@ -84,6 +84,7 @@ export function ReminderSetupChecklist({
   embedded = false,
   hasMac = false,
   mode = "times",
+  forcedPlatform,
 }: {
   settings: SmsReminderSettings;
   onConfirm: (confirmed: boolean) => void;
@@ -101,20 +102,17 @@ export function ReminderSetupChecklist({
   hasMac?: boolean;
   /** "stop" is the STOP catcher and Test. It is not part of a shortcut's steps. */
   mode?: "times" | "stop";
+  /** Screenshot harness. */
+  forcedPlatform?: SetupPlatform;
 }) {
   const [atSend] = catchUpClockLabels(settings.sendHour);
-  const [platform, setPlatform] = useState<SetupPlatform>("iphone");
+  const [platform, setPlatform] = useState<SetupPlatform>(forcedPlatform ?? "iphone");
   const [fileUrl, setFileUrl] = useState("");
-  if (typeof navigator !== "undefined") {
+  if (!forcedPlatform && typeof navigator !== "undefined") {
     const here = thisPlatform();
     if (here !== platform) setPlatform(here);
   }
-  const press = platform === "mac" ? "Click" : "Tap";
-  const stopSteps: SetupStep[] = [
-    { icon: "1", text: `${press} **Add to this Device**.`, lines: [`${press} **Add to this Device**.`] },
-    ...stopCatcherLines(platform).map((line) => ({ icon: "1", text: line, lines: [line] })),
-    { icon: "1", text: `${press} **Test**.`, lines: [`${press} **Test**.`] },
-  ];
+  const stopSteps: SetupStep[] = stopCatcherLines(platform).map((line) => ({ icon: "1", text: line, lines: [line] }));
   const steps = mode === "stop"
     ? stopSteps
     : clocks.length
@@ -123,6 +121,8 @@ export function ReminderSetupChecklist({
   const confirmedOn = fmtDay(settings.automationConfirmedAt, settings.timeZone);
   const [busy, setBusy] = useState("");
   const [note, setNote] = useState("");
+  const [deviceCode, setDeviceCode] = useState("");
+  const [copied, setCopied] = useState(false);
   const confirmRef = useRef(onConfirm);
   const confirmedRef = useRef(settings.automationConfirmed);
   const loadRef = useRef<() => void>(() => {});
@@ -212,6 +212,8 @@ export function ReminderSetupChecklist({
       setNote("Couldn't add the device. Try again.");
       return;
     }
+    setDeviceCode(token);
+    setCopied(false);
     onChanged?.();
     const { data: session } = await client.auth.getSession();
     const access = session.session?.access_token ?? "";
@@ -222,11 +224,11 @@ export function ReminderSetupChecklist({
     });
     const body = (await res.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
     setBusy("");
+    if (body.fileUrl) setFileUrl(body.fileUrl);
     if (!res.ok || !body.importUrl) {
       setNote(body.error || "Couldn't open the shortcut. Try again.");
       return;
     }
-    setFileUrl(body.fileUrl ?? "");
     window.location.href = body.importUrl;
   };
 
@@ -249,29 +251,30 @@ export function ReminderSetupChecklist({
           {text}
         </p>
       ))}
-      <ol className="grid gap-8" data-testid="iphone-setup-steps">
+      {mode === "stop" ? <h3 className="text-lg font-bold text-[var(--text-main)]">Optional: auto-handle STOP replies</h3> : null}
+      <ol className="grid max-w-lg gap-4" data-testid="iphone-setup-steps">
         {steps.map((step, index) => {
-          const isAdd = index === 0;
-          const isTest = index === steps.length - 1;
+          const isAdd = mode !== "stop" && index === 0;
+          const isTest = mode !== "stop" && index === steps.length - 1;
           return (
             <li className="flex items-start gap-3" key={`${index}-${step.text}`}>
-              <span aria-hidden className="grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-2xl font-bold text-[var(--text-main)]">
+              <span aria-hidden className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">
                 {index + 1}
               </span>
               <div className="min-w-0 flex-1">
                 {isAdd ? (
                   <button
-                    className="w-full rounded-xl bg-[var(--brand-primary)] px-4 py-4 text-lg font-bold text-[var(--on-brand)] disabled:opacity-60"
+                    className="inline-flex items-center rounded-lg bg-[var(--brand-primary)] px-4 py-2 text-base font-semibold text-[var(--on-brand)] disabled:opacity-60"
                     data-testid="add-to-iphone"
                     disabled={busy === "add"}
                     onClick={() => void addToThisDevice()}
                     type="button"
                   >
-                    {busy === "add" ? "Opening…" : "Add to this Device"}
+                    {busy === "add" ? "Opening…" : "Get the NoteGoat shortcut"}
                   </button>
                 ) : isTest ? (
                   <button
-                    className={`w-full rounded-xl border px-4 py-4 text-left text-lg font-bold ${report.ok ? "border-[var(--brand-primary)] bg-[var(--bg-panel)] text-[var(--text-main)]" : "border-transparent bg-[var(--brand-primary)] text-[var(--on-brand)]"}`}
+                    className={`inline-flex items-center rounded-lg border px-4 py-2 text-left text-base font-semibold ${report.ok ? "border-[var(--brand-primary)] bg-[var(--bg-panel)] text-[var(--text-main)]" : "border-transparent bg-[var(--brand-primary)] text-[var(--on-brand)]"}`}
                     data-testid="iphone-setup-test"
                     onClick={() => void runTest()}
                     type="button"
@@ -293,6 +296,23 @@ export function ReminderSetupChecklist({
         </a>
       ) : null}
       {hasMac && platform !== "mac" ? <p className="text-lg font-bold text-[var(--text-main)]">On the Mac, these go out by themselves.</p> : null}
+      {deviceCode ? (
+        <div className="flex flex-wrap items-center gap-3" data-testid="device-code-row">
+          <code className="select-all break-all font-mono text-sm text-[var(--text-main)]" data-testid="device-code">
+            {deviceCode}
+          </code>
+          <button
+            className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-1.5 text-sm font-semibold text-[var(--text-main)]"
+            data-testid="copy-device-code"
+            onClick={() => {
+              void navigator.clipboard?.writeText(deviceCode).then(() => setCopied(true));
+            }}
+            type="button"
+          >
+            {copied ? "Copied" : "Copy code"}
+          </button>
+        </div>
+      ) : null}
       {note ? <p className="text-sm font-semibold text-[var(--text-main)]">{note}</p> : null}
     </>
   );
