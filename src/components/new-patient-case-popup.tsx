@@ -8,7 +8,7 @@ import { UsDateInput } from "@/components/us-date-input";
 import { SELF_ATTORNEY_VALUE } from "@/lib/attorney-picker";
 import type { CasePopupConflict, CasePopupDraft } from "@/lib/new-patient-intake";
 import { formatDobDisplay } from "@/lib/patient-folders";
-import { nameSearchMatches } from "@/lib/patient-name-match";
+import { matchesPatientListQuery } from "@/lib/patient-name-match";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { to12hLabel } from "@/lib/time-12h";
 
@@ -65,7 +65,7 @@ export function NewPatientCasePopup({
   const matches = useMemo(() => {
     const q = finder.trim();
     if (!q) return [];
-    return people.filter((person) => nameSearchMatches(person.name, q)).slice(0, 8);
+    return people.filter((person) => matchesPatientListQuery(q, [person.name])).slice(0, 8);
   }, [finder, people]);
   const attached = people.find((person) => person.id === attachedId);
 

@@ -15,6 +15,7 @@ import {
   type PatientPersonDraft,
   type PatientSexValue,
 } from "@/components/patient-person-fields";
+import { matchesPatientListQuery } from "@/lib/patient-name-match";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 
 export type FolderStatusColumn = { name: string; color: string };
@@ -118,11 +119,10 @@ export function PatientFolderListView({
   onNewPatient: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) => `${row.name} ${row.dob} ${row.phone}`.toLowerCase().includes(q));
-  }, [query, rows]);
+  const shown = useMemo(
+    () => rows.filter((row) => matchesPatientListQuery(query, [row.name, row.dob, row.phone])),
+    [query, rows],
+  );
   const caseTotal = rows.reduce((sum, row) => sum + row.total, 0);
   return (
     <div className="space-y-5">
@@ -657,9 +657,7 @@ export function CaseListPreviewView({
     if (section === "cash" && row.kind !== "cash") return false;
     if (section === "pi" && row.kind !== "pi") return false;
     if (section === "todo") return false;
-    const q = query.trim().toLowerCase();
-    if (!q) return true;
-    return `${row.name} ${row.attorney} ${row.caseNumber} ${row.phone} ${row.address}`.toLowerCase().includes(q);
+    return matchesPatientListQuery(query, [row.name, row.attorney, row.caseNumber, row.phone, row.address]);
   });
   return (
     <div className="space-y-4">

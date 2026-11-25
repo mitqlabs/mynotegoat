@@ -10,7 +10,7 @@ import { usableLegacyMriFindings } from "@/lib/legacy-mri";
 import { isPaidFilled, PAID_GREEN } from "@/lib/paid-status";
 import { locationFieldWidth, NO_OFFICE_LABEL } from "@/lib/location-filter";
 import { type MaritalStatus } from "@/lib/marital-status";
-import { nameSearchMatches } from "@/lib/patient-name-match";
+import { matchesPatientListQuery } from "@/lib/patient-name-match";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
@@ -2267,7 +2267,7 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         }
         const dateOfInjury = toUsDate(entry.dateOfLoss).toLowerCase();
         return (
-          nameSearchMatches(entry.fullName, relatedCaseDraft) ||
+          matchesPatientListQuery(relatedCaseDraft, [entry.fullName]) ||
           entry.dateOfLoss.toLowerCase().includes(query) ||
           dateOfInjury.includes(query)
         );
