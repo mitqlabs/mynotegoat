@@ -18,7 +18,7 @@ import {
   summarizeKeyDateBookings,
   type KeyDateRecord,
 } from "../../src/lib/key-dates";
-import { broadcastTimeOk, normalizeHHMM, shortcutFetchDecision } from "../../src/lib/reminder-automation";
+import { broadcastStillDue, broadcastTimeOk, normalizeHHMM, shortcutFetchDecision } from "../../src/lib/reminder-automation";
 import { broadcastSendBlock } from "../../src/lib/reminder-format";
 import { loadBroadcastQueue } from "../../src/lib/reminder-server";
 import { keyDatesHelp } from "../../src/lib/goat-keydates-help";
@@ -152,9 +152,11 @@ assert.equal(broadcastTimeOk("11:00", { notBefore: "10:12" }), true);
 
 const bc = { message: "Mock office message", target_date: "2026-10-28", created_at: "2026-10-28T17:12:06Z", canceled_at: null, start_time: null, end_time: null };
 const yesterday = { ...bc, message: "Still queued from yesterday", target_date: "2026-10-27" };
+const stale = { ...bc, message: "Closed last week", target_date: "2026-10-19" };
 const recips = [
   ...Array.from({ length: 30 }, (_, i) => ({ id: `r${i}`, patient_id: `p${i}`, appointment_id: null, claimed_by: null, claimed_until: null, reminder_broadcasts: bc })),
   { id: "old", patient_id: "p0", appointment_id: null, claimed_by: null, claimed_until: null, reminder_broadcasts: yesterday },
+  { id: "stale", patient_id: "p1", appointment_id: null, claimed_by: null, claimed_until: null, reminder_broadcasts: stale },
 ];
 const pats = Array.from({ length: 30 }, (_, i) => ({ id: `p${i}`, phone: `(555) 010-${String(1000 + i)}`, text_reminders_off: false, full_name: `Mock ${i}` }));
 const fakeAdmin = {
@@ -192,7 +194,11 @@ const fakeAdmin = {
   );
   assert.equal(queued.length, 31, "today's 30 plus the one still queued from yesterday");
   assert.equal(queued.filter((q) => q.text === "Mock office message").length, 30);
-  assert.equal(queued.filter((q) => q.text === "Still queued from yesterday").length, 1, "a send day that already passed is still handed out");
+  assert.equal(queued.filter((q) => q.text === "Still queued from yesterday").length, 1, "yesterday still goes out if the phone was off overnight");
+  assert.equal(queued.filter((q) => q.text === "Closed last week").length, 0, "a send day older than yesterday is not handed to a Device");
+  assert.equal(broadcastStillDue("2026-11-17", "2026-11-25"), false);
+  assert.equal(broadcastStillDue("2026-11-24", "2026-11-25"), true);
+  assert.equal(broadcastStillDue("2026-11-25", "2026-11-25"), true);
   const routeSrc = readFileSync("src/app/api/reminders/queue/route.ts", "utf8");
   assert.ok(
     routeSrc.indexOf("withoutClosedDates(groups") < routeSrc.indexOf("loadBroadcastQueue(admin"),

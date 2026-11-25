@@ -504,6 +504,22 @@ export interface BroadcastTimeWindow {
   notBefore?: string;
 }
 
+/**
+ * A queued office message is still worth sending today and the day after
+ * (a phone that was off overnight can catch up). Older than that, the day
+ * it was for has passed and Devices must not send it.
+ */
+export function broadcastStillDue(targetDate: string, todayIso: string): boolean {
+  const target = targetDate.trim();
+  const today = todayIso.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(target) || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return true;
+  const targetMs = Date.parse(`${target}T00:00:00Z`);
+  const todayMs = Date.parse(`${today}T00:00:00Z`);
+  if (Number.isNaN(targetMs) || Number.isNaN(todayMs)) return true;
+  const days = Math.round((todayMs - targetMs) / 86_400_000);
+  return days <= 1;
+}
+
 export function broadcastTimeOk(time: string, window: BroadcastTimeWindow): boolean {
   const t = normalizeHHMM(time);
   const start = window.startTime ? normalizeHHMM(window.startTime) : "";

@@ -19,6 +19,7 @@ import {
   addDaysIso,
   BROADCAST_AUDIENCES,
   broadcastSendDay,
+  broadcastStillDue,
   DEFAULT_BROADCAST_AUDIENCE,
   localHHMM,
   localNow,
@@ -350,9 +351,24 @@ export function MessagePatientsComposer({
     });
     if (!ok) return;
     const client = getSupabaseBrowserClient();
-    if (!client) return;
-    await client.from("reminder_broadcasts").update({ canceled_at: new Date().toISOString() }).eq("id", id);
-    await client.from("reminder_broadcast_recipients").update({ status: "canceled" }).eq("broadcast_id", id).eq("status", "queued");
+    const token = client ? (await client.auth.getSession()).data.session?.access_token : "";
+    if (!client || !token) {
+      setStatus("Sign in to cancel this message.");
+      return;
+    }
+    // The browser save is refused by the demo-office guard. The server marks
+    // the broadcast and its waiting texts canceled so a Device will not send them.
+    const response = await fetch("/api/reminders/cancel-broadcast", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    if (!response.ok) {
+      setStatus(body.error || "Couldn't cancel that message. Try again.");
+      return;
+    }
+    setStatus("Message canceled. Waiting texts will not be sent.");
     void loadHistory();
   };
 
@@ -484,13 +500,16 @@ export function MessagePatientsComposer({
             const rs = h.reminder_broadcast_recipients ?? [];
             const count = (s: string) => rs.filter((r) => r.status === s).length;
             const queued = count("queued");
+            const expired = queued > 0 && !broadcastStillDue(h.target_date, todayIso);
             const summary = h.canceled_at
               ? `Canceled · sent ${count("sent")} of ${rs.length}`
               : count("dry-run")
                 ? `Test mode · ${count("dry-run")} not texted`
-                : queued
-                  ? `Waiting · sent ${count("sent")} of ${rs.length}`
-                  : `Sent ${count("sent")} of ${rs.length}${count("failed") ? ` · ${count("failed")} failed` : ""}`;
+                : expired
+                  ? `Not sent · the day passed · sent ${count("sent")} of ${rs.length}`
+                  : queued
+                    ? `Waiting · sent ${count("sent")} of ${rs.length}`
+                    : `Sent ${count("sent")} of ${rs.length}${count("failed") ? ` · ${count("failed")} failed` : ""}`;
             return (
               <div className="flex w-full min-w-0 max-w-full flex-wrap items-baseline justify-between gap-2 border-t border-[var(--line-soft)] pt-1" key={h.id}>
                 <span className="min-w-0 max-w-full flex-1 basis-full break-words">

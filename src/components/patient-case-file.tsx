@@ -100,6 +100,8 @@ import {
 } from "@/lib/document-html-layout";
 import { createEncounterMacroRunId, encounterSections } from "@/lib/encounter-notes";
 import { formatUsPhoneInput } from "@/lib/phone-format";
+import { NarrativeInputsModal } from "@/components/narrative-inputs-modal";
+import { applyNarrativeAnswers, omitInactivePromptSentences, visibleNarrativePrompts } from "@/lib/narrative-inputs";
 import { buildNarrativeReportContext, renderNarrativeReportBody } from "@/lib/report-generator";
 import {
   detectTreatmentPeriods,
@@ -3915,10 +3917,18 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
         : {}),
     });
 
+    const answers = applyNarrativeAnswers(template.prompts, promptValues);
+    Object.entries(answers).forEach(([token, value]) => {
+      context[token] = value;
+    });
     const renderedHeader = documentTemplates.header.active
       ? renderDocumentTemplate(documentTemplates.header.body, context, rawHtmlTokens)
       : "";
-    const renderedBody = renderNarrativeReportBody(template.body, context, rawHtmlTokens);
+    const renderedBody = renderNarrativeReportBody(
+      omitInactivePromptSentences(template.body, template.prompts, answers),
+      context,
+      rawHtmlTokens,
+    );
     return {
       title: template.name,
       fontFamily: template.fontFamily,
@@ -3989,21 +3999,22 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
     setNarrativeMessage(`Generated ${selectedNarrativeTemplate.name} preview. Review and print when ready.`);
   };
 
-  const continueNarrativeGeneration = () => {
+  const continueNarrativeGeneration = (values?: Record<string, string>) => {
     if (!narrativePromptTemplate) {
       setNarrativePromptError("Template not found. Please try again.");
       return;
     }
 
-    const missingPrompt = narrativePromptTemplate.prompts.find(
-      (prompt) => prompt.required && !narrativePromptValues[prompt.token]?.trim(),
+    const promptValues = values ?? narrativePromptValues;
+    const missingPrompt = visibleNarrativePrompts(narrativePromptTemplate.prompts, promptValues).find(
+      (prompt) => prompt.required && !promptValues[prompt.token]?.trim(),
     );
     if (missingPrompt) {
       setNarrativePromptError(`"${missingPrompt.label}" is required.`);
       return;
     }
 
-    const preview = buildNarrativePreview(narrativePromptTemplate, narrativePromptValues, resolveReportPeriod().period);
+    const preview = buildNarrativePreview(narrativePromptTemplate, promptValues, resolveReportPeriod().period);
     setNarrativeExcludedDxIds(new Set());
     narrativePreviewEditedRef.current = false;
     setNarrativePreview(preview);
@@ -8338,113 +8349,15 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
       )}
 
       {showNarrativePromptModal && narrativePromptTemplate && (
-        <div className="modal-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 px-4 py-8">
-            <ScrollLock />
-            <div className="panel-card mx-auto w-full max-w-3xl overflow-auto p-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-xl font-semibold">Narrative Inputs</h3>
-                  <p className="text-sm text-[var(--text-muted)]">{narrativePromptTemplate.name}</p>
-                </div>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={closeNarrativePromptModal}
-                  type="button"
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {narrativePromptTemplate.prompts.map((prompt) => {
-                  const selectedValue = narrativePromptValues[prompt.token] ?? "";
-                  const hasOptions = prompt.options.length > 0;
-                  return (
-                    <article
-                      className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3"
-                      key={prompt.id}
-                    >
-                      <p className="text-sm font-semibold">
-                        {prompt.label}
-                        {prompt.required ? " *" : ""}
-                      </p>
-
-                      {hasOptions ? (
-                        <div className="mt-2 space-y-2">
-                          {prompt.options.map((option) => {
-                            const checked = selectedValue === option;
-                            return (
-                              <button
-                                className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold ${
-                                  checked
-                                    ? "border-[var(--brand-primary)] bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] text-[var(--brand-primary)]"
-                                    : "border-[var(--line-soft)] bg-white text-[var(--text-main)]"
-                                }`}
-                                key={`${prompt.id}-${option}`}
-                                onClick={() =>
-                                  setNarrativePromptValues((current) => ({
-                                    ...current,
-                                    [prompt.token]: option,
-                                  }))
-                                }
-                                type="button"
-                              >
-                                {option}
-                              </button>
-                            );
-                          })}
-                          <input
-                            className="w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                            onChange={(event) =>
-                              setNarrativePromptValues((current) => ({
-                                ...current,
-                                [prompt.token]: event.target.value,
-                              }))
-                            }
-                            placeholder="Or type custom value"
-                            value={selectedValue}
-                          />
-                        </div>
-                      ) : (
-                        <input
-                          className="mt-2 w-full rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
-                          onChange={(event) =>
-                            setNarrativePromptValues((current) => ({
-                              ...current,
-                              [prompt.token]: event.target.value,
-                            }))
-                          }
-                          placeholder="Enter value"
-                          value={selectedValue}
-                        />
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
-
-              {narrativePromptError && (
-                <p className="mt-3 text-sm font-semibold text-[#b43b34]">{narrativePromptError}</p>
-              )}
-
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={closeNarrativePromptModal}
-                  type="button"
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={continueNarrativeGeneration}
-                  type="button"
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-        </div>
+        <NarrativeInputsModal
+          error={narrativePromptError}
+          onChange={setNarrativePromptValues}
+          onClose={closeNarrativePromptModal}
+          onContinue={continueNarrativeGeneration}
+          prompts={narrativePromptTemplate.prompts}
+          templateName={narrativePromptTemplate.name}
+          values={narrativePromptValues}
+        />
       )}
 
       {showNarrativePreviewModal && narrativePreview && (

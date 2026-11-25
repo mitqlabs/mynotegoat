@@ -8,7 +8,8 @@ import {
 import { useReportTemplates } from "@/hooks/use-report-templates";
 import { documentFontOptions, renderDocumentTemplate } from "@/lib/document-templates";
 import { appointmentTypeToTokenPrefix } from "@/lib/report-generator";
-import { narrativeReportAutoFields } from "@/lib/report-templates";
+import { correctNarrativeAmountTypos, promptInputKind } from "@/lib/narrative-inputs";
+import { narrativeReportAutoFields, type NarrativePromptInput } from "@/lib/report-templates";
 import { loadAppointmentTypes } from "@/lib/schedule-appointment-types";
 import { appConfirm } from "@/components/app-dialog";
 
@@ -261,6 +262,7 @@ export function ReportTemplateSettingsPanel() {
     removeTemplate,
     addPrompt,
     updatePrompt,
+    movePrompt,
     removePrompt,
     resetToDefaults,
   } = useReportTemplates();
@@ -275,6 +277,7 @@ export function ReportTemplateSettingsPanel() {
   const [error, setError] = useState("");
 
   const [promptLabelDraft, setPromptLabelDraft] = useState("");
+  const [promptInputDraft, setPromptInputDraft] = useState<NarrativePromptInput>("choices");
   const [promptNewOptions, setPromptNewOptions] = useState<string[]>([]);
   const [promptNewChoiceDraft, setPromptNewChoiceDraft] = useState("");
   const [promptRequiredDraft, setPromptRequiredDraft] = useState(false);
@@ -335,7 +338,13 @@ export function ReportTemplateSettingsPanel() {
     if (!selectedTemplate) {
       return;
     }
-    const wasAdded = addPrompt(selectedTemplate.id, promptLabelDraft, promptNewOptions, promptRequiredDraft);
+    const wasAdded = addPrompt(
+      selectedTemplate.id,
+      promptLabelDraft,
+      promptInputDraft === "yesno" ? (promptNewOptions.length ? promptNewOptions : ["Yes", "No"]) : promptNewOptions,
+      promptRequiredDraft,
+      promptInputDraft,
+    );
     if (!wasAdded) {
       setError("Prompt label is required.");
       return;
@@ -345,6 +354,7 @@ export function ReportTemplateSettingsPanel() {
     setPromptNewOptions([]);
     setPromptNewChoiceDraft("");
     setPromptRequiredDraft(false);
+    setPromptInputDraft("choices");
   };
 
   // ── Live preview: render template body with example data ───────────────
@@ -878,19 +888,25 @@ export function ReportTemplateSettingsPanel() {
             })()}
           </article>
 
-          <article className="mt-4 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3">
+          <article className="mt-4 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-soft)] p-3" data-testid="narrative-question-prompts" id="narrative-question-prompts">
             <h5 className="text-lg font-semibold">Question Prompts</h5>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              These prompts appear when generating the narrative so users can input custom details.
-            </p>
 
-            <div className="mt-3 grid gap-2 rounded-xl border border-[var(--line-soft)] bg-white p-2 md:grid-cols-[1fr_1fr_auto_auto]">
+            <div className="mt-3 grid gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] p-2 md:grid-cols-[1fr_140px_1fr_auto_auto]">
               <input
-                className="rounded-lg border border-[var(--line-soft)] bg-white px-2 py-2"
+                className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2 py-2 text-[var(--text-main)]"
                 onChange={(event) => setPromptLabelDraft(event.target.value)}
                 placeholder="Prompt label (e.g. Current symptoms)"
                 value={promptLabelDraft}
               />
+              <select
+                className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2 py-2 text-sm text-[var(--text-main)]"
+                onChange={(event) => setPromptInputDraft(event.target.value as NarrativePromptInput)}
+                value={promptInputDraft}
+              >
+                <option value="choices">Choices</option>
+                <option value="yesno">Yes/No</option>
+                <option value="text">Text</option>
+              </select>
               <div className="space-y-1">
                 <div className="flex flex-wrap gap-1">
                   {promptNewOptions.map((opt, i) => (
@@ -911,7 +927,7 @@ export function ReportTemplateSettingsPanel() {
                 </div>
                 <div className="flex items-center gap-1">
                   <input
-                    className="flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-2"
+                    className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2 py-2 text-[var(--text-main)]"
                     onChange={(event) => setPromptNewChoiceDraft(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
@@ -959,19 +975,41 @@ export function ReportTemplateSettingsPanel() {
             </div>
 
             <div className="mt-3 space-y-2">
-              {selectedTemplate.prompts.map((prompt) => (
+              {selectedTemplate.prompts.map((prompt, promptIndex) => {
+                const kind = promptInputKind(prompt);
+                const others = selectedTemplate.prompts.filter((entry) => entry.id !== prompt.id);
+                const parent = others.find((entry) => entry.id === prompt.showWhen?.promptId) ?? null;
+                const shownAnswers = new Set((prompt.showWhen?.answers ?? []).map((answer) => correctNarrativeAmountTypos(answer)));
+                return (
                 <div
-                  className="rounded-xl border border-[var(--line-soft)] bg-white p-2"
+                  className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] p-2"
                   key={prompt.id}
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <input
-                      className="flex-1 min-w-[140px] rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1.5"
+                      aria-label="Question"
+                      className="min-w-[140px] flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2 py-1.5 text-[var(--text-main)]"
                       onChange={(event) =>
                         updatePrompt(selectedTemplate.id, prompt.id, { label: event.target.value })
                       }
                       value={prompt.label}
                     />
+                    <select
+                      aria-label="Answer type"
+                      className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2 py-1.5 text-sm text-[var(--text-main)]"
+                      onChange={(event) => {
+                        const input = event.target.value as NarrativePromptInput;
+                        updatePrompt(selectedTemplate.id, prompt.id, {
+                          input,
+                          ...(input === "yesno" && prompt.options.length === 0 ? { options: ["Yes", "No"] } : {}),
+                        });
+                      }}
+                      value={kind}
+                    >
+                      <option value="choices">Choices</option>
+                      <option value="yesno">Yes/No</option>
+                      <option value="text">Text</option>
+                    </select>
                     <label className="inline-flex items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-3 py-1.5 text-sm font-semibold">
                       <input
                         checked={prompt.required}
@@ -982,6 +1020,22 @@ export function ReportTemplateSettingsPanel() {
                       />
                       Required
                     </label>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      disabled={promptIndex === 0}
+                      onClick={() => movePrompt(selectedTemplate.id, prompt.id, -1)}
+                      type="button"
+                    >
+                      Up
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      disabled={promptIndex === selectedTemplate.prompts.length - 1}
+                      onClick={() => movePrompt(selectedTemplate.id, prompt.id, 1)}
+                      type="button"
+                    >
+                      Down
+                    </button>
                     <button
                       className="btn btn-secondary btn-sm"
                       onClick={() =>
@@ -1002,74 +1056,141 @@ export function ReportTemplateSettingsPanel() {
                     </button>
                   </div>
 
-                  {/* Chip-based options */}
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {prompt.options.map((opt, optIdx) => (
-                      <span
-                        key={`${prompt.id}-opt-${optIdx}`}
-                        className="inline-flex items-center gap-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-soft)] px-2 py-0.5 text-xs"
-                      >
-                        {opt}
-                        <button
-                          className="ml-0.5 text-[var(--text-muted)] hover:text-[#b43b34]"
-                          onClick={() =>
-                            updatePrompt(selectedTemplate.id, prompt.id, {
-                              options: prompt.options.filter((_, i) => i !== optIdx),
-                            })
+                  {kind !== "text" && (
+                    <div className="mt-2 space-y-1">
+                      {prompt.options.map((opt, optIdx) => (
+                        <div className="flex items-center gap-1" key={`${prompt.id}-opt-${optIdx}`}>
+                          <input
+                            aria-label={`Choice ${optIdx + 1}`}
+                            className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2 py-1 text-sm text-[var(--text-main)]"
+                            onChange={(event) => {
+                              const options = prompt.options.map((entry, index) =>
+                                index === optIdx ? event.target.value : entry,
+                              );
+                              updatePrompt(selectedTemplate.id, prompt.id, { options });
+                            }}
+                            value={correctNarrativeAmountTypos(opt)}
+                          />
+                          <button
+                            aria-label={`Remove choice ${optIdx + 1}`}
+                            className="btn btn-secondary btn-sm"
+                            onClick={() =>
+                              updatePrompt(selectedTemplate.id, prompt.id, {
+                                options: prompt.options.filter((_, index) => index !== optIdx),
+                              })
+                            }
+                            type="button"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                      <div className="flex items-center gap-1">
+                        <input
+                          aria-label="New choice"
+                          className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2 py-1 text-sm text-[var(--text-main)]"
+                          onChange={(event) =>
+                            setPromptChoiceDrafts((current) => ({
+                              ...current,
+                              [getPromptDraftKey(selectedTemplate.id, prompt.id)]: event.target.value,
+                            }))
                           }
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter") return;
+                            event.preventDefault();
+                            const key = getPromptDraftKey(selectedTemplate.id, prompt.id);
+                            const next = (promptChoiceDrafts[key] ?? "").trim();
+                            if (!next) return;
+                            updatePrompt(selectedTemplate.id, prompt.id, { options: [...prompt.options, next] });
+                            setPromptChoiceDrafts((current) => ({ ...current, [key]: "" }));
+                          }}
+                          placeholder="Add choice"
+                          value={promptChoiceDrafts[getPromptDraftKey(selectedTemplate.id, prompt.id)] ?? ""}
+                        />
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            const key = getPromptDraftKey(selectedTemplate.id, prompt.id);
+                            const next = (promptChoiceDrafts[key] ?? "").trim();
+                            if (!next) return;
+                            updatePrompt(selectedTemplate.id, prompt.id, { options: [...prompt.options, next] });
+                            setPromptChoiceDrafts((current) => ({ ...current, [key]: "" }));
+                          }}
                           type="button"
                         >
-                          ×
+                          + Add
                         </button>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-1 flex items-center gap-1">
-                    <input
-                      className="flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-2 py-1 text-xs"
-                      onChange={(event) =>
-                        setPromptChoiceDrafts((c) => ({
-                          ...c,
-                          [getPromptDraftKey(selectedTemplate.id, prompt.id)]: event.target.value,
-                        }))
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          const key = getPromptDraftKey(selectedTemplate.id, prompt.id);
-                          const v = (promptChoiceDrafts[key] ?? "").trim();
-                          if (v) {
+                      </div>
+                    </div>
+                  )}
+
+                  {others.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <label className="inline-flex items-center gap-2 text-sm font-semibold">
+                        Show only if
+                        <select
+                          className="max-w-full rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2 py-1 text-sm font-normal text-[var(--text-main)]"
+                          onChange={(event) => {
+                            const parentId = event.target.value;
+                            if (!parentId) {
+                              updatePrompt(selectedTemplate.id, prompt.id, { showWhen: null });
+                              return;
+                            }
+                            const nextParent = others.find((entry) => entry.id === parentId);
+                            const first = nextParent?.options[0];
                             updatePrompt(selectedTemplate.id, prompt.id, {
-                              options: [...prompt.options, v],
+                              showWhen: first
+                                ? { promptId: parentId, answers: [correctNarrativeAmountTypos(first)] }
+                                : null,
                             });
-                            setPromptChoiceDrafts((c) => ({ ...c, [key]: "" }));
-                          }
-                        }
-                      }}
-                      placeholder="Add choice..."
-                      value={promptChoiceDrafts[getPromptDraftKey(selectedTemplate.id, prompt.id)] ?? ""}
-                    />
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => {
-                        const key = getPromptDraftKey(selectedTemplate.id, prompt.id);
-                        const v = (promptChoiceDrafts[key] ?? "").trim();
-                        if (v) {
-                          updatePrompt(selectedTemplate.id, prompt.id, {
-                            options: [...prompt.options, v],
-                          });
-                          setPromptChoiceDrafts((c) => ({ ...c, [key]: "" }));
-                        }
-                      }}
-                      type="button"
-                    >
-                      + Add
-                    </button>
-                  </div>
+                          }}
+                          value={parent?.id ?? ""}
+                        >
+                          <option value="">Always</option>
+                          {others.map((entry) => (
+                            <option key={entry.id} value={entry.id}>
+                              {entry.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {parent
+                        ? parent.options.map((option) => {
+                            const label = correctNarrativeAmountTypos(option);
+                            const on = shownAnswers.has(label);
+                            return (
+                              <button
+                                className={
+                                  on
+                                    ? "rounded-full bg-[var(--brand-primary)] px-2.5 py-0.5 text-sm font-semibold text-[var(--on-brand)]"
+                                    : "rounded-full border border-[var(--line-soft)] bg-[var(--bg-panel)] px-2.5 py-0.5 text-sm text-[var(--text-main)]"
+                                }
+                                key={option}
+                                onClick={() => {
+                                  const next = new Set(shownAnswers);
+                                  if (next.has(label)) next.delete(label);
+                                  else next.add(label);
+                                  const answers = parent.options
+                                    .map((entry) => correctNarrativeAmountTypos(entry))
+                                    .filter((entry) => next.has(entry));
+                                  updatePrompt(selectedTemplate.id, prompt.id, {
+                                    showWhen: answers.length ? { promptId: parent.id, answers } : null,
+                                  });
+                                }}
+                                type="button"
+                              >
+                                {label}
+                              </button>
+                            );
+                          })
+                        : null}
+                    </div>
+                  )}
 
                   <p className="mt-1 text-xs text-[var(--text-muted)]">Token: {insertionTokenForField(prompt.token)}</p>
                 </div>
-              ))}
+                );
+              })}
               {selectedTemplate.prompts.length === 0 && (
                 <p className="text-sm text-[var(--text-muted)]">No prompts added yet.</p>
               )}

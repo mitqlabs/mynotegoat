@@ -1,11 +1,23 @@
 import { documentFontOptions } from "@/lib/document-templates";
 
+/** Which earlier answer reveals this question. Office-configured, not hard-coded. */
+export interface NarrativePromptShowWhen {
+  promptId: string;
+  answers: string[];
+}
+
+export type NarrativePromptInput = "yesno" | "choices" | "text";
+
 export interface NarrativeReportPrompt {
   id: string;
   label: string;
   token: string;
   options: string[];
   required: boolean;
+  /** Absent on older prompts: choices when options exist, otherwise a text box. */
+  input?: NarrativePromptInput;
+  /** Show this question only when another question's answer is one of `answers`. */
+  showWhen?: NarrativePromptShowWhen;
 }
 
 export interface NarrativeReportTemplate {
@@ -15,6 +27,8 @@ export interface NarrativeReportTemplate {
   fontFamily: string;
   active: boolean;
   prompts: NarrativeReportPrompt[];
+  /** Default questions the office removed, so they are not added back on the next load. */
+  skippedDefaultTokens?: string[];
 }
 
 export interface NarrativeReportLibrary {
@@ -183,13 +197,27 @@ function normalizePrompt(value: unknown): NarrativeReportPrompt | null {
   const options = Array.isArray(row.options)
     ? row.options.map((entry) => normalizeString(entry)).filter(Boolean)
     : [];
+  const input = row.input === "yesno" || row.input === "choices" || row.input === "text" ? row.input : undefined;
+  const showWhen = normalizeShowWhen(row.showWhen, id);
   return {
     id,
     label,
     token,
     options,
     required: row.required === true,
+    ...(input ? { input } : {}),
+    ...(showWhen ? { showWhen } : {}),
   };
+}
+
+function normalizeShowWhen(value: unknown, promptId: string): NarrativePromptShowWhen | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as Partial<NarrativePromptShowWhen>;
+  const parentId = normalizeString(row.promptId);
+  if (!parentId || parentId === promptId) return undefined;
+  const answers = Array.isArray(row.answers) ? row.answers.map((entry) => normalizeString(entry)).filter(Boolean) : [];
+  if (!answers.length) return undefined;
+  return { promptId: parentId, answers };
 }
 
 function normalizeTemplate(value: unknown): NarrativeReportTemplate | null {
@@ -206,6 +234,9 @@ function normalizeTemplate(value: unknown): NarrativeReportTemplate | null {
   const prompts = Array.isArray(row.prompts)
     ? row.prompts.map(normalizePrompt).filter((entry): entry is NarrativeReportPrompt => Boolean(entry))
     : [];
+  const skippedDefaultTokens = Array.isArray(row.skippedDefaultTokens)
+    ? row.skippedDefaultTokens.map((entry) => normalizeString(entry)).filter(Boolean)
+    : [];
   return {
     id,
     name,
@@ -213,10 +244,11 @@ function normalizeTemplate(value: unknown): NarrativeReportTemplate | null {
     fontFamily: normalizeString(row.fontFamily) || defaultFontFamily(),
     active: row.active !== false,
     prompts,
+    ...(skippedDefaultTokens.length ? { skippedDefaultTokens } : {}),
   };
 }
 
-function normalizeLibrary(value: unknown): NarrativeReportLibrary {
+export function normalizeLibrary(value: unknown): NarrativeReportLibrary {
   const defaults = getDefaultNarrativeReportLibrary();
   if (!value || typeof value !== "object") {
     return defaults;
