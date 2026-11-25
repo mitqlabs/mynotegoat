@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import {
   UNSIGNED_SHORTCUT_ERROR,
   buildShortcutLinks,
+  genericShortcutLinks,
   icloudShortcutUrl,
   isSignedShortcut,
 } from "../../src/lib/shortcut-import";
@@ -57,9 +58,22 @@ const viaIcloud = buildShortcutLinks({
 });
 assert.equal(viaIcloud.importUrl, "https://www.icloud.com/shortcuts/0123abcdEF");
 
+const unsignedFile = readFileSync("public/shortcuts/NoteGoat.unsigned.shortcut");
+assert.equal(isSignedShortcut(unsignedFile), false);
+assert.ok(unsignedFile.includes("Paste the NoteGoat device code."));
+const generic = genericShortcutLinks("https://www.mynotegoat.com/");
+assert.equal(generic.fileUrl, "https://www.mynotegoat.com/shortcuts/NoteGoat.shortcut");
+assert.equal(generic.importUrl, undefined);
+assert.equal(generic.error, UNSIGNED_SHORTCUT_ERROR);
+const genericIcloud = genericShortcutLinks("https://www.mynotegoat.com", "https://www.icloud.com/shortcuts/0123abcdEF");
+assert.equal(genericIcloud.importUrl, "https://www.icloud.com/shortcuts/0123abcdEF");
+
 const route = readFileSync("src/app/api/reminders/shortcut/route.ts", "utf8");
+assert.match(route, /genericShortcutLinks/);
 assert.match(route, /buildShortcutLinks/);
-assert.match(route, /isSignedShortcut/);
 assert.doesNotMatch(route, /shortcuts:\/\/import-shortcut\?url=/);
+const flow = readFileSync("src/components/messaging-setup-flow.tsx", "utf8");
+assert.match(flow, /Copy code/);
+assert.match(flow, /Get the NoteGoat shortcut/);
 
 console.log("shortcut-import: all checks passed");

@@ -142,10 +142,9 @@ def post_inbound(auth, from_value, text_value):
     )
 
 
-def build_notegoat(token):
-    """One shortcut. A message (STOP reply or the test) is reported.
-    Anything else sends the reminder batches. The code is already filled in
-    when token is set, so the phone does not ask anyone to paste it."""
+def build_notegoat():
+    """One shortcut for every office. The device code is an Import Question,
+    so the signed file never contains a code and can be shared as-is."""
     auth = [("Authorization", tstr("Bearer ", var("Token")))]
     outer, inner = U(), U()
     tk, body, sender = U(), U(), U()
@@ -154,7 +153,7 @@ def build_notegoat(token):
     send = build("NoteGoat", f"format=shortcut&force=1&batch={BATCH}", notify_on_stop=True)
     send_acts = send["WFWorkflowActions"][2:]
     acts = [
-        act("is.workflow.actions.gettext", UUID=tk, WFTextActionText=token),
+        act("is.workflow.actions.gettext", UUID=tk, WFTextActionText=""),
         act("is.workflow.actions.setvariable", WFVariableName="Token", WFInput=att(out(tk, "Text"))),
         # No message: send texts. A message (or the test words): report it.
         act(
@@ -198,7 +197,13 @@ def build_notegoat(token):
         "WFWorkflowIcon": {"WFWorkflowIconStartColor": 4292093695, "WFWorkflowIconGlyphNumber": 59511},
         "WFWorkflowTypes": ["WFWorkflowTypeShowInShareSheet"],
         "WFWorkflowInputContentItemClasses": ["WFStringContentItem", "WFGenericFileContentItem"],
-        "WFWorkflowImportQuestions": [],
+        "WFWorkflowImportQuestions": [{
+            "ActionIndex": 0,
+            "Category": "Parameter",
+            "DefaultValue": "",
+            "ParameterKey": "WFTextActionText",
+            "Text": "Paste the NoteGoat device code.",
+        }],
         "WFWorkflowActions": acts,
     }
 
@@ -251,6 +256,13 @@ if "opt-out" in only:
 if "notegoat" in only:
     folder = pathlib.Path(__file__).resolve().parent.parent / "src" / "lib" / "shortcuts"
     folder.mkdir(parents=True, exist_ok=True)
+    raw = plistlib.dumps(build_notegoat(), fmt=plistlib.FMT_BINARY)
     template = folder / "NoteGoat.template.shortcut"
-    template.write_bytes(plistlib.dumps(build_notegoat(TOKEN_SLOT), fmt=plistlib.FMT_BINARY))
+    template.write_bytes(raw)
+    public = pathlib.Path(__file__).resolve().parent.parent / "public" / "shortcuts"
+    public.mkdir(parents=True, exist_ok=True)
+    unsigned = public / "NoteGoat.unsigned.shortcut"
+    unsigned.write_bytes(raw)
     print("wrote", template)
+    print("wrote", unsigned)
+    print("sign on a Mac: shortcuts sign --mode anyone -i public/shortcuts/NoteGoat.unsigned.shortcut -o public/shortcuts/NoteGoat.shortcut")

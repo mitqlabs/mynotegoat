@@ -3,9 +3,15 @@
  * iOS 15 and later only import a shortcut Apple has signed (file starts with AEA1),
  * or an iCloud share link. An unsigned plist opens Shortcuts and then fails.
  */
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { buildNamedShortcut } from "@/lib/shortcut-plist";
-import { shortcutWithToken } from "@/lib/shortcut-file";
 import { openDeviceToken } from "@/lib/shortcut-ticket";
+
+/** Unsigned file to sign on a Mac. Do not serve this to an iPhone. */
+export const UNSIGNED_SHORTCUT_FILE = "public/shortcuts/NoteGoat.unsigned.shortcut";
+/** Signed static file. Same bytes for every office. The code is pasted at import. */
+export const SIGNED_SHORTCUT_FILE = "public/shortcuts/NoteGoat.shortcut";
 
 export const UNSIGNED_SHORTCUT_ERROR =
   "Apple will not import this shortcut. It is not signed. Sign it on a Mac signed into iCloud, or share an iCloud link.";
@@ -60,6 +66,29 @@ export function buildShortcutLinks(input: {
   return { importUrl, fileUrl };
 }
 
+export function readSignedNoteGoatShortcut(): Buffer | null {
+  const path = join(process.cwd(), SIGNED_SHORTCUT_FILE);
+  if (!existsSync(path)) return null;
+  const bytes = readFileSync(path);
+  return isSignedShortcut(bytes) ? bytes : null;
+}
+
+/**
+ * Import link for the one generic NoteGoat shortcut.
+ * iCloud link wins. Otherwise the public signed file at /shortcuts/NoteGoat.shortcut.
+ */
+export function genericShortcutLinks(origin: string, icloudUrl?: string): { importUrl?: string; fileUrl: string; error?: string } {
+  const base = origin.replace(/\/$/, "");
+  const fileUrl = `${base}/shortcuts/NoteGoat.shortcut`;
+  const icloud = icloudShortcutUrl(icloudUrl);
+  if (icloud) return { importUrl: icloud, fileUrl };
+  if (!readSignedNoteGoatShortcut()) return { fileUrl, error: UNSIGNED_SHORTCUT_ERROR };
+  return {
+    importUrl: `shortcuts://import-shortcut?url=${encodeURIComponent(fileUrl)}&name=${encodeURIComponent("NoteGoat")}`,
+    fileUrl,
+  };
+}
+
 export function shortcutFileHeaders(filename: string): Record<string, string> {
   const safe = shortcutDownloadName(filename).replace(/"/g, "");
   return {
@@ -85,7 +114,9 @@ export function shortcutForTicket(input: {
       const xml = buildNamedShortcut({ token, name: input.name, ruleId: input.ruleId, origin: input.origin });
       return { ok: true, body: Buffer.from(xml, "utf8"), filename: shortcutDownloadName(input.name) };
     }
-    return { ok: true, body: shortcutWithToken(token), filename: "NoteGoat.shortcut" };
+    const signed = readSignedNoteGoatShortcut();
+    if (signed) return { ok: true, body: signed, filename: "NoteGoat.shortcut" };
+    return { ok: true, body: readFileSync(join(process.cwd(), UNSIGNED_SHORTCUT_FILE)), filename: "NoteGoat.unsigned.shortcut" };
   } catch {
     return { ok: false, error: "Shortcut file is missing.", status: 500 };
   }

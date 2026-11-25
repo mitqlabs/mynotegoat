@@ -123,6 +123,8 @@ export function ReminderSetupChecklist({
   const confirmedOn = fmtDay(settings.automationConfirmedAt, settings.timeZone);
   const [busy, setBusy] = useState("");
   const [note, setNote] = useState("");
+  const [deviceCode, setDeviceCode] = useState("");
+  const [copied, setCopied] = useState(false);
   const confirmRef = useRef(onConfirm);
   const confirmedRef = useRef(settings.automationConfirmed);
   const loadRef = useRef<() => void>(() => {});
@@ -212,6 +214,8 @@ export function ReminderSetupChecklist({
       setNote("Couldn't add the device. Try again.");
       return;
     }
+    setDeviceCode(token);
+    setCopied(false);
     onChanged?.();
     const { data: session } = await client.auth.getSession();
     const access = session.session?.access_token ?? "";
@@ -267,7 +271,7 @@ export function ReminderSetupChecklist({
                     onClick={() => void addToThisDevice()}
                     type="button"
                   >
-                    {busy === "add" ? "Opening…" : "Add to this Device"}
+                    {busy === "add" ? "Opening…" : "Get the NoteGoat shortcut"}
                   </button>
                 ) : isTest ? (
                   <button
@@ -293,6 +297,23 @@ export function ReminderSetupChecklist({
         </a>
       ) : null}
       {hasMac && platform !== "mac" ? <p className="text-lg font-bold text-[var(--text-main)]">On the Mac, these go out by themselves.</p> : null}
+      {deviceCode ? (
+        <div className="flex flex-wrap items-center gap-3" data-testid="device-code-row">
+          <code className="select-all break-all font-mono text-sm text-[var(--text-main)]" data-testid="device-code">
+            {deviceCode}
+          </code>
+          <button
+            className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-1.5 text-sm font-semibold text-[var(--text-main)]"
+            data-testid="copy-device-code"
+            onClick={() => {
+              void navigator.clipboard?.writeText(deviceCode).then(() => setCopied(true));
+            }}
+            type="button"
+          >
+            {copied ? "Copied" : "Copy code"}
+          </button>
+        </div>
+      ) : null}
       {note ? <p className="text-sm font-semibold text-[var(--text-main)]">{note}</p> : null}
     </>
   );

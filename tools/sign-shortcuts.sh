@@ -11,3 +11,6 @@ for n in Send-Reminders Send-Reminders-Now; do
   shortcuts sign --mode anyone --input "$n.shortcut" --output "$n.signed.shortcut"
   echo "Signed: public/shortcuts/$n.signed.shortcut"
 done
+# Generic NoteGoat shortcut. The device code is an Import Question, not inside the file.
+shortcuts sign --mode anyone --input NoteGoat.unsigned.shortcut --output NoteGoat.shortcut
+echo "Signed: public/shortcuts/NoteGoat.shortcut"

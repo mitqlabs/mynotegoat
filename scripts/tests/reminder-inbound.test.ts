@@ -14,7 +14,6 @@ import {
 import { applyInboundReplies, type ReminderDevice } from "../../src/lib/reminder-server";
 import { iphoneSetupSteps, setupTestReport } from "../../src/lib/iphone-setup";
 import { openDeviceToken, sealDeviceToken } from "../../src/lib/shortcut-ticket";
-import { SHORTCUT_TOKEN_SLOT, shortcutWithToken } from "../../src/lib/shortcut-file";
 
 assert.equal(isStopTest("STOP TEST"), true);
 assert.equal(isStopTest("  stop   test. "), true);
@@ -132,12 +131,9 @@ async function main() {
   const built = spawnSync("python3", ["tools/build-shortcuts.py", "notegoat"], { encoding: "utf8" });
   assert.equal(built.status, 0, built.stderr || built.stdout);
   const template = readFileSync("src/lib/shortcuts/NoteGoat.template.shortcut");
-  const slot = Buffer.from(SHORTCUT_TOKEN_SLOT);
-  assert.equal(template.indexOf(slot) >= 0, true);
-  assert.equal(template.indexOf(slot, template.indexOf(slot) + 1), -1, "the code slot appears once");
-  const filled = shortcutWithToken(token);
-  assert.equal(filled.includes(slot), false);
-  assert.equal(filled.includes(token), true);
+  const publicCopy = readFileSync("public/shortcuts/NoteGoat.unsigned.shortcut");
+  assert.equal(template.equals(publicCopy), true, "the file to sign matches the template");
+  assert.equal(template.includes(token), false, "the generic shortcut has no office code");
   const parsed = spawnSync("python3", ["-c", `
 import json, plistlib, sys
 p = plistlib.load(open(sys.argv[1], "rb"))
@@ -147,13 +143,13 @@ for a in p["WFWorkflowActions"]:
     url = a.get("WFWorkflowActionParameters", {}).get("WFURL")
     if url: urls.append(url)
 text = p["WFWorkflowActions"][0]["WFWorkflowActionParameters"].get("WFTextActionText")
-print(json.dumps({"name": p["WFWorkflowName"], "text": text, "urls": urls, "inbound": sum("inbound" in i for i in ids), "questions": p.get("WFWorkflowImportQuestions")}))
-`, "src/lib/shortcuts/NoteGoat.template.shortcut"], { encoding: "utf8" });
+print(json.dumps({"name": p["WFWorkflowName"], "text": text, "urls": urls, "questions": p.get("WFWorkflowImportQuestions")}))
+`, "public/shortcuts/NoteGoat.unsigned.shortcut"], { encoding: "utf8" });
   assert.equal(parsed.status, 0, parsed.stderr);
-  const info = JSON.parse(parsed.stdout) as { name: string; text: string; urls: string[]; questions: unknown[] };
+  const info = JSON.parse(parsed.stdout) as { name: string; text: string; urls: string[]; questions: { Text?: string }[] };
   assert.equal(info.name, "NoteGoat");
-  assert.equal(info.text, SHORTCUT_TOKEN_SLOT);
-  assert.deepEqual(info.questions, []);
+  assert.equal(info.text, "");
+  assert.equal(info.questions[0]?.Text, "Paste the NoteGoat device code.");
   assert.ok(info.urls.some((url) => url.includes("/api/reminders/inbound")));
   assert.ok(info.urls.some((url) => url.includes("batch=5") && url.includes("force=1")));
   console.log("reminder-inbound: all checks passed");

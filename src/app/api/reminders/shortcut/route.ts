@@ -4,6 +4,7 @@ import { openShortcutToken, saveShortcutToken } from "@/lib/reminder-server";
 import { isDeviceToken, sealDeviceToken } from "@/lib/shortcut-ticket";
 import {
   buildShortcutLinks,
+  genericShortcutLinks,
   icloudShortcutUrl,
   isSignedShortcut,
   shortcutFileHeaders,
@@ -80,6 +81,14 @@ export async function POST(request: NextRequest) {
     else await saveShortcutToken(admin, device.workspace_id, device.id, token, keys.service);
   } else if (!isDeviceToken(token)) {
     return NextResponse.json({ error: "Bad device code." }, { status: 400 });
+  }
+
+  if (!ruleId) {
+    const links = genericShortcutLinks(request.nextUrl.origin, process.env.NOTEGOAT_SHORTCUT_ICLOUD_URL);
+    if (!links.importUrl) {
+      return NextResponse.json({ error: links.error || UNSIGNED_SHORTCUT_ERROR, fileUrl: links.fileUrl }, { status: 422 });
+    }
+    return NextResponse.json({ importUrl: links.importUrl, fileUrl: links.fileUrl });
   }
 
   const ticket = sealDeviceToken(token, keys.service);

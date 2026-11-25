@@ -153,6 +153,8 @@ export function MessagingSetupFlow({
   const [shortcutUrl, setShortcutUrl] = useState("");
   const [iphoneBypass, setIphoneBypass] = useState(false);
   const [showDeletes, setShowDeletes] = useState(false);
+  const [deviceCode, setDeviceCode] = useState("");
+  const [copied, setCopied] = useState(false);
   const [since, setSince] = useState(forced ? "" : saved.testSince);
   const [live, setLive] = useState<CheckInDevice[] | null>(null);
 
@@ -333,6 +335,8 @@ export function MessagingSetupFlow({
         setNote(saved.error?.message ? `Couldn't add the Device. ${saved.error.message}` : "Couldn't add the Device. Try again.");
         return;
       }
+      setDeviceCode(token);
+      setCopied(false);
       onChanged?.();
       const response = await fetch("/api/reminders/shortcut", {
         method: "POST",
@@ -498,11 +502,28 @@ export function MessagingSetupFlow({
           <li className="flex items-start gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">1</span>
             <button className={primary} data-testid="add-to-iphone" disabled={busy} onClick={() => void addDevice()} type="button">
-              {busy ? "Opening…" : "Add to this Device"}
+              {busy ? "Opening…" : "Get the NoteGoat shortcut"}
             </button>
           </li>
           <Lines lines={shortcutFollowLines(platform)} start={2} />
         </ol>
+        {deviceCode ? (
+          <div className="flex flex-wrap items-center gap-3" data-testid="device-code-row">
+            <code className="select-all break-all font-mono text-sm text-[var(--text-main)]" data-testid="device-code">
+              {deviceCode}
+            </code>
+            <button
+              className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-1.5 text-sm font-semibold text-[var(--text-main)]"
+              data-testid="copy-device-code"
+              onClick={() => {
+                void navigator.clipboard?.writeText(deviceCode).then(() => setCopied(true));
+              }}
+              type="button"
+            >
+              {copied ? "Copied" : "Copy code"}
+            </button>
+          </div>
+        ) : null}
         {platform === "iphone" && shortcutUrl ? (
           <a className={`${primary} block text-center`} data-testid="open-in-shortcuts" href={shortcutUrl}>
             Open in Shortcuts
