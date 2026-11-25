@@ -42,8 +42,8 @@ const WHEN: { kind: TextWhenKind; label: string }[] = [
 
 const HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 
-const primary = "w-full rounded-xl bg-[var(--brand-primary)] px-4 py-4 text-lg font-bold text-[var(--on-brand)] disabled:opacity-60";
-const choice = "w-full rounded-xl border-2 border-[var(--brand-primary)] bg-[var(--bg-panel)] px-4 py-8 text-2xl font-bold text-[var(--text-main)]";
+const primary = "inline-flex items-center rounded-lg bg-[var(--brand-primary)] px-4 py-2 text-base font-semibold text-[var(--on-brand)] disabled:opacity-60";
+const choice = "inline-flex items-center rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-2 text-base font-semibold text-[var(--text-main)]";
 
 export interface MessagingDevice {
   id: string;
@@ -98,7 +98,7 @@ function Lines({ lines, start = 1 }: { lines: string[]; start?: number }) {
     <>
       {lines.map((line, index) => (
         <li className="flex items-start gap-3" data-testid="messaging-line" key={`${index}-${line}`}>
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">
             {start + index}
           </span>
           <p className="pt-1 text-lg font-semibold leading-relaxed text-[var(--text-main)]">
@@ -461,32 +461,36 @@ export function MessagingSetupFlow({
     body = (
       <div className="grid gap-4" data-testid="messaging-device">
         <h2 className="text-2xl font-bold text-[var(--text-main)]">Are you using an iPhone or a Mac?</h2>
-        <button className={choice} data-testid="choose-iphone" onClick={() => choose("iphone")} type="button">
-          iPhone
-        </button>
-        <button className={choice} data-testid="choose-mac" onClick={() => choose("mac")} type="button">
-          Mac
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button className={choice} data-testid="choose-iphone" onClick={() => choose("iphone")} type="button">
+            iPhone
+          </button>
+          <button className={choice} data-testid="choose-mac" onClick={() => choose("mac")} type="button">
+            Mac
+          </button>
+        </div>
       </div>
     );
   } else if (step.kind === "start-over" && (platform === "iphone" || platform === "mac")) {
     body = (
       <div className="grid gap-4" data-testid="messaging-start-over">
         <h2 className="text-2xl font-bold text-[var(--text-main)]">Do you have existing shortcuts for reminders?</h2>
-        <button className={choice} data-testid="start-over-yes" onClick={() => setShowDeletes(true)} type="button">
-          Yes
-        </button>
-        <button
-          className={choice}
-          data-testid="start-over-no"
-          onClick={() => {
-            setShowDeletes(false);
-            go(1);
-          }}
-          type="button"
-        >
-          No
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button className={choice} data-testid="start-over-yes" onClick={() => setShowDeletes(true)} type="button">
+            Yes
+          </button>
+          <button
+            className={choice}
+            data-testid="start-over-no"
+            onClick={() => {
+              setShowDeletes(false);
+              go(1);
+            }}
+            type="button"
+          >
+            No
+          </button>
+        </div>
         {showDeletes ? (
           <ol className="grid gap-4" data-testid="start-over-steps">
             <Lines lines={startOverLines(platform)} />
@@ -497,10 +501,11 @@ export function MessagingSetupFlow({
   } else if (step.kind === "add-device" && (platform === "iphone" || platform === "mac")) {
     body = (
       <div className="grid gap-4" data-testid="messaging-add-device">
-        <h2 className="text-2xl font-bold text-[var(--text-main)]">Add this Device</h2>
+        <h2 className="text-2xl font-bold text-[var(--text-main)]">Get the NoteGoat shortcut</h2>
+        {platform === "iphone" ? <p className="text-lg font-semibold text-[var(--text-main)]">If you do not see Shortcuts, get it from the App Store.</p> : null}
         <ol className="grid gap-4">
           <li className="flex items-start gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">1</span>
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">1</span>
             <button className={primary} data-testid="add-to-iphone" disabled={busy} onClick={() => void addDevice()} type="button">
               {busy ? "Opening…" : "Get the NoteGoat shortcut"}
             </button>
@@ -643,7 +648,7 @@ export function MessagingSetupFlow({
           <h2 className="text-2xl font-bold text-[var(--text-main)]">{name}</h2>
           <ol className="grid gap-4">
             <li className="flex items-start gap-3">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">1</span>
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">1</span>
               <button className={primary} data-testid="add-shortcut-device" disabled={busy || !rule} onClick={() => rule && void addRuleShortcut(rule)} type="button">
                 {busy ? "Opening…" : "Add to this Device"}
               </button>
@@ -665,7 +670,7 @@ export function MessagingSetupFlow({
         <div className="grid gap-4" data-testid="messaging-automation">
           <h2 className="text-2xl font-bold text-[var(--text-main)]">{name}</h2>
           <ol className="grid gap-4">
-            <Lines lines={automationGuideLines(platform, name, time)} />
+            <Lines lines={automationGuideLines(platform, "NoteGoat", time)} />
           </ol>
           <details data-testid="automation-fallback">
             <summary className="cursor-pointer text-lg font-bold text-[var(--brand-primary)]">Don't see Automation?</summary>
@@ -681,7 +686,7 @@ export function MessagingSetupFlow({
         <h2 className="text-2xl font-bold text-[var(--text-main)]">Test it now</h2>
         <ol className="grid gap-4">
           <li className="flex items-start gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">1</span>
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">1</span>
             <button className={primary} data-testid="messaging-test-now" onClick={() => runTest()} type="button">
               {since && !check.ok ? "Waiting for this Device…" : "Test it now"}
             </button>
@@ -704,7 +709,7 @@ export function MessagingSetupFlow({
     (step.kind === "test" && !check.ok);
 
   return (
-    <div className="grid gap-6 text-[var(--text-main)]" data-testid="messaging-setup-flow">
+    <div className="mx-auto grid w-full max-w-lg gap-6 text-[var(--text-main)]" data-testid="messaging-setup-flow">
       <div data-testid="messaging-progress">
         <p className="text-sm font-bold text-[var(--text-main)]">
           {index + 1} of {steps.length}

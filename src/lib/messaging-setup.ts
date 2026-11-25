@@ -35,17 +35,12 @@ export interface CheckInDevice {
 
 const press = (platform: MessagingPlatform) => (platform === "mac" ? "Click" : "Tap");
 
-/** The steps, in order. Redo adds the start-over screen after the Device choice. */
+/** The steps, in order. Get the shortcut, then the automations, then the test. */
 export function buildMessagingSteps(input: { redo: boolean; ruleIds: string[] }): MessagingStep[] {
   const steps: MessagingStep[] = [{ id: "device", kind: "device" }];
   if (input.redo) steps.push({ id: "start-over", kind: "start-over" });
-  steps.push(
-    { id: "add-device", kind: "add-device" },
-    { id: "shortcuts-app", kind: "shortcuts-app" },
-    { id: "pick", kind: "pick" },
-  );
+  steps.push({ id: "pick", kind: "pick" }, { id: "add-device", kind: "add-device" });
   for (const ruleId of input.ruleIds) {
-    steps.push({ id: `shortcut:${ruleId}`, kind: "shortcut", ruleId });
     steps.push({ id: `automation:${ruleId}`, kind: "automation", ruleId });
   }
   steps.push({ id: "test", kind: "test" });
@@ -141,10 +136,10 @@ export function shortcutsAppLines(platform: MessagingPlatform): string[] {
   ];
 }
 
-/** What the Device shows after Add to this Device opens the shortcut. */
+/** What the Device shows after Get the NoteGoat shortcut opens Shortcuts. */
 export function shortcutFollowLines(platform: MessagingPlatform): string[] {
   const word = press(platform);
-  const lines = [`${word} **Add Shortcut**.`];
+  const lines = [`${word} **Add Shortcut**. Paste the code if Shortcuts asks.`];
   if (platform === "mac") lines.push("If it does not open, click **Download shortcut**.");
   return lines;
 }
@@ -159,16 +154,11 @@ export function automationGuideLines(platform: MessagingPlatform, name: string, 
   const word = press(platform);
   const day = platform === "mac" ? "Daily" : "Every Day";
   return [
-    "Open **Shortcuts**.",
-    `${word} **Automation**.`,
-    `${word} **+**.`,
-    `${word} **Time of Day**.`,
-    `Set **${time}**.`,
-    `${word} **${day}**.`,
-    `${word} **Run Immediately**.`,
-    "Turn **Notify When Run** off.",
-    `${word} **Next**.`,
-    `${word} **"${name}"**.`,
+    `Open **Shortcuts**. ${word} **Automation**.`,
+    `${word} **+**. ${word} **Time of Day**.`,
+    `Set **${time}**. ${word} **${day}**.`,
+    `${word} **Run Immediately**. Turn **Notify When Run** off.`,
+    `${word} **Next**. ${word} **"${name}"**.`,
     `${word} **Done**.`,
   ];
 }

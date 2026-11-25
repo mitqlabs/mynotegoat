@@ -8,6 +8,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { MessagingSetupEntry, MessagingSetupFlow } from "@/components/messaging-setup-flow";
+import { ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
 import { BRAND_STORAGE_KEY, TONE_STORAGE_KEY } from "@/lib/brand";
 import { defaultSmsReminderSettings, type SmsReminderSettings } from "@/lib/sms-reminders";
 import type { SmsTemplate } from "@/lib/sms-template-core";
@@ -36,29 +37,42 @@ function Preview() {
   const [settings, setSettings] = useState<SmsReminderSettings>(() => demoSettings());
   useEffect(() => {
     window.localStorage.setItem(BRAND_STORAGE_KEY, JSON.stringify({ theme: "blue" }));
-    window.localStorage.setItem(TONE_STORAGE_KEY, "light");
+    window.localStorage.setItem(TONE_STORAGE_KEY, "dark");
     const root = document.documentElement;
     root.setAttribute("data-brand", "blue");
-    root.setAttribute("data-tone", "light");
+    root.setAttribute("data-tone", "dark");
     root.setAttribute("data-theme-lock", "1");
     setReady(true);
   }, []);
   if (!ready) return null;
 
-  const platform = view === "mac" ? "mac" : "iphone";
+  const platform = view === "mac" || view === "stop" ? "mac" : "iphone";
   const stepId =
-    view === "device" ? "device" : view === "iphone" || view === "mac" ? "automation:visits" : view === "test" ? "test" : "device";
+    params.get("step") ??
+    (view === "device" ? "device" : view === "iphone" || view === "mac" ? "automation:visits" : view === "test" ? "test" : "add-device");
 
   return (
     <div className="min-h-screen bg-[var(--bg-canvas)] px-4 py-6 text-[var(--text-main)]">
       <style>{`nextjs-portal{display:none !important}`}</style>
-      <div className="mx-auto grid w-full max-w-xl gap-5">
-        {view === "entry" || view === "redo" ? (
+      <div className={`mx-auto grid w-full gap-5 ${view === "stop" ? "max-w-5xl" : "max-w-xl"}`}>
+        {view === "stop" ? (
+          <ReminderSetupChecklist
+            devices={[]}
+            embedded
+            forcedPlatform="mac"
+            mode="stop"
+            onConfirm={() => {}}
+            onToggle={() => {}}
+            open
+            settings={settings}
+            workspaceId=""
+          />
+        ) : view === "entry" || view === "redo" ? (
           <MessagingSetupEntry complete={view === "redo"} onStart={() => {}} />
         ) : (
           <MessagingSetupFlow
             devices={[]}
-            forced={{ platform, stepId, ruleIds: ["visits", "birthday"], seen: view === "test" && params.get("seen") === "1" }}
+            forced={{ platform, stepId, redo: params.get("redo") === "1", ruleIds: ["visits", "birthday"], seen: view === "test" && params.get("seen") === "1" }}
             messages={TEMPLATES}
             onClose={() => {}}
             settings={settings}

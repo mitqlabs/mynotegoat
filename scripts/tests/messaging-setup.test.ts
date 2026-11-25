@@ -28,7 +28,7 @@ const birthday: TextRule = { id: "birthday", templateId: "b", on: true, kind: "b
 const rules = [birthday, visits];
 
 const fresh = buildMessagingSteps({ redo: false, ruleIds: ["visits"] });
-assert.deepEqual(fresh.map((step) => step.kind), ["device", "add-device", "shortcuts-app", "pick", "shortcut", "automation", "test"]);
+assert.deepEqual(fresh.map((step) => step.kind), ["device", "pick", "add-device", "automation", "test"]);
 assert.equal(fresh[0].id, "device");
 assert.equal(fresh.find((step) => step.kind === "start-over"), undefined);
 
@@ -36,12 +36,9 @@ const again = buildMessagingSteps({ redo: true, ruleIds: orderedRuleIds(rules, [
 assert.deepEqual(again.map((step) => step.id), [
   "device",
   "start-over",
-  "add-device",
-  "shortcuts-app",
   "pick",
-  "shortcut:visits",
+  "add-device",
   "automation:visits",
-  "shortcut:birthday",
   "automation:birthday",
   "test",
 ]);
@@ -53,19 +50,20 @@ assert.equal(resumeStepId(again, "test", false, ""), "device");
 
 const iphoneAuto = automationGuideLines("iphone", visits.shortcutName!, "8:00 AM");
 const macAuto = automationGuideLines("mac", visits.shortcutName!, "8:00 AM");
-assert.ok(iphoneAuto.includes("Tap **Automation**."));
-assert.ok(iphoneAuto.includes("Tap **+**."));
-assert.ok(iphoneAuto.includes("Tap **Time of Day**."));
-assert.ok(iphoneAuto.includes("Set **8:00 AM**."));
-assert.ok(iphoneAuto.includes("Tap **Every Day**."));
-assert.ok(iphoneAuto.includes("Tap **Run Immediately**."));
-assert.ok(iphoneAuto.includes("Turn **Notify When Run** off."));
-assert.equal(iphoneAuto.length, 11);
+const has = (lines: string[], text: string) => lines.some((line) => line.includes(text));
+assert.ok(has(iphoneAuto, "Tap **Automation**."));
+assert.ok(has(iphoneAuto, "Tap **+**."));
+assert.ok(has(iphoneAuto, "Tap **Time of Day**."));
+assert.ok(has(iphoneAuto, "Set **8:00 AM**."));
+assert.ok(has(iphoneAuto, "Tap **Every Day**."));
+assert.ok(has(iphoneAuto, "Tap **Run Immediately**."));
+assert.ok(has(iphoneAuto, "Turn **Notify When Run** off."));
+assert.equal(iphoneAuto.length, 6);
 assert.equal(iphoneAuto.at(-1), "Tap **Done**.");
 assert.equal(iphoneAuto.some((line) => /Privacy|Allow Running When Locked|do not see/i.test(line)), false);
 assert.equal(iphoneAuto.filter((line) => line.includes("8:00 AM")).length, 1);
-assert.ok(macAuto.includes("Click **Daily**."));
-assert.ok(macAuto.includes("Click **Run Immediately**."));
+assert.ok(has(macAuto, "Click **Daily**."));
+assert.ok(has(macAuto, "Click **Run Immediately**."));
 assert.equal(macAuto.at(-1), "Click **Done**.");
 assert.equal(macAuto.some((line) => /\bTap\b/.test(line)), false);
 assert.equal(iphoneAuto.some((line) => /\bClick\b/.test(line)), false);
@@ -80,7 +78,7 @@ assert.ok(macFallback.includes("Click **Privacy**."));
 assert.equal(shortcutsAppLines("mac").join(" "), "Shortcuts is already on this Mac. Open **Shortcuts**.");
 assert.ok(shortcutsAppLines("iphone").includes("Tap **Get**."));
 assert.equal(shortcutsAppLines("iphone").some((line) => /Mac/.test(line)), false);
-assert.ok(shortcutFollowLines("iphone").includes("Tap **Add Shortcut**."));
+assert.ok(shortcutFollowLines("iphone").some((line) => line.includes("Tap **Add Shortcut**.")));
 assert.ok(shortcutFollowLines("mac").some((line) => line.includes("Download shortcut")));
 assert.deepEqual(testFollowLines("iphone"), ["Tap **Run**."]);
 assert.deepEqual(testFollowLines("mac"), ["Click **Run**."]);

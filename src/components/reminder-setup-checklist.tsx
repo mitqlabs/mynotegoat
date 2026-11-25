@@ -84,6 +84,7 @@ export function ReminderSetupChecklist({
   embedded = false,
   hasMac = false,
   mode = "times",
+  forcedPlatform,
 }: {
   settings: SmsReminderSettings;
   onConfirm: (confirmed: boolean) => void;
@@ -101,11 +102,13 @@ export function ReminderSetupChecklist({
   hasMac?: boolean;
   /** "stop" is the STOP catcher and Test. It is not part of a shortcut's steps. */
   mode?: "times" | "stop";
+  /** Screenshot harness. */
+  forcedPlatform?: SetupPlatform;
 }) {
   const [atSend] = catchUpClockLabels(settings.sendHour);
-  const [platform, setPlatform] = useState<SetupPlatform>("iphone");
+  const [platform, setPlatform] = useState<SetupPlatform>(forcedPlatform ?? "iphone");
   const [fileUrl, setFileUrl] = useState("");
-  if (typeof navigator !== "undefined") {
+  if (!forcedPlatform && typeof navigator !== "undefined") {
     const here = thisPlatform();
     if (here !== platform) setPlatform(here);
   }
@@ -253,19 +256,19 @@ export function ReminderSetupChecklist({
           {text}
         </p>
       ))}
-      <ol className="grid gap-8" data-testid="iphone-setup-steps">
+      <ol className="grid max-w-lg gap-4" data-testid="iphone-setup-steps">
         {steps.map((step, index) => {
           const isAdd = index === 0;
           const isTest = index === steps.length - 1;
           return (
             <li className="flex items-start gap-3" key={`${index}-${step.text}`}>
-              <span aria-hidden className="grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-2xl font-bold text-[var(--text-main)]">
+              <span aria-hidden className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">
                 {index + 1}
               </span>
               <div className="min-w-0 flex-1">
                 {isAdd ? (
                   <button
-                    className="w-full rounded-xl bg-[var(--brand-primary)] px-4 py-4 text-lg font-bold text-[var(--on-brand)] disabled:opacity-60"
+                    className="inline-flex items-center rounded-lg bg-[var(--brand-primary)] px-4 py-2 text-base font-semibold text-[var(--on-brand)] disabled:opacity-60"
                     data-testid="add-to-iphone"
                     disabled={busy === "add"}
                     onClick={() => void addToThisDevice()}
@@ -275,7 +278,7 @@ export function ReminderSetupChecklist({
                   </button>
                 ) : isTest ? (
                   <button
-                    className={`w-full rounded-xl border px-4 py-4 text-left text-lg font-bold ${report.ok ? "border-[var(--brand-primary)] bg-[var(--bg-panel)] text-[var(--text-main)]" : "border-transparent bg-[var(--brand-primary)] text-[var(--on-brand)]"}`}
+                    className={`inline-flex items-center rounded-lg border px-4 py-2 text-left text-base font-semibold ${report.ok ? "border-[var(--brand-primary)] bg-[var(--bg-panel)] text-[var(--text-main)]" : "border-transparent bg-[var(--brand-primary)] text-[var(--on-brand)]"}`}
                     data-testid="iphone-setup-test"
                     onClick={() => void runTest()}
                     type="button"

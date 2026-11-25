@@ -24,8 +24,8 @@ const WHEN: { kind: TextWhenKind; label: string }[] = [
 
 const HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 
-const big = "w-full rounded-xl border-2 border-[var(--brand-primary)] bg-[var(--bg-panel)] px-4 py-4 text-left text-lg font-bold text-[var(--text-main)]";
-const primary = "w-full rounded-xl bg-[var(--brand-primary)] px-4 py-4 text-lg font-bold text-[var(--on-brand)] disabled:opacity-60";
+const big = "rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-4 py-2 text-left text-base font-semibold text-[var(--text-main)]";
+const primary = "inline-flex items-center rounded-lg bg-[var(--brand-primary)] px-4 py-2 text-base font-semibold text-[var(--on-brand)] disabled:opacity-60";
 
 function hourChoice(hour: number): string {
   const shown = hour % 12 === 0 ? 12 : hour % 12;

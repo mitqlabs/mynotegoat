@@ -173,24 +173,13 @@ export function oneShortcutLines(platform: SetupPlatform, name: string, time: st
 export function stopCatcherLines(platform: SetupPlatform): string[] {
   const press = platform === "mac" ? "Click" : "Tap";
   if (platform === "mac") {
-    return [
-      `${press} **+**.`,
-      "If you see **Message**, click it.",
-      "If you do not see **Message**, skip it. A Mac may not have **Message**.",
-    ];
+    return ["Click **+**. If you see **Message**, click it. If you do not, skip it."];
   }
   return [
-    `${press} **+**.`,
-    `${press} **Message**.`,
-    `${press} **Message Contains**.`,
-    "Type **STOP**.",
-    `${press} **Done**.`,
-    `${press} **Run Immediately**.`,
-    "Turn **Notify When Run** off.",
-    `${press} **Next**.`,
-    `${press} **NoteGoat**.`,
-    "If you see **Shortcut Input**, tap it.",
-    `${press} **Done**.`,
+    "Tap **+**. Tap **Message**. Tap **Message Contains**.",
+    "Type **STOP**. Tap **Done**.",
+    "Tap **Run Immediately**. Turn **Notify When Run** off.",
+    "Tap **Next**. Tap **NoteGoat**. Tap **Done**.",
   ];
 }
 

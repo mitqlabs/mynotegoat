@@ -137,8 +137,8 @@ assert.ok(mac[0].startsWith("Click "));
 assert.ok(mac.includes("Click **Daily**."));
 assert.ok(mac.includes("Click **\"NoteGoat – Birthdays 9 AM\"**."));
 const stop = stopCatcherLines("iphone");
-assert.ok(stop.includes("Type **STOP**."));
-assert.ok(stop.includes("Tap **NoteGoat**."));
+assert.ok(stop.some((line) => line.includes("Type **STOP**.")));
+assert.ok(stop.some((line) => line.includes("Tap **NoteGoat**.")));
 assert.equal(stopCatcherLines("mac").some((line) => line.includes("Message")), true);
 
 const token = `ngr_${"ab".repeat(32)}`;
