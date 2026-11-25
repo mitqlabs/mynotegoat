@@ -2,7 +2,6 @@
 
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { SmsSendMenu } from "@/components/sms-send-menu";
-import { ageOn } from "@/lib/age";
 import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { downloadVCard } from "@/lib/vcard";
@@ -73,14 +72,12 @@ type IdentityProps = {
   /** Case page includes the case number on the contact card. */
   onAddToContacts?: () => void;
   emailClassName?: string;
-  /** Case page shows the age next to DOB. Folder page leaves it off. */
-  showAge?: boolean;
 };
 
 /**
  * Last name, first name, DOB, phone (text + contacts icons and the reminder
  * checkbox), sex, marital status, and email. Rendered as a fragment so the
- * case page can keep these cells in its own grid.
+ * folder page can keep these cells in its own grid.
  */
 export function PatientIdentityFields({
   value,
@@ -88,11 +85,9 @@ export function PatientIdentityFields({
   onTextRemindersOff,
   onAddToContacts,
   emailClassName,
-  showAge,
 }: IdentityProps) {
   const set = (patch: Partial<PatientPersonDraft>) => onChange({ ...value, ...patch });
   const phoneDigits = value.phone.replace(/\D/g, "");
-  const age = showAge ? ageOn(value.dob) : null;
   return (
     <>
       <label className="grid gap-1">
@@ -112,10 +107,7 @@ export function PatientIdentityFields({
         />
       </label>
       <label className="grid gap-1">
-        <span className="flex items-baseline justify-between gap-2">
-          <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
-          {age !== null && <span className="text-sm font-semibold tabular-nums text-[var(--text-muted)]">Age {age}</span>}
-        </span>
+        <span className="text-sm font-semibold text-[var(--text-muted)]">Patient DOB</span>
         <input
           className="rounded-xl border border-[var(--line-soft)] bg-white px-3 py-2"
           inputMode="numeric"
@@ -257,6 +249,177 @@ export function PatientAddressFields({
       <span className="text-sm font-semibold text-[var(--text-muted)]">Patient Address</span>
       <div className="mt-1">
         <AddressFieldGroup onChange={onChange} value={address} />
+      </div>
+    </div>
+  );
+}
+
+const caseLabel = "text-sm font-semibold leading-4 text-[var(--text-muted)]";
+const caseInput =
+  "min-w-0 w-full rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 py-1.5 text-[var(--text-main)]";
+const caseIconBtn =
+  "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)] text-[var(--brand-primary)] hover:bg-[var(--bg-soft)]";
+
+/**
+ * Case file header: three tight rows.
+ * 1. Last name, first name, DOB. Age stays on the title, not in this row.
+ * 2. Phone (icons + reminder checkbox), sex, marital status.
+ * 3. Email and the address parts on one wrapping line.
+ */
+export function PatientCaseHeaderFields({
+  value,
+  onChange,
+  onTextRemindersOff,
+  onAddToContacts,
+}: Omit<IdentityProps, "emailClassName">) {
+  const set = (patch: Partial<PatientPersonDraft>) => onChange({ ...value, ...patch });
+  const phoneDigits = value.phone.replace(/\D/g, "");
+  return (
+    <div className="grid gap-y-2">
+      <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 sm:grid-cols-3">
+        <label className="grid min-w-0 gap-0.5">
+          <span className={caseLabel}>Last Name</span>
+          <input className={caseInput} onChange={(event) => set({ lastName: event.target.value })} value={value.lastName} />
+        </label>
+        <label className="grid min-w-0 gap-0.5">
+          <span className={caseLabel}>First Name</span>
+          <input className={caseInput} onChange={(event) => set({ firstName: event.target.value })} value={value.firstName} />
+        </label>
+        <label className="col-span-2 grid min-w-0 gap-0.5 sm:col-span-1">
+          <span className={caseLabel}>DOB</span>
+          <input
+            className={caseInput}
+            inputMode="numeric"
+            maxLength={10}
+            onChange={(event) => set({ dob: formatUsDateInput(event.target.value) })}
+            placeholder="MM/DD/YYYY"
+            value={value.dob}
+          />
+        </label>
+      </div>
+      <div className="grid grid-cols-2 items-end gap-x-2 gap-y-1.5 min-[720px]:grid-cols-[minmax(0,1.55fr)_minmax(6.25rem,0.7fr)_minmax(8rem,0.85fr)]">
+        <div className="col-span-2 grid min-w-0 gap-0.5 min-[720px]:col-span-1">
+          <span className={caseLabel}>Phone</span>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <input
+              className="min-w-[7.5rem] flex-1 rounded-xl border border-[var(--line-soft)] bg-[var(--field-bg)] px-3 py-1.5 text-[var(--text-main)]"
+              inputMode="numeric"
+              maxLength={12}
+              onChange={(event) => set({ phone: formatUsPhoneInput(event.target.value) })}
+              value={value.phone}
+            />
+            <span className="inline-flex shrink-0 items-center gap-1.5">
+              {phoneDigits.length > 0 && (
+                <SmsSendMenu
+                  align="right"
+                  ariaLabel="Text this patient"
+                  className={caseIconBtn}
+                  context={{
+                    patient: {
+                      firstName: value.firstName,
+                      lastName: value.lastName,
+                      fullName: [value.firstName, value.lastName].filter(Boolean).join(" "),
+                    },
+                  }}
+                  label={
+                    <svg aria-hidden className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h0A2.5 2.5 0 0 1 4 13.5z" strokeLinejoin="round" />
+                    </svg>
+                  }
+                  phone={value.phone}
+                />
+              )}
+              <button
+                aria-label="Add to Contacts"
+                className={caseIconBtn}
+                onClick={() => {
+                  if (onAddToContacts) {
+                    onAddToContacts();
+                    return;
+                  }
+                  downloadVCard({
+                    firstName: value.firstName,
+                    lastName: value.lastName,
+                    phone: value.phone,
+                    email: value.email,
+                    dob: value.dob,
+                    address: value.address,
+                  });
+                }}
+                title="Add to Contacts (downloads a .vcf — macOS opens it in Contacts with name, phone, birthday and address pre-filled)"
+                type="button"
+              >
+                <svg aria-hidden className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                  <circle cx="10" cy="8" r="3.5" />
+                  <path d="M3.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6" strokeLinecap="round" />
+                </svg>
+              </button>
+            </span>
+            {phoneDigits.length > 0 && (
+              <label
+                className="inline-flex shrink-0 items-center gap-1.5 text-xs leading-4 font-semibold text-[var(--text-muted)]"
+                title="Stops appointment reminder texts for this patient. Their number still works for texts you send by hand."
+              >
+                <input
+                  checked={value.textRemindersOff}
+                  onChange={(event) => {
+                    const off = event.target.checked;
+                    set({ textRemindersOff: off });
+                    onTextRemindersOff?.(off);
+                  }}
+                  type="checkbox"
+                />
+                No reminder texts
+              </label>
+            )}
+          </div>
+        </div>
+        <label className="grid min-w-0 gap-0.5">
+          <span className={caseLabel}>Sex</span>
+          <select
+            className={caseInput}
+            onChange={(event) => set({ sex: event.target.value as PatientSexValue })}
+            value={value.sex}
+          >
+            <option value="">—</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            {value.sex === "Other" && <option value="Other">Other</option>}
+          </select>
+        </label>
+        <label className="grid min-w-0 gap-0.5">
+          <span className={caseLabel}>Marital Status</span>
+          <select
+            className={caseInput}
+            onChange={(event) => set({ maritalStatus: event.target.value as MaritalStatus | "" })}
+            value={value.maritalStatus}
+          >
+            <option value="">—</option>
+            {maritalStatusOptions.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+            {value.maritalStatus === "Other" && <option value="Other">Other</option>}
+          </select>
+        </label>
+      </div>
+      <div className="flex flex-wrap items-end gap-x-2 gap-y-1.5">
+        <label className="grid min-w-[12rem] flex-[1_1_14rem] gap-0.5">
+          <span className={caseLabel}>Email</span>
+          <input
+            className={caseInput}
+            onChange={(event) => set({ email: event.target.value })}
+            type="email"
+            value={value.email}
+          />
+        </label>
+        <AddressFieldGroup
+          embedded
+          onChange={(address) => set({ address })}
+          tight
+          value={value.address}
+        />
       </div>
     </div>
   );

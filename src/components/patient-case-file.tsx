@@ -16,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { ContactGapPrompt, findContactByName, type ContactGap } from "@/components/contact-gap-prompt";
 import { useCasePatientPhoto } from "@/components/case-header-photo";
-import { PatientAddressFields, PatientIdentityFields } from "@/components/patient-person-fields";
+import { PatientFileHeader } from "@/components/patient-file-header";
 import { ScrollLock } from "@/components/scroll-lock";
 import { QuickGlance } from "@/components/quick-glance";
 import { GoatPanel } from "@/components/goat-panel";
@@ -5243,125 +5243,40 @@ export function PatientCaseFile({ patient }: { patient: PatientRecord }) {
   return (
     <div className="space-y-5">
       {checkoutNoteDialog}
-      <section className="panel-card p-4">
-        <div className="case-header">
-          {patientPhotoSrc ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              alt=""
-              className="case-header-photo h-[140px] w-[110px] rounded-xl object-cover"
-              src={patientPhotoSrc}
-            />
-          ) : null}
-          <div className="case-header-name min-w-0">
-            <p className="text-sm text-[var(--text-muted)]">
-              {folderCrumb ? (
-                <>
-                  <Link href="/patients" className="underline">
-                    Patients
-                  </Link>
-                  {" / "}
-                  <Link href={`/patients/${folderCrumb.id}`} className="underline">
-                    {folderCrumb.name}
-                  </Link>
-                  {" / Case"}
-                </>
-              ) : (
-                <>
-                  <Link href="/patients" className="underline">
-                    Patients
-                  </Link>{" "}
-                  / Patient File
-                </>
-              )}
-            </p>
-            <h2 className="text-2xl font-semibold">{patient.fullName}</h2>
-          </div>
-          <div className="case-header-info min-w-0" data-patient-demographics>
-            <div className="grid grid-cols-1 items-start gap-x-3 gap-y-2 sm:grid-cols-2">
-              <PatientIdentityFields
-                emailClassName="sm:col-span-2"
-                onAddToContacts={addPatientToContacts}
-                onChange={(next) => {
-                  setLastName(next.lastName);
-                  setFirstName(next.firstName);
-                  setPatientDob(next.dob);
-                  setPatientPhone(next.phone);
-                  setPatientSex(next.sex);
-                  setMaritalStatus(next.maritalStatus);
-                  setPatientEmail(next.email);
-                }}
-                onTextRemindersOff={handleTextRemindersChange}
-                showAge
-                value={{
-                  lastName,
-                  firstName,
-                  dob: patientDob,
-                  phone: patientPhone,
-                  sex: patientSex,
-                  maritalStatus,
-                  email: patientEmail,
-                  address: patientAddress,
-                  textRemindersOff,
-                }}
-              />
-              <PatientAddressFields
-                address={patientAddress}
-                className="sm:col-span-2"
-                onChange={setPatientAddress}
-              />
-            </div>
-          </div>
-          <div className="case-header-actions flex min-w-0 flex-col gap-2">
-            {patientAlerts.length > 0 && (
-              <div className="flex flex-wrap gap-2 xl:justify-end">
-                {patientAlerts.map((alert, index) => (
-                  <span
-                    key={`alert-${index}`}
-                    className="tone-warn inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-bold shadow-sm"
-                  >
-                    ⚠ {alert}
-                    <button
-                      className="ml-1 rounded-full text-[var(--text-muted)] transition hover:text-[var(--status-alert)]"
-                      onClick={() => setPatientAlerts((current) => current.filter((_, i) => i !== index))}
-                      title="Remove alert"
-                      type="button"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <input
-                className="min-w-0 flex-1 rounded-lg border border-[var(--line-soft)] bg-white px-3 py-1.5 text-sm"
-                onChange={(event) => setAlertDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && alertDraft.trim()) {
-                    event.preventDefault();
-                    setPatientAlerts((current) => [...current, alertDraft.trim().toUpperCase()]);
-                    setAlertDraft("");
-                  }
-                }}
-                placeholder="Add Patient Alert (Ex: Hx of Cancer, Broken Rib, etc.)"
-                value={alertDraft}
-              />
-              <button
-                className="btn btn-secondary btn-sm shrink-0"
-                onClick={() => {
-                  if (alertDraft.trim()) {
-                    setPatientAlerts((current) => [...current, alertDraft.trim().toUpperCase()]);
-                    setAlertDraft("");
-                  }
-                }}
-                type="button"
-              >
-                + Alert
-              </button>
-            </div>
-          </div>
-        </div>
+      <section className="panel-card px-4 py-3">
+        <PatientFileHeader
+          alertDraft={alertDraft}
+          alerts={patientAlerts}
+          folderCrumb={folderCrumb}
+          name={[lastName, firstName].map((part) => part.trim()).filter(Boolean).join(", ") || patient.fullName}
+          onAddAlert={(text) => setPatientAlerts((current) => [...current, text])}
+          onAddToContacts={addPatientToContacts}
+          onAlertDraftChange={setAlertDraft}
+          onPersonChange={(next) => {
+            setLastName(next.lastName);
+            setFirstName(next.firstName);
+            setPatientDob(next.dob);
+            setPatientPhone(next.phone);
+            setPatientSex(next.sex);
+            setMaritalStatus(next.maritalStatus);
+            setPatientEmail(next.email);
+            setPatientAddress(next.address);
+          }}
+          onRemoveAlert={(index) => setPatientAlerts((current) => current.filter((_, i) => i !== index))}
+          onTextRemindersOff={handleTextRemindersChange}
+          person={{
+            lastName,
+            firstName,
+            dob: patientDob,
+            phone: patientPhone,
+            sex: patientSex,
+            maritalStatus,
+            email: patientEmail,
+            address: patientAddress,
+            textRemindersOff,
+          }}
+          photoSrc={patientPhotoSrc}
+        />
       </section>
 
       <QuestionnaireReviewCards encounters={formEncounters} patientId={patient.id} patientName={patient.fullName} />
