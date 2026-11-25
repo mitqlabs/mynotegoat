@@ -2,7 +2,6 @@
 
 import { AddressFieldGroup } from "@/components/address-field-group";
 import { SmsSendMenu } from "@/components/sms-send-menu";
-import { ageOn } from "@/lib/age";
 import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
 import { formatUsPhoneInput } from "@/lib/phone-format";
 import { downloadVCard } from "@/lib/vcard";
@@ -263,7 +262,7 @@ const caseIconBtn =
 
 /**
  * Case file header: three tight rows.
- * 1. Last name, first name, DOB with age beside the date.
+ * 1. Last name, first name, DOB. Age stays on the title, not in this row.
  * 2. Phone (icons + reminder checkbox), sex, marital status.
  * 3. Email and the address parts on one wrapping line.
  */
@@ -275,7 +274,6 @@ export function PatientCaseHeaderFields({
 }: Omit<IdentityProps, "emailClassName">) {
   const set = (patch: Partial<PatientPersonDraft>) => onChange({ ...value, ...patch });
   const phoneDigits = value.phone.replace(/\D/g, "");
-  const age = ageOn(value.dob);
   return (
     <div className="grid gap-y-2">
       <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 sm:grid-cols-3">
@@ -289,21 +287,14 @@ export function PatientCaseHeaderFields({
         </label>
         <label className="col-span-2 grid min-w-0 gap-0.5 sm:col-span-1">
           <span className={caseLabel}>DOB</span>
-          <span className="flex min-w-0 items-center gap-2">
-            <input
-              className={`${caseInput} flex-1`}
-              inputMode="numeric"
-              maxLength={10}
-              onChange={(event) => set({ dob: formatUsDateInput(event.target.value) })}
-              placeholder="MM/DD/YYYY"
-              value={value.dob}
-            />
-            {age !== null && (
-              <span className="shrink-0 text-base font-bold tabular-nums text-[var(--text-main)]" data-dob-age>
-                Age {age}
-              </span>
-            )}
-          </span>
+          <input
+            className={caseInput}
+            inputMode="numeric"
+            maxLength={10}
+            onChange={(event) => set({ dob: formatUsDateInput(event.target.value) })}
+            placeholder="MM/DD/YYYY"
+            value={value.dob}
+          />
         </label>
       </div>
       <div className="grid grid-cols-2 items-end gap-x-2 gap-y-1.5 min-[720px]:grid-cols-[minmax(0,1.55fr)_minmax(6.25rem,0.7fr)_minmax(8rem,0.85fr)]">
