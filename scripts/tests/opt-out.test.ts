@@ -52,7 +52,7 @@ const steps = readFileSync("src/lib/iphone-setup.ts", "utf8");
 const setup = panel.slice(panel.indexOf('data-testid="section-setup"'), panel.indexOf('data-testid="section-phones"'));
 const afterBroadcast = panel.slice(panel.indexOf('testId="section-texts"'));
 assert.ok(!setup.includes('data-testid="opt-out-list"'), "the list is not inside the text list");
-assert.ok(panel.includes('data-testid="section-stop"') && steps.includes("Type **STOP**") && steps.includes("stopCatcherLines"), "STOP catcher stays separate from each shortcut");
+assert.ok(readFileSync("src/components/messaging-setup-flow.tsx", "utf8").includes("Optional: auto-handle STOP replies") && steps.includes("Type **STOP**") && steps.includes("stopCatcherLines"), "STOP replies are one optional step, not a separate list");
 assert.ok(afterBroadcast.indexOf('testId="section-opted-out"') > afterBroadcast.indexOf('title="Broadcast"'));
 assert.match(panel, /placeholder="Add patient"/);
 assert.match(panel, /action: "stop"/);

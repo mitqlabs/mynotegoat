@@ -165,7 +165,26 @@ const at8 = dueScope({
 });
 assert.equal(at8.today, true);
 assert.equal(at8.tomorrow, true);
-assert.equal(at8.birthday, false, "9 AM birthdays wait");
+assert.equal(at8.birthday, false, "9 AM birthdays wait until their hour");
+const morning = dueScope({
+  rules: saved.rules!,
+  now: friday8,
+  timeZone: "America/Los_Angeles",
+  officeHours: hours,
+  closedIsoDates: new Set(),
+  allDay: true,
+});
+assert.equal(morning.birthday, true, "one morning run includes the later birthday");
+assert.equal(morning.today, true);
+const beforeMorning = dueScope({
+  rules: saved.rules!,
+  now: new Date("2026-11-20T15:00:00Z"),
+  timeZone: "America/Los_Angeles",
+  officeHours: hours,
+  closedIsoDates: new Set(),
+  allDay: true,
+});
+assert.equal(beforeMorning.today, false, "before the earliest hour, one run still waits");
 assert.equal(at8.limitTomorrowToNow, false);
 
 const at9 = dueScope({

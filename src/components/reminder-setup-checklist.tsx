@@ -112,12 +112,7 @@ export function ReminderSetupChecklist({
     const here = thisPlatform();
     if (here !== platform) setPlatform(here);
   }
-  const press = platform === "mac" ? "Click" : "Tap";
-  const stopSteps: SetupStep[] = [
-    { icon: "1", text: `${press} **Add to this Device**.`, lines: [`${press} **Add to this Device**.`] },
-    ...stopCatcherLines(platform).map((line) => ({ icon: "1", text: line, lines: [line] })),
-    { icon: "1", text: `${press} **Test**.`, lines: [`${press} **Test**.`] },
-  ];
+  const stopSteps: SetupStep[] = stopCatcherLines(platform).map((line) => ({ icon: "1", text: line, lines: [line] }));
   const steps = mode === "stop"
     ? stopSteps
     : clocks.length
@@ -256,10 +251,11 @@ export function ReminderSetupChecklist({
           {text}
         </p>
       ))}
+      {mode === "stop" ? <h3 className="text-lg font-bold text-[var(--text-main)]">Optional: auto-handle STOP replies</h3> : null}
       <ol className="grid max-w-lg gap-4" data-testid="iphone-setup-steps">
         {steps.map((step, index) => {
-          const isAdd = index === 0;
-          const isTest = index === steps.length - 1;
+          const isAdd = mode !== "stop" && index === 0;
+          const isTest = mode !== "stop" && index === steps.length - 1;
           return (
             <li className="flex items-start gap-3" key={`${index}-${step.text}`}>
               <span aria-hidden className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">

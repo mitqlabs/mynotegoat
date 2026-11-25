@@ -49,12 +49,12 @@ function Preview() {
   const platform = view === "mac" || view === "stop" ? "mac" : "iphone";
   const stepId =
     params.get("step") ??
-    (view === "device" ? "device" : view === "iphone" || view === "mac" ? "automation:visits" : view === "test" ? "test" : "add-device");
+    (view === "device" ? "device" : view === "iphone" || view === "mac" ? "automation" : view === "test" ? "test" : "add-device");
 
   return (
     <div className="min-h-screen bg-[var(--bg-canvas)] px-4 py-6 text-[var(--text-main)]">
       <style>{`nextjs-portal{display:none !important}`}</style>
-      <div className={`mx-auto grid w-full gap-5 ${view === "stop" ? "max-w-5xl" : "max-w-xl"}`}>
+      <div className="mx-auto grid w-full max-w-5xl gap-5">
         {view === "stop" ? (
           <ReminderSetupChecklist
             devices={[]}
@@ -72,7 +72,14 @@ function Preview() {
         ) : (
           <MessagingSetupFlow
             devices={[]}
-            forced={{ platform, stepId, redo: params.get("redo") === "1", ruleIds: ["visits", "birthday"], seen: view === "test" && params.get("seen") === "1" }}
+            forced={{
+              platform,
+              stepId,
+              redo: params.get("redo") === "1",
+              ruleIds: ["visits", "birthday"],
+              seen: view === "test" && params.get("seen") === "1",
+              deviceCode: params.get("code") === "1" ? "ngr_" + "ab".repeat(32) : undefined,
+            }}
             messages={TEMPLATES}
             onClose={() => {}}
             settings={settings}

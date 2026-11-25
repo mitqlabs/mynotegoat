@@ -15,7 +15,6 @@ import { ensureShortcutNames, legacyRules, normalizeShortcutRuns, SHORTCUT_RUNS_
 import { SmsTemplatesSection } from "@/components/sms-templates-section";
 import { CreateShortcutSection } from "@/components/create-shortcut-section";
 import { MessagingSetupEntry, MessagingSetupFlow, messagingSetupComplete } from "@/components/messaging-setup-flow";
-import { ReminderSetupChecklist } from "@/components/reminder-setup-checklist";
 import {
   buildReminderQueue,
   DEFAULT_OPT_OUT_TEXT,
@@ -376,9 +375,6 @@ export function TextRemindersSettingsPanel() {
   const setSection = (key: ReminderSection, open: boolean) =>
     update({ sections: { ...settings.sections, [key]: open } });
 
-  const confirmAutomation = (confirmed: boolean) =>
-    update({ automationConfirmed: confirmed, automationConfirmedAt: confirmed ? new Date().toISOString() : "" });
-
   // No automatic send near the send hour on the last two run days that had reminders due?
   const missedAutoRuns = useMemo(() => {
     if (!settings.enabled || !hasIphone) return [];
@@ -450,20 +446,15 @@ export function TextRemindersSettingsPanel() {
           update={update}
           workspaceId={workspaceId}
         />
-        <div data-testid="section-stop">
-          <ReminderSetupChecklist
-            devices={devices}
-            embedded
-            hasMac={activeDevices.some((d) => d.kind === "mac")}
-            mode="stop"
-            onChanged={() => void refresh()}
-            onConfirm={confirmAutomation}
-            onToggle={() => {}}
-            open
-            settings={settings}
-            workspaceId={workspaceId}
-          />
-        </div>
+        {activeDevices.length > 0 ? (
+          <ul className="flex flex-wrap gap-2" data-testid="device-compact">
+            {activeDevices.map((device) => (
+              <li className="rounded-lg border border-[var(--line-soft)] px-3 py-1 text-sm font-semibold" key={device.id}>
+                {device.name} · {device.kind === "mac" ? "Mac" : "iPhone"}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       <div data-testid="section-phones">
       <SetupCard
         actions={

@@ -35,16 +35,22 @@ export interface CheckInDevice {
 
 const press = (platform: MessagingPlatform) => (platform === "mac" ? "Click" : "Tap");
 
-/** The steps, in order. Get the shortcut, then the automations, then the test. */
+/** The steps, in order. The button adds the shortcut. One automation is set by hand. Then test. */
 export function buildMessagingSteps(input: { redo: boolean; ruleIds: string[] }): MessagingStep[] {
   const steps: MessagingStep[] = [{ id: "device", kind: "device" }];
   if (input.redo) steps.push({ id: "start-over", kind: "start-over" });
-  steps.push({ id: "pick", kind: "pick" }, { id: "add-device", kind: "add-device" });
-  for (const ruleId of input.ruleIds) {
-    steps.push({ id: `automation:${ruleId}`, kind: "automation", ruleId });
-  }
-  steps.push({ id: "test", kind: "test" });
+  steps.push(
+    { id: "pick", kind: "pick" },
+    { id: "add-device", kind: "add-device" },
+    { id: "automation", kind: "automation" },
+    { id: "test", kind: "test" },
+  );
   return steps;
+}
+
+/** Shown once, above the only hand-made automation. */
+export function automationOnceLine(): string {
+  return "Apple requires this one-time setup by hand. After that, texts run automatically.";
 }
 
 /** Picked rules, earliest time first. Unknown ids are dropped. */
@@ -158,8 +164,7 @@ export function automationGuideLines(platform: MessagingPlatform, name: string, 
     `${word} **+**. ${word} **Time of Day**.`,
     `Set **${time}**. ${word} **${day}**.`,
     `${word} **Run Immediately**. Turn **Notify When Run** off.`,
-    `${word} **Next**. ${word} **"${name}"**.`,
-    `${word} **Done**.`,
+    `${word} **Next**. ${word} **"${name}"**. ${word} **Done**.`,
   ];
 }
 

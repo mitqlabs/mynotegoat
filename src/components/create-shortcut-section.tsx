@@ -10,7 +10,7 @@ import { CollapsibleSection } from "@/components/collapsible-section";
 import { appConfirm } from "@/components/app-dialog";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { generateDeviceToken, hashDeviceToken } from "@/lib/reminder-automation";
-import { oneShortcutLines, readSetupPlatform, type SetupPlatform } from "@/lib/iphone-setup";
+import { oneShortcutLines, readSetupPlatform, stopCatcherLines, type SetupPlatform } from "@/lib/iphone-setup";
 import type { SmsTemplate } from "@/lib/sms-template-core";
 import type { SmsReminderSettings, TextRule, TextWhenKind } from "@/lib/sms-reminders";
 import { clockWords, legacyRules, newRuleId, ruleWhen, shortcutName, shortcutStatusText, withRules, type ShortcutRun } from "@/lib/text-rules";
@@ -63,11 +63,11 @@ export function CreateShortcutSection({
   open: boolean;
   onToggle: (next: boolean) => void;
   /** Screenshot harness. */
-  forcedStep?: "list" | "template" | "when" | "steps";
+  forcedStep?: "list" | "template" | "when" | "steps" | "device";
 }) {
   const saved = messages.filter((message) => !message.deleted);
   const rules = settings.rules ?? legacyRules(settings);
-  const [step, setStep] = useState<"list" | "template" | "when" | "steps">(forcedStep ?? "list");
+  const [step, setStep] = useState<"list" | "template" | "when" | "steps">(forcedStep === "device" ? "steps" : (forcedStep ?? "list"));
   const [templateId, setTemplateId] = useState(saved[0]?.id ?? "");
   const [kind, setKind] = useState<TextWhenKind | null>(forcedStep === "when" || forcedStep === "steps" ? "birthday" : null);
   const [hours, setHours] = useState<Record<TextWhenKind, number>>({
@@ -77,7 +77,9 @@ export function CreateShortcutSection({
     "day-before": 8,
   });
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [built, setBuilt] = useState<TextRule | null>(forcedStep === "steps" ? (rules.find((rule) => rule.kind === "birthday") ?? rules[0] ?? null) : null);
+  const [built, setBuilt] = useState<TextRule | null>(forcedStep === "steps" || forcedStep === "device" ? (rules.find((rule) => rule.kind === "birthday") ?? rules[0] ?? null) : null);
+  const [deviceCode, setDeviceCode] = useState("");
+  const [copied, setCopied] = useState(false);
   const [platform, setPlatform] = useState<SetupPlatform>("iphone");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
@@ -171,6 +173,8 @@ export function CreateShortcutSection({
         return;
       }
       device = { id: inserted.data.id, kind: kindName, revoked_at: null };
+      setDeviceCode(token);
+      setCopied(false);
       onChanged?.();
     }
     const { data: session } = await client.auth.getSession();
@@ -196,7 +200,7 @@ export function CreateShortcutSection({
     window.location.href = payload.importUrl;
   };
 
-  const showing = built ?? (forcedStep === "steps" ? rules[0] : null);
+  const showing = built ?? (forcedStep === "steps" || forcedStep === "device" ? rules[0] : null);
   const lines = showing ? oneShortcutLines(platform, showing.shortcutName || shortcutName(showing), clockWords(showing.hour)) : [];
 
   let body: ReactNode = null;
@@ -269,23 +273,45 @@ export function CreateShortcutSection({
   } else if (step === "steps" && showing) {
     body = (
       <div className="grid gap-4" data-testid="shortcut-steps">
-        <p className="text-2xl font-bold text-[var(--text-main)]">{showing.shortcutName || shortcutName(showing)}</p>
-        <ol className="grid gap-4">
-          <li className="flex items-start gap-3" data-testid="shortcut-step">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">1</span>
-            <button className={primary} data-testid="add-shortcut-device" disabled={busy} onClick={() => void addToThisDevice()} type="button">
-              {busy ? "Opening…" : "Add to this Device"}
+        <p className="text-lg font-semibold text-[var(--text-main)]">This button adds the NoteGoat shortcut for you. The only part you do by hand is one automation.</p>
+        <button className={primary} data-testid="add-shortcut-device" disabled={busy} onClick={() => void addToThisDevice()} type="button">
+          {busy ? "Opening…" : "Add the shortcut"}
+        </button>
+        {deviceCode ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <code className="select-all break-all font-mono text-sm text-[var(--text-main)]">{deviceCode}</code>
+            <button
+              className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-panel)] px-3 py-1.5 text-sm font-semibold text-[var(--text-main)]"
+              onClick={() => {
+                void navigator.clipboard?.writeText(deviceCode).then(() => setCopied(true));
+              }}
+              type="button"
+            >
+              {copied ? "Copied" : "Copy code"}
             </button>
-          </li>
+          </div>
+        ) : null}
+        <p className="text-2xl font-bold text-[var(--text-main)]">One daily automation</p>
+        <ol className="grid gap-4">
           {lines.map((line, index) => (
             <li className="flex items-start gap-3" data-testid="shortcut-step" key={line}>
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">{index + 2}</span>
-              <p className="pt-1 text-lg font-semibold leading-relaxed text-[var(--text-main)]">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-base font-bold text-[var(--text-main)]">{index + 1}</span>
+              <p className="pt-1 text-base font-semibold leading-relaxed text-[var(--text-main)]">
                 <StepWords text={line} />
               </p>
             </li>
           ))}
         </ol>
+        <div className="grid gap-3">
+          <h3 className="text-lg font-bold text-[var(--text-main)]">Optional: auto-handle STOP replies</h3>
+          <ol className="grid gap-3">
+            {stopCatcherLines(platform).map((line) => (
+              <li className="text-base font-semibold text-[var(--text-main)]" key={line}>
+                <StepWords text={line} />
+              </li>
+            ))}
+          </ol>
+        </div>
         {platform === "mac" && fileUrl ? (
           <a className="text-lg font-bold text-[var(--brand-primary)] underline" download={`${(showing.shortcutName || "NoteGoat").replace(/[^\w –-]+/g, "")}.shortcut`} href={fileUrl}>
             Download shortcut

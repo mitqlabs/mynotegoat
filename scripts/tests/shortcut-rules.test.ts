@@ -116,26 +116,18 @@ assert.equal(turnedOff.scope.birthday, false, "an off shortcut sends nothing");
 
 const lines = oneShortcutLines("iphone", "NoteGoat – Birthdays 9 AM", clockWords(9));
 assert.deepEqual(lines, [
-  "Tap **Add Shortcut**.",
-  "Open **Shortcuts**.",
-  "Tap **Automation**.",
-  "Tap **+**.",
-  "Tap **Time of Day**.",
-  "Set **9:00 AM**.",
-  "Tap **Every Day**.",
-  "Tap **Run Immediately**.",
-  "Turn **Notify When Run** off.",
-  "Tap **Next**.",
-  "Tap **\"NoteGoat – Birthdays 9 AM\"**.",
-  "Tap **Done**.",
+  "Open **Shortcuts**. Tap **Automation**.",
+  "Tap **+**. Tap **Time of Day**.",
+  "Set **9:00 AM**. Tap **Every Day**.",
+  "Tap **Run Immediately**. Turn **Notify When Run** off.",
+  "Tap **Next**. Tap **\"NoteGoat – Birthdays 9 AM\"**. Tap **Done**.",
 ]);
 assert.equal(lines.filter((line) => line.includes("9:00 AM")).length, 1, "only one time");
 assert.equal(lines.some((line) => /STOP|Test|8:30|catch/i.test(line)), false, "no STOP and no second time");
-assert.equal(lines.every((line) => line.split("**").length <= 3 || line.startsWith("Turn")), true);
 const mac = oneShortcutLines("mac", "NoteGoat – Birthdays 9 AM", "9:00 AM");
-assert.ok(mac[0].startsWith("Click "));
-assert.ok(mac.includes("Click **Daily**."));
-assert.ok(mac.includes("Click **\"NoteGoat – Birthdays 9 AM\"**."));
+assert.ok(mac[0].startsWith("Open "));
+assert.ok(mac.some((line) => line.includes("Click **Daily**.")));
+assert.ok(mac.some((line) => line.includes("Click **\"NoteGoat – Birthdays 9 AM\"**.")));
 const stop = stopCatcherLines("iphone");
 assert.ok(stop.some((line) => line.includes("Type **STOP**.")));
 assert.ok(stop.some((line) => line.includes("Tap **NoteGoat**.")));
@@ -159,7 +151,8 @@ assert.match(queue, /loadBroadcastQueue/);
 assert.match(queue, /recordShortcutRun/);
 const panel = readFileSync("src/components/text-reminders-settings-panel.tsx", "utf8");
 assert.match(panel, /ensureShortcutNames/);
-assert.match(panel, /mode="stop"/);
+assert.doesNotMatch(panel, /mode="stop"/);
+assert.match(readFileSync("src/components/messaging-setup-flow.tsx", "utf8"), /Optional: auto-handle STOP replies/);
 assert.match(readFileSync("src/components/sms-templates-section.tsx", "utf8"), /title="SMS Templates"/);
 assert.match(readFileSync("src/components/create-shortcut-section.tsx", "utf8"), /title="Create Shortcut"/);
 for (const file of ["src/components/create-shortcut-section.tsx", "src/components/sms-templates-section.tsx"]) {

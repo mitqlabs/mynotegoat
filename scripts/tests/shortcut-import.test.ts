@@ -63,8 +63,11 @@ assert.equal(isSignedShortcut(unsignedFile), false);
 assert.ok(unsignedFile.includes("Paste the NoteGoat device code."));
 const generic = genericShortcutLinks("https://www.mynotegoat.com/");
 assert.equal(generic.fileUrl, "https://www.mynotegoat.com/shortcuts/NoteGoat.shortcut");
-assert.equal(generic.importUrl, undefined);
-assert.equal(generic.error, UNSIGNED_SHORTCUT_ERROR);
+assert.equal(
+  generic.importUrl,
+  "shortcuts://import-shortcut?url=https%3A%2F%2Fwww.mynotegoat.com%2Fshortcuts%2FNoteGoat.shortcut&name=NoteGoat",
+);
+assert.equal(generic.error, undefined);
 const genericIcloud = genericShortcutLinks("https://www.mynotegoat.com", "https://www.icloud.com/shortcuts/0123abcdEF");
 assert.equal(genericIcloud.importUrl, "https://www.icloud.com/shortcuts/0123abcdEF");
 
@@ -74,6 +77,9 @@ assert.match(route, /buildShortcutLinks/);
 assert.doesNotMatch(route, /shortcuts:\/\/import-shortcut\?url=/);
 const flow = readFileSync("src/components/messaging-setup-flow.tsx", "utf8");
 assert.match(flow, /Copy code/);
-assert.match(flow, /Get the NoteGoat shortcut/);
+assert.match(flow, /Add the shortcut/);
+assert.match(flow, /This button adds the NoteGoat shortcut for you/);
+assert.match(flow, /Optional: auto-handle STOP replies/);
+assert.doesNotMatch(flow, /A Mac may not have Message/);
 
 console.log("shortcut-import: all checks passed");

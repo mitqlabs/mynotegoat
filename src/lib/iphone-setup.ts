@@ -154,28 +154,31 @@ export function oneShortcutLines(platform: SetupPlatform, name: string, time: st
   const press = platform === "mac" ? "Click" : "Tap";
   const day = platform === "mac" ? "Daily" : "Every Day";
   return [
-    `${press} **Add Shortcut**.`,
-    "Open **Shortcuts**.",
-    `${press} **Automation**.`,
-    `${press} **+**.`,
-    `${press} **Time of Day**.`,
-    `Set **${time}**.`,
-    `${press} **${day}**.`,
-    `${press} **Run Immediately**.`,
-    "Turn **Notify When Run** off.",
-    `${press} **Next**.`,
-    `${press} **"${name}"**.`,
-    `${press} **Done**.`,
+    `Open **Shortcuts**. ${press} **Automation**.`,
+    `${press} **+**. ${press} **Time of Day**.`,
+    `Set **${time}**. ${press} **${day}**.`,
+    `${press} **Run Immediately**. Turn **Notify When Run** off.`,
+    `${press} **Next**. ${press} **"${name}"**. ${press} **Done**.`,
   ];
 }
 
-/** STOP catcher and Test stay separate from each shortcut. */
+/**
+ * Optional Message automation. It runs NoteGoat when a text contains STOP.
+ * A Mac may not offer Message. These lines name the trigger, so + is not left alone.
+ */
 export function stopCatcherLines(platform: SetupPlatform): string[] {
   const press = platform === "mac" ? "Click" : "Tap";
   if (platform === "mac") {
-    return ["Click **+**. If you see **Message**, click it. If you do not, skip it."];
+    return [
+      "Open **Shortcuts**. Click **Automation**.",
+      "Click **+**. If you see **Message**, click it and set **Message Contains** to **STOP**.",
+      "If you do not see **Message**, skip this. A Mac may not have it.",
+      "Click **Run Immediately**. Turn **Notify When Run** off.",
+      "Click **Next**. Click **NoteGoat**. Click **Done**.",
+    ];
   }
   return [
+    "Open **Shortcuts**. Tap **Automation**.",
     "Tap **+**. Tap **Message**. Tap **Message Contains**.",
     "Type **STOP**. Tap **Done**.",
     "Tap **Run Immediately**. Turn **Notify When Run** off.",
