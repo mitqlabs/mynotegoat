@@ -222,11 +222,11 @@ export function ReminderSetupChecklist({
     });
     const body = (await res.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
     setBusy("");
+    if (body.fileUrl) setFileUrl(body.fileUrl);
     if (!res.ok || !body.importUrl) {
       setNote(body.error || "Couldn't open the shortcut. Try again.");
       return;
     }
-    setFileUrl(body.fileUrl ?? "");
     window.location.href = body.importUrl;
   };
 

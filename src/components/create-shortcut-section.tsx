@@ -188,11 +188,11 @@ export function CreateShortcutSection({
     }
     const payload = (await response.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
     setBusy(false);
+    if (payload.fileUrl) setFileUrl(payload.fileUrl);
     if (!response.ok || !payload.importUrl) {
       setNote(payload.error || "Couldn't open the shortcut. Try again.");
       return;
     }
-    setFileUrl(payload.fileUrl ?? "");
     window.location.href = payload.importUrl;
   };
 

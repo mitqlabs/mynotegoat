@@ -340,6 +340,7 @@ export function MessagingSetupFlow({
         body: JSON.stringify({ token }),
       });
       const body = (await response.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
+      if (body.fileUrl) setFileUrl(body.fileUrl);
       if (!response.ok || !body.importUrl) {
         setNote(body.error || `Couldn't open the shortcut (${response.status}). Try again.`);
         return;
@@ -404,6 +405,7 @@ export function MessagingSetupFlow({
         response = await send({ deviceId: device.id, ruleId: rule.id, name, token });
       }
       const payload = (await response.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
+      if (payload.fileUrl) setFileUrl(payload.fileUrl);
       if (!response.ok || !payload.importUrl) {
         setNote(payload.error || `Couldn't open the shortcut (${response.status}). Try again.`);
         return;
