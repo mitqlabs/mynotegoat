@@ -40,7 +40,7 @@ test("tokens: {{MARITAL_STATUS}} in macros, reports and documents", () => {
 test("New Patient: Marital Status right after Sex; tidy 3-column grid; same input classes", () => {
   const s = readFileSync("src/app/(portal)/patients/page.tsx", "utf8");
   const at = s.indexOf('data-row="new-patient-identity"');
-  const row = s.slice(s.lastIndexOf("<div", at), s.indexOf("</div>", at));
+  const row = s.slice(s.lastIndexOf("<div", at), s.indexOf("</section>", at));
   assert.ok(row.includes("sm:grid-cols-3"));
   const labels = [...row.matchAll(/text-\[var\(--text-muted\)\]">([^<]+)</g)].map((m) => m[1]);
   assert.deepEqual(labels, ["Last Name *", "First Name *", "Phone *", "DOB", "Sex", "Marital Status"]);
@@ -50,10 +50,11 @@ test("New Patient: Marital Status right after Sex; tidy 3-column grid; same inpu
 });
 test("saved + synced like Sex", () => {
   const cloud = readFileSync("src/lib/patients-cloud.ts", "utf8");
-  assert.ok(cloud.includes("marital_status: patient.maritalStatus ?? null"));
+  assert.ok(cloud.includes("marital_status: frozen ? frozen.maritalStatus : (patient.maritalStatus ?? null)"));
   assert.ok(cloud.includes("maritalStatus: normalizeMaritalStatus(row.marital_status)"));
   const file = readFileSync("src/components/patient-case-file.tsx", "utf8");
   assert.ok(file.includes("maritalStatus: maritalStatus || undefined"));
-  assert.ok(file.includes("data-patient-demographics"));
+  assert.ok(file.includes("<PatientFileHeader"));
+  assert.ok(readFileSync("src/components/patient-file-header.tsx", "utf8").includes("data-patient-demographics"));
 });
 console.log(`${passed} passed`);
