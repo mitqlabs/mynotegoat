@@ -17,6 +17,10 @@ export interface SmsTemplate {
 export const DEFAULT_REMINDER_BODY =
   "Hello {{FIRST_NAME}}, just wanted to send over a reminder for your appointment on {{APPT_DATE}} at {{TIME}}. For any questions feel free to contact us! Thank you!\n\n-Prime Spine & Wellness";
 
+/** Reminder text for a new office. Signs off with the office's own name. */
+export const BLANK_REMINDER_BODY =
+  "Hello {{FIRST_NAME}}, this is a reminder for your visit on {{APPT_DATE}} at {{TIME}}. Questions: {{OFFICE_PHONE}}.\n\n{{OFFICE_NAME}}";
+
 function nowIso() {
   return new Date().toISOString();
 }

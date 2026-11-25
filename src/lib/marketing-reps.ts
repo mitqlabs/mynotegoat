@@ -12,6 +12,7 @@
  */
 
 import { unionMerge } from "@/lib/kv-merge";
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 
 export const MARKETING_REPS_KEY = "casemate.marketing-reps.v1";
 
@@ -29,6 +30,7 @@ export interface MarketingRep {
 }
 
 export function getDefaultMarketingReps(): MarketingRep[] {
+  if (isBlankStarterWorkspace()) return [];
   return [{ id: DEFAULT_REP_ID, name: DEFAULT_MARKETING_REP_NAME, sort: 0, updatedAt: "" }];
 }
 

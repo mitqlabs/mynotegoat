@@ -7,6 +7,7 @@ import {
   templateOmittingHidden,
   type MacroShowIf,
 } from "@/lib/macro-show-if";
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 
 export const macroSections = [
   "subjective",
@@ -197,6 +198,17 @@ function defaultMacroTemplate(
 }
 
 export function getDefaultMacroLibrary(): MacroLibraryConfig {
+  if (isBlankStarterWorkspace()) {
+    return {
+      setName: "Office Macros",
+      enabledAutoFields: [...macroAutoFields],
+      saltDefaults: {
+        enabled: false,
+        sections: { subjective: false, objective: false, assessment: false, plan: false },
+      },
+      templates: [],
+    };
+  }
   return {
     setName: "Default PI Macros",
     enabledAutoFields: [...macroAutoFields],

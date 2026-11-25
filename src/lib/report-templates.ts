@@ -1,4 +1,5 @@
 import { documentFontOptions } from "@/lib/document-templates";
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 
 export interface NarrativeReportPrompt {
   id: string;
@@ -236,6 +237,7 @@ function normalizeLibrary(value: unknown): NarrativeReportLibrary {
 }
 
 export function getDefaultNarrativeReportLibrary(): NarrativeReportLibrary {
+  if (isBlankStarterWorkspace()) return { templates: [] };
   return {
     templates: [createDefaultTemplate()],
   };

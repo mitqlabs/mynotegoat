@@ -16,6 +16,7 @@
  */
 
 import type { PatientRecord } from "@/lib/mock-data";
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 import type { ScheduleAppointmentRecord } from "@/lib/schedule-appointments";
 
 export const SMS_REMINDER_SETTINGS_KEY = "casemate.sms-reminders.v1";
@@ -128,7 +129,9 @@ export function defaultSmsReminderSettings(): SmsReminderSettings {
     automationConfirmed: false,
     automationConfirmedAt: "",
     birthdayTexts: false,
-    birthdayMessage: DEFAULT_BIRTHDAY_MESSAGE,
+    birthdayMessage: isBlankStarterWorkspace()
+      ? "Happy birthday, {first name}!"
+      : DEFAULT_BIRTHDAY_MESSAGE,
     birthdayTemplateId: "",
     birthdayHour: 8,
     rules: null,

@@ -1,4 +1,5 @@
 import { withAllDoisLabel } from "@/lib/additional-dois";
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 
 export type DocumentTemplateScope = "specialistReferral" | "imagingRequest" | "generalLetter";
 
@@ -247,7 +248,42 @@ To Whom It May Concern,
 Please contact our office if additional information is needed.
 `;
 
+const blankReferralBody = `Referral
+
+Date: {{TODAY_DATE}}
+
+{{PATIENT_FULL_NAME}}
+Date of injury: {{DATE_OF_INJURY}}
+
+{{OFFICE_NAME}}
+`;
+
+const blankImagingBody = `Imaging request
+
+Date: {{TODAY_DATE}}
+
+{{PATIENT_FULL_NAME}}
+Date of injury: {{DATE_OF_INJURY}}
+
+{{OFFICE_NAME}}
+`;
+
+const blankLetterBody = `Letter
+
+Date: {{TODAY_DATE}}
+
+{{PATIENT_FULL_NAME}}
+Date of injury: {{DATE_OF_INJURY}}
+
+{{OFFICE_NAME}}
+`;
+
 export function getDefaultBodyForDocumentScope(scope: DocumentTemplateScope) {
+  if (isBlankStarterWorkspace()) {
+    if (scope === "imagingRequest") return blankImagingBody;
+    if (scope === "generalLetter") return blankLetterBody;
+    return blankReferralBody;
+  }
   if (scope === "imagingRequest") {
     return defaultImagingRequestBody;
   }
@@ -335,6 +371,15 @@ function normalizeHeader(value: unknown): DocumentTemplateHeader {
 }
 
 export function getDefaultDocumentTemplateLibrary(): DocumentTemplateLibrary {
+  if (isBlankStarterWorkspace()) {
+    return {
+      header: createDefaultHeader(),
+      templates: [
+        createTemplate("doc-specialist-referral", "Specialist Referral", "specialistReferral", blankReferralBody),
+        createTemplate("doc-imaging-request", "Imaging Request", "imagingRequest", blankImagingBody),
+      ],
+    };
+  }
   return {
     header: createDefaultHeader(),
     templates: [
@@ -368,7 +413,7 @@ function ensureRequiredTemplates(templates: DocumentTemplate[]) {
         "doc-specialist-referral",
         "Specialist Referral",
         "specialistReferral",
-        defaultSpecialistReferralBody,
+        getDefaultBodyForDocumentScope("specialistReferral"),
       ),
     );
   }
@@ -381,7 +426,7 @@ function ensureRequiredTemplates(templates: DocumentTemplate[]) {
         "doc-imaging-request",
         "Imaging Request",
         "imagingRequest",
-        defaultImagingRequestBody,
+        getDefaultBodyForDocumentScope("imagingRequest"),
       ),
     );
   }

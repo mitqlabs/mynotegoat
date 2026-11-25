@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { OFFICE_STARTER_METADATA_KEY, OFFICE_STARTER_METADATA_VALUE } from "@/lib/workspace-starter";
 
 type BillingPeriod = "monthly" | "annual";
 
@@ -82,6 +83,8 @@ export default function SignupPage() {
         emailRedirectTo: redirectTo,
         data: {
           selected_period: selectedPeriod,
+          // Creation-time flag: this office starts blank. Not a billing field.
+          [OFFICE_STARTER_METADATA_KEY]: OFFICE_STARTER_METADATA_VALUE,
         },
       },
     });

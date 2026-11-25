@@ -6,7 +6,8 @@
  * migration). Which message each Auto Text uses lives in the reminder
  * settings (templateId for Reminders, birthdayTemplateId for Birthday).
  */
-import { DEFAULT_REMINDER_BODY, type SmsTemplate } from "@/lib/sms-template-core";
+import { BLANK_REMINDER_BODY, DEFAULT_REMINDER_BODY, type SmsTemplate } from "@/lib/sms-template-core";
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 import { DEFAULT_BIRTHDAY_MESSAGE, type SmsReminderSettings } from "@/lib/sms-reminders";
 
 /** Fixed ids so two computers that both create the starter message end up with ONE copy. */
@@ -110,7 +111,7 @@ export function planAutoTextMigration(settings: Attach, all: SmsTemplate[], nowI
     const found = resolveReminderMessage(settings, all);
     if (found) patch.templateId = found.id;
     else {
-      add.push(mk(AUTO_REMINDER_MESSAGE_ID, AUTO_REMINDER_MESSAGE_NAME, DEFAULT_REMINDER_BODY));
+      add.push(mk(AUTO_REMINDER_MESSAGE_ID, AUTO_REMINDER_MESSAGE_NAME, isBlankStarterWorkspace() ? BLANK_REMINDER_BODY : DEFAULT_REMINDER_BODY));
       patch.templateId = AUTO_REMINDER_MESSAGE_ID;
     }
   }

@@ -65,6 +65,13 @@ const OnboardingModal = dynamic(
     })),
   { ssr: false },
 );
+const SetupWalkthrough = dynamic(
+  () =>
+    import("@/components/setup-walkthrough").then((m) => ({
+      default: m.SetupWalkthrough,
+    })),
+  { ssr: false },
+);
 const GlobalKvRealtime = dynamic(
   () =>
     import("@/components/global-kv-realtime").then((m) => ({
@@ -733,6 +740,7 @@ export default function PortalLayout({
         {/* Onboarding is the OWNER's one-time office setup. A team member
             logs into an already-configured office — never show it to them. */}
         {!membership?.isMember && <OnboardingModal />}
+        <SetupWalkthrough autoOpen={!membership?.isMember} />
         {/* Realtime listeners — propagate cross-device changes from
             Supabase to local React hooks within seconds. KV one
             covers every workspace_kv-backed entity (cash payments,

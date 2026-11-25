@@ -1,4 +1,5 @@
 import { soapMacroButtons } from "@/lib/mock-data";
+import { isBlankStarterWorkspace } from "@/lib/workspace-starter";
 
 export const soapSections = [
   "subjective",
@@ -51,6 +52,9 @@ function normalizeMacroList(value: unknown) {
 }
 
 export function getDefaultSoapMacros(): SoapMacroConfig {
+  if (isBlankStarterWorkspace()) {
+    return { subjective: [], objective: [], assessment: [], plan: [] };
+  }
   return {
     subjective: [...soapMacroButtons.subjective],
     objective: [...soapMacroButtons.objective],
