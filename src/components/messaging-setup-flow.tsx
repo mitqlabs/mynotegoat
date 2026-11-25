@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { generateDeviceToken, hashDeviceToken } from "@/lib/reminder-automation";
-import { readSetupPlatform } from "@/lib/iphone-setup";
+import { pickedIphoneAllowed, readSetupPlatform } from "@/lib/iphone-setup";
 import {
   automationFallbackLines,
   automationGuideLines,
@@ -150,6 +150,9 @@ export function MessagingSetupFlow({
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [fileUrl, setFileUrl] = useState("");
+  const [shortcutUrl, setShortcutUrl] = useState("");
+  const [iphoneBypass, setIphoneBypass] = useState(false);
+  const [showDeletes, setShowDeletes] = useState(false);
   const [since, setSince] = useState(forced ? "" : saved.testSince);
   const [live, setLive] = useState<CheckInDevice[] | null>(null);
 
@@ -253,6 +256,8 @@ export function MessagingSetupFlow({
     }
     setAdding(null);
     setNote("");
+    setIphoneBypass(false);
+    setShowDeletes(false);
     setStepId(next.id);
   };
 
@@ -265,13 +270,26 @@ export function MessagingSetupFlow({
     if (following) setStepId(following.id);
   };
 
-  const hereMatches = () => {
-    if (typeof navigator === "undefined" || (platform !== "iphone" && platform !== "mac")) return false;
-    return readSetupPlatform(navigator.userAgent, navigator.maxTouchPoints) === platform;
+  const hereMatches = (forceIphone = false) => {
+    if (platform !== "iphone" && platform !== "mac") return false;
+    if (typeof navigator === "undefined") return false;
+    if (platform === "iphone") return forceIphone || pickedIphoneAllowed(navigator.userAgent, navigator.maxTouchPoints ?? 0);
+    return readSetupPlatform(navigator.userAgent, navigator.maxTouchPoints ?? 0) === "mac";
   };
 
   const wrongDevice = () => {
+    if (platform === "iphone") setIphoneBypass(true);
     setNote(platform === "mac" ? "Open this page on the Mac." : "Open this page on the iPhone.");
+  };
+
+  const openShortcut = (url: string, download = "") => {
+    setShortcutUrl(url);
+    if (download) setFileUrl(download);
+    try {
+      window.location.href = url;
+    } catch (err) {
+      setNote(err instanceof Error && err.message ? err.message : "Couldn't open the shortcut. Try again.");
+    }
   };
 
   const sessionToken = async () => {
@@ -281,10 +299,11 @@ export function MessagingSetupFlow({
     return data.session?.access_token ?? "";
   };
 
-  const addDevice = async () => {
+  const addDevice = async (forceIphone = false) => {
     if (forced) return;
     setNote("");
-    if (!hereMatches()) {
+    setIphoneBypass(false);
+    if (!hereMatches(forceIphone)) {
       wrongDevice();
       return;
     }
@@ -294,99 +313,107 @@ export function MessagingSetupFlow({
       return;
     }
     setBusy(true);
-    const token = generateDeviceToken();
-    const tokenHash = await hashDeviceToken(token);
-    const existing = devices.find((device) => !device.revoked_at && device.kind === platform);
-    const error = existing
-      ? (await client.from("reminder_devices").update({ pending_token_hash: tokenHash }).eq("id", existing.id)).error
-      : (
-          await client.from("reminder_devices").insert({
+    try {
+      const token = generateDeviceToken();
+      const tokenHash = await hashDeviceToken(token);
+      const existing = devices.find((device) => !device.revoked_at && device.kind === platform);
+      const saved = existing
+        ? await client.from("reminder_devices").update({ pending_token_hash: tokenHash }).eq("id", existing.id).select("id")
+        : await client
+            .from("reminder_devices")
+            .insert({
+              workspace_id: workspaceId,
+              name: platform === "mac" ? "Office Mac" : "Office Device",
+              kind: platform,
+              is_primary: platform === "iphone" || !devices.some((device) => !device.revoked_at),
+              token_hash: tokenHash,
+            })
+            .select("id");
+      if (saved.error || !saved.data?.length) {
+        setNote(saved.error?.message ? `Couldn't add the Device. ${saved.error.message}` : "Couldn't add the Device. Try again.");
+        return;
+      }
+      onChanged?.();
+      const response = await fetch("/api/reminders/shortcut", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${await sessionToken()}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
+      if (!response.ok || !body.importUrl) {
+        setNote(body.error || `Couldn't open the shortcut (${response.status}). Try again.`);
+        return;
+      }
+      openShortcut(body.importUrl, body.fileUrl ?? "");
+    } catch (err) {
+      setNote(err instanceof Error && err.message ? err.message : "Couldn't open the shortcut. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addRuleShortcut = async (rule: TextRule, forceIphone = false) => {
+    if (forced) return;
+    setNote("");
+    setIphoneBypass(false);
+    if (!hereMatches(forceIphone)) {
+      wrongDevice();
+      return;
+    }
+    const client = getSupabaseBrowserClient();
+    if (!client || !workspaceId || (platform !== "iphone" && platform !== "mac")) {
+      setNote("Sign in on this Device first.");
+      return;
+    }
+    setBusy(true);
+    try {
+      let device = devices.find((row) => !row.revoked_at && row.kind === platform);
+      let token: string | null = null;
+      if (!device) {
+        token = generateDeviceToken();
+        const tokenHash = await hashDeviceToken(token);
+        const inserted = await client
+          .from("reminder_devices")
+          .insert({
             workspace_id: workspaceId,
             name: platform === "mac" ? "Office Mac" : "Office Device",
             kind: platform,
-            is_primary: platform === "iphone" || !devices.some((device) => !device.revoked_at),
+            is_primary: platform === "iphone" || !devices.some((row) => !row.revoked_at),
             token_hash: tokenHash,
           })
-        ).error;
-    if (error) {
-      setBusy(false);
-      setNote("Couldn't add the Device. Try again.");
-      return;
-    }
-    onChanged?.();
-    const response = await fetch("/api/reminders/shortcut", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${await sessionToken()}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    const body = (await response.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
-    setBusy(false);
-    if (!response.ok || !body.importUrl) {
-      setNote(body.error || "Couldn't open the shortcut. Try again.");
-      return;
-    }
-    setFileUrl(body.fileUrl ?? "");
-    window.location.href = body.importUrl;
-  };
-
-  const addRuleShortcut = async (rule: TextRule) => {
-    if (forced) return;
-    setNote("");
-    if (!hereMatches()) {
-      wrongDevice();
-      return;
-    }
-    const client = getSupabaseBrowserClient();
-    if (!client || !workspaceId || (platform !== "iphone" && platform !== "mac")) {
-      setNote("Sign in on this Device first.");
-      return;
-    }
-    setBusy(true);
-    let device = devices.find((row) => !row.revoked_at && row.kind === platform);
-    let token: string | null = null;
-    if (!device) {
-      token = generateDeviceToken();
-      const tokenHash = await hashDeviceToken(token);
-      const inserted = await client
-        .from("reminder_devices")
-        .insert({
-          workspace_id: workspaceId,
-          name: platform === "mac" ? "Office Mac" : "Office Device",
-          kind: platform,
-          is_primary: platform === "iphone" || !devices.some((row) => !row.revoked_at),
-          token_hash: tokenHash,
-        })
-        .select("id")
-        .single();
-      if (inserted.error || !inserted.data) {
-        setBusy(false);
-        setNote("Couldn't add the Device. Try again.");
+          .select("id")
+          .single();
+        if (inserted.error || !inserted.data) {
+          setNote(inserted.error?.message ? `Couldn't add the Device. ${inserted.error.message}` : "Couldn't add the Device. Try again.");
+          return;
+        }
+        device = { id: inserted.data.id, kind: platform, revoked_at: null };
+        onChanged?.();
+      }
+      const name = rule.shortcutName || shortcutName(rule);
+      const access = await sessionToken();
+      const send = (body: Record<string, string | null>) =>
+        fetch("/api/reminders/shortcut", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      let response = await send({ deviceId: device.id, ruleId: rule.id, name, token });
+      if (response.status === 409) {
+        token = generateDeviceToken();
+        response = await send({ deviceId: device.id, ruleId: rule.id, name, token });
+      }
+      const payload = (await response.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
+      if (!response.ok || !payload.importUrl) {
+        setNote(payload.error || `Couldn't open the shortcut (${response.status}). Try again.`);
         return;
       }
-      device = { id: inserted.data.id, kind: platform, revoked_at: null };
-      onChanged?.();
+      openShortcut(payload.importUrl, payload.fileUrl ?? "");
+    } catch (err) {
+      setNote(err instanceof Error && err.message ? err.message : "Couldn't open the shortcut. Try again.");
+    } finally {
+      setBusy(false);
     }
-    const name = rule.shortcutName || shortcutName(rule);
-    const access = await sessionToken();
-    const send = (body: Record<string, string | null>) =>
-      fetch("/api/reminders/shortcut", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    let response = await send({ deviceId: device.id, ruleId: rule.id, name, token });
-    if (response.status === 409) {
-      token = generateDeviceToken();
-      response = await send({ deviceId: device.id, ruleId: rule.id, name, token });
-    }
-    const payload = (await response.json().catch(() => ({}))) as { importUrl?: string; fileUrl?: string; error?: string };
-    setBusy(false);
-    if (!response.ok || !payload.importUrl) {
-      setNote(payload.error || "Couldn't open the shortcut. Try again.");
-      return;
-    }
-    setFileUrl(payload.fileUrl ?? "");
-    window.location.href = payload.importUrl;
   };
 
   const createRule = () => {
@@ -405,10 +432,11 @@ export function MessagingSetupFlow({
     setKind(null);
   };
 
-  const runTest = () => {
+  const runTest = (forceIphone = false) => {
     if (forced) return;
     setNote("");
-    if (!hereMatches()) {
+    setIphoneBypass(false);
+    if (!hereMatches(forceIphone)) {
       wrongDevice();
       return;
     }
@@ -438,10 +466,26 @@ export function MessagingSetupFlow({
   } else if (step.kind === "start-over" && (platform === "iphone" || platform === "mac")) {
     body = (
       <div className="grid gap-4" data-testid="messaging-start-over">
-        <h2 className="text-2xl font-bold text-[var(--text-main)]">Start over</h2>
-        <ol className="grid gap-4">
-          <Lines lines={startOverLines(platform)} />
-        </ol>
+        <h2 className="text-2xl font-bold text-[var(--text-main)]">Do you have existing shortcuts for reminders?</h2>
+        <button className={choice} data-testid="start-over-yes" onClick={() => setShowDeletes(true)} type="button">
+          Yes
+        </button>
+        <button
+          className={choice}
+          data-testid="start-over-no"
+          onClick={() => {
+            setShowDeletes(false);
+            go(1);
+          }}
+          type="button"
+        >
+          No
+        </button>
+        {showDeletes ? (
+          <ol className="grid gap-4" data-testid="start-over-steps">
+            <Lines lines={startOverLines(platform)} />
+          </ol>
+        ) : null}
       </div>
     );
   } else if (step.kind === "add-device" && (platform === "iphone" || platform === "mac")) {
@@ -457,6 +501,11 @@ export function MessagingSetupFlow({
           </li>
           <Lines lines={shortcutFollowLines(platform)} start={2} />
         </ol>
+        {platform === "iphone" && shortcutUrl ? (
+          <a className={`${primary} block text-center`} data-testid="open-in-shortcuts" href={shortcutUrl}>
+            Open in Shortcuts
+          </a>
+        ) : null}
         {platform === "mac" && fileUrl ? (
           <a className="text-lg font-bold text-[var(--brand-primary)] underline" download="NoteGoat.shortcut" href={fileUrl}>
             Download shortcut
@@ -578,6 +627,11 @@ export function MessagingSetupFlow({
             </li>
             <Lines lines={shortcutFollowLines(platform)} start={2} />
           </ol>
+          {platform === "iphone" && shortcutUrl ? (
+            <a className={`${primary} block text-center`} data-testid="open-in-shortcuts" href={shortcutUrl}>
+              Open in Shortcuts
+            </a>
+          ) : null}
           {platform === "mac" && fileUrl ? (
             <a className="text-lg font-bold text-[var(--brand-primary)] underline" download={`${name.replace(/[^\w –-]+/g, "")}.shortcut`} href={fileUrl}>
               Download shortcut
@@ -605,7 +659,7 @@ export function MessagingSetupFlow({
         <ol className="grid gap-4">
           <li className="flex items-start gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--brand-accent)] text-lg font-bold text-[var(--text-main)]">1</span>
-            <button className={primary} data-testid="messaging-test-now" onClick={runTest} type="button">
+            <button className={primary} data-testid="messaging-test-now" onClick={() => runTest()} type="button">
               {since && !check.ok ? "Waiting for this Device…" : "Test it now"}
             </button>
           </li>
@@ -637,7 +691,32 @@ export function MessagingSetupFlow({
         </div>
       </div>
       {body}
-      {note ? <p className="font-semibold text-[var(--text-main)]">{note}</p> : null}
+      {note ? (
+        <p className="font-semibold text-[var(--text-main)]" data-testid="messaging-setup-note" role="alert">
+          {note}
+        </p>
+      ) : null}
+      {iphoneBypass ? (
+        <button
+          className="text-base font-semibold text-[var(--brand-primary)] underline"
+          data-testid="iphone-continue-anyway"
+          onClick={() => {
+            if (step.kind === "shortcut") {
+              const rule = rules.find((item) => item.id === step.ruleId);
+              if (rule) void addRuleShortcut(rule, true);
+              return;
+            }
+            if (step.kind === "test") {
+              runTest(true);
+              return;
+            }
+            void addDevice(true);
+          }}
+          type="button"
+        >
+          I'm on the iPhone, continue anyway
+        </button>
+      ) : null}
       <div className="flex items-center justify-between gap-3">
         <button
           className="text-lg font-bold text-[var(--brand-primary)]"
@@ -656,7 +735,7 @@ export function MessagingSetupFlow({
         >
           Back
         </button>
-        {step.kind === "device" ? null : (
+        {step.kind === "device" || (step.kind === "start-over" && !showDeletes) ? null : (
           <button className="rounded-xl bg-[var(--brand-primary)] px-6 py-3 text-lg font-bold text-[var(--on-brand)] disabled:opacity-60" disabled={nextDisabled} onClick={() => (step.kind === "test" ? onClose() : go(1))} type="button">
             {step.kind === "test" ? "Done" : "Next"}
           </button>
