@@ -1,6 +1,6 @@
 "use client";
 
-import { nameSearchMatches } from "@/lib/patient-name-match";
+import { matchesPatientListQuery } from "@/lib/patient-name-match";
 import { NumberInput } from "@/components/number-input";
 import { TimeInput12h } from "@/components/time-input-12h";
 import { SmsRemindersPanel } from "@/components/sms-reminders-panel";
@@ -532,7 +532,7 @@ export default function AppointmentsPage() {
       return [];
     }
     return patients
-      .filter((patient) => nameSearchMatches(patient.fullName, patientSearchDraft))
+      .filter((patient) => matchesPatientListQuery(patientSearchDraft, [patient.fullName]))
       .slice(0, 12);
   }, [patientSearchDraft]);
 
@@ -583,9 +583,9 @@ export default function AppointmentsPage() {
       return selectedDayAppointments;
     }
     return selectedDayAppointments.filter((appointment) =>
-      appointment.patientName.toLowerCase().includes(schedulePatientSearchQuery),
+      matchesPatientListQuery(schedulePatientSearch, [appointment.patientName]),
     );
-  }, [schedulePatientSearchQuery, selectedDayAppointments]);
+  }, [schedulePatientSearch, schedulePatientSearchQuery, selectedDayAppointments]);
 
   // Patient Flow used to be hardcoded to "today" via a separate
   // todaysAppointments memo. That was wrong: when the user changed
@@ -600,7 +600,7 @@ export default function AppointmentsPage() {
       return [];
     }
     return scheduleAppointments
-      .filter((appointment) => appointment.patientName.toLowerCase().includes(schedulePatientSearchQuery))
+      .filter((appointment) => matchesPatientListQuery(schedulePatientSearch, [appointment.patientName]))
       .sort((left, right) => {
         const byDate = left.date.localeCompare(right.date);
         if (byDate !== 0) {
@@ -608,7 +608,7 @@ export default function AppointmentsPage() {
         }
         return left.startTime.localeCompare(right.startTime);
       });
-  }, [scheduleAppointments, schedulePatientSearchQuery]);
+  }, [scheduleAppointments, schedulePatientSearch, schedulePatientSearchQuery]);
 
   const appointmentsByStatusForSelectedDate = useMemo(() => {
     const grouped = new Map<AppointmentStatus, ScheduleAppointmentRecord[]>();

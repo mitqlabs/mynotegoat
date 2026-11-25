@@ -1,7 +1,7 @@
 "use client";
 
 import { maritalStatusOptions, type MaritalStatus } from "@/lib/marital-status";
-import { nameSearchMatches } from "@/lib/patient-name-match";
+import { matchesPatientListQuery } from "@/lib/patient-name-match";
 import { useScheduleAppointments } from "@/hooks/use-schedule-appointments";
 import { useScheduleAppointmentTypes } from "@/hooks/use-schedule-appointment-types";
 import { useScheduleSettings } from "@/hooks/use-schedule-settings";
@@ -1172,12 +1172,9 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
       if (section === "pi" && patient.isCashPatient) return false;
       if (section === "nonpi" && !patient.isCashPatient) return false;
 
-      const nameNorm = patient.fullName.toLowerCase().replace(/[,.:;]/g, " ");
-      const attNorm = patient.attorney.toLowerCase().replace(/[,.:;]/g, " ");
-      const haystack = `${nameNorm} ${attNorm}`;
-      // Words followed by a space are whole words ("armen " ≠ Armenuhi); see patient-name-match.ts.
-      const matchesSearch =
-        !q || nameSearchMatches(haystack, searchDraft);
+      // Patient List and Case List share matchesPatientListQuery (name + attorney).
+      // Words followed by a space are whole words ("armen " ≠ Armenuhi).
+      const matchesSearch = matchesPatientListQuery(searchDraft, [patient.fullName, patient.attorney]);
 
       // Filter by INITIAL EXAM date (year + optional month range within
       // it), falling back to the date of injury — a patient taken in today
@@ -2007,7 +2004,7 @@ export function LegacyPatientsPage({ mode = "patients", folderList = false }: { 
     const q = taskQuickPatientQuery.trim().toLowerCase();
     if (!q || taskQuickPatientId) return [];
     return taskPatientCaseEntries
-      .filter((e) => nameSearchMatches(e.fullName, taskQuickPatientQuery))
+      .filter((e) => matchesPatientListQuery(taskQuickPatientQuery, [e.fullName]))
       .slice(0, 6);
   }, [taskPatientCaseEntries, taskQuickPatientQuery, taskQuickPatientId]);
 
