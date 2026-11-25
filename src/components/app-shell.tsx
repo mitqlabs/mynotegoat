@@ -242,14 +242,14 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-[var(--shell-bg)]">
-      <div className="mx-auto px-0">
-        <div className="min-h-screen border-[var(--shell-border)] bg-[var(--shell-bg)]">
+      <div className="mx-auto w-full min-w-0 max-w-full px-0">
+        <div className="min-h-screen w-full min-w-0 border-[var(--shell-border)] bg-[var(--shell-bg)]">
           <div
             className={classNames(
-              "grid min-h-screen",
+              "grid min-h-screen w-full min-w-0",
               sidebarCollapsed
-                ? "lg:grid-cols-[56px_1fr]"
-                : "lg:grid-cols-[250px_1fr]",
+                ? "lg:grid-cols-[56px_minmax(0,1fr)]"
+                : "lg:grid-cols-[250px_minmax(0,1fr)]",
             )}
             style={{ transition: "grid-template-columns 0.2s ease" }}
           >
@@ -366,7 +366,7 @@ export function AppShell({
               </div>
             </aside>
 
-            <section className="min-w-0">
+            <section className="w-full min-w-0 max-w-full">
               <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line-soft)] bg-[var(--header-bg)] px-4 py-4 lg:px-7 lg:py-5">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-muted)]">
@@ -411,7 +411,7 @@ export function AppShell({
 
               <ReminderMorningBanner />
               <UnmatchedStopAlert />
-              <main className="p-4 lg:p-7">
+              <main className="w-full min-w-0 max-w-full p-4 lg:p-7">
                 <ReadOnlyContentGuard>{children}</ReadOnlyContentGuard>
               </main>
               <LazyGlobalGoatPopup />

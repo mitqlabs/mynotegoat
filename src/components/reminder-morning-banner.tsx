@@ -110,11 +110,13 @@ export function ReminderMorningBanner() {
 
   if (!status || (status.kind !== "unfinished" && status.kind !== "missed")) return null;
   return (
-    <div className="border-b border-red-300 bg-red-50 px-4 py-2.5 text-sm text-red-950 lg:px-7" data-testid="morning-reminder-banner" role="alert">
-      <p>
-        <b>{status.lead}</b> {iphone ? null : status.action}
+    <div className="border-b border-[var(--status-alert)] bg-[var(--bg-panel)] px-4 py-3 text-base text-[var(--text-main)] lg:px-7" data-testid="morning-reminder-banner" role="alert">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span>
+          <b>{status.lead}</b> {iphone ? null : status.action}
+        </span>
         {iphone ? (
-          <a className="ml-2 inline-flex items-center rounded-lg bg-red-800 px-3 py-1 font-semibold text-white" href={SEND_NOW_URL}>
+          <a className="inline-flex items-center rounded-lg bg-[var(--status-alert)] px-3 py-1.5 text-base font-semibold text-white" href={SEND_NOW_URL}>
             Send Reminders Now
           </a>
         ) : null}

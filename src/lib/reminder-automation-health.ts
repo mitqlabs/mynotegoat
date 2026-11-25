@@ -110,12 +110,12 @@ export interface MorningRunStatus {
 const UNFINISHED = {
   kind: "unfinished" as const,
   lead: "This morning's texts were fetched but not sent.",
-  action: "On the office iPhone, tap Send Reminders Now.",
+  action: "On the office Device, tap Send Reminders Now.",
 };
 const MISSED = {
   kind: "missed" as const,
   lead: "This morning's texts have not gone out.",
-  action: "On the office iPhone, tap Send Reminders Now.",
+  action: "On the office Device, tap Send Reminders Now.",
 };
 const QUIET: MorningRunStatus = { kind: "hidden", lead: "", action: "" };
 

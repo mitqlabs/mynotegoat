@@ -46,8 +46,8 @@ export function MessagesLibraryPanel({ settings }: { settings?: Pick<SmsReminder
   };
 
   return (
-    <div className="grid gap-3" data-testid="messages-library">
-      <p className="text-[var(--text-muted)]">
+    <div className="grid w-full min-w-0 max-w-full gap-3" data-testid="messages-library">
+      <p className="min-w-0 break-words text-base text-[var(--text-muted)]">
         Write your text messages here. Then pick which one each Auto Text sends. You can also pick any of them when you text a patient yourself.
       </p>
       <div>
@@ -67,20 +67,20 @@ export function MessagesLibraryPanel({ settings }: { settings?: Pick<SmsReminder
           office: { officeName: officeSettings.officeName, doctorName: officeSettings.doctorName, phone: officeSettings.phone },
         });
         return (
-          <div className="rounded-xl border border-[var(--line-soft)] bg-white" data-testid="message-card" key={t.id}>
+          <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-panel)]" data-testid="message-card" key={t.id}>
             <button
               aria-expanded={open}
-              className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+              className="flex w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 text-left text-base"
               onClick={() => setOpenId(open ? null : t.id)}
               type="button"
             >
-              <span className="min-w-0">
-                <span className="block font-bold">{t.name}</span>
-                {!open && <span className="block truncate text-[var(--text-muted)]">{t.body}</span>}
+              <span className="min-w-0 flex-1 basis-48">
+                <span className="block break-words text-base font-bold">{t.name}</span>
+                {!open && <span className="block truncate text-base text-[var(--text-muted)]">{t.body}</span>}
               </span>
-              <span className="flex shrink-0 items-center gap-2">
+              <span className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
                 {usedBy.length > 0 && (
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-sm font-semibold text-emerald-800" data-testid="message-used-by">
+                  <span className="max-w-full break-words rounded-full border border-[var(--line-soft)] px-2 py-0.5 text-sm font-semibold text-[var(--text-main)]" data-testid="message-used-by">
                     Used by {usedBy.join(" and ")}
                   </span>
                 )}
@@ -129,11 +129,11 @@ export function MessagesLibraryPanel({ settings }: { settings?: Pick<SmsReminder
                     ))}
                   </div>
                 </div>
-                <p className="rounded-xl bg-[var(--bg-soft)] px-3 py-2" data-testid="message-example">
+                <p className="break-words rounded-xl border border-[var(--line-soft)] px-3 py-2 text-base" data-testid="message-example">
                   <span className="font-semibold">Example: </span>
                   {example}
                 </p>
-                {t.body.length > 160 && <p className="text-[var(--text-muted)]">This is a long message. Some phones send it as more than one text.</p>}
+                {t.body.length > 160 && <p className="text-base text-[var(--text-muted)]">This is a long message. Some devices send it as more than one text.</p>}
                 <p className="text-[var(--text-muted)]">Keep it short. Do not put health details in a text.</p>
                 <div className="flex flex-wrap items-center gap-3">
                   {usedBy.length > 0 ? (
